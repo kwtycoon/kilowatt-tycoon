@@ -1,0 +1,22 @@
+{
+  "level_num": 1,
+  "file_base": "01_first_street",
+  "name": "First Street Station",
+  "archetype": "parking_lot",
+  "grid_size": [16, 12],
+  "grid_capacity_kva": 1500.0,
+  "popularity": 60,
+  "rent_cost": 0,
+  "challenge_level": 1,
+  "description": "Your starter site. Standard retail parking lot with balanced traffic. 1500 kVA utility connection available. Purchase and place a transformer to get started.",
+  "visual_description": "Simple open-air parking lot. Asphalt surface in center with white parking bay lines. Grass strips on left and right for utilities. Road along the top edge. Street trees and light poles along the perimeter.",
+  "zones": [
+    {"type": "road",         "rects": [[0, 0, 15, 0], [0, 8, 15, 11]]},
+    {"type": "entry",        "points": [[0, 0]]},
+    {"type": "exit",         "points": [[15, 0]]},
+    {"type": "driveable",    "rects": [[3, 1, 12, 7]]},
+    {"type": "parking",      "rects": [[3, 1, 12, 7]]},
+    {"type": "charger_area", "rects": [[3, 2, 5, 6], [8, 2, 10, 6]]},
+    {"type": "buildable",    "rects": [[0, 1, 2, 7], [13, 1, 15, 7]]}
+  ]
+}

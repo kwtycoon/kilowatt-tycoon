@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1250 1250">
+  <!-- Generator: Adobe Illustrator 30.0.0, SVG Export Plug-In . SVG Version: 2.1.1 Build 123)  -->
+  <defs>
+    <style>
+      .st0 {
+        fill: #121212;
+      }
+
+      .st1 {
+        fill: url(#radial-gradient);
+      }
+
+      .st2 {
+        fill: url(#radial-gradient1);
+      }
+
+      .st3 {
+        fill: url(#radial-gradient2);
+      }
+
+      .st4 {
+        fill: url(#radial-gradient3);
+      }
+    </style>
+    <radialGradient id="radial-gradient" cx="1209.1" cy="64.8" fx="1209.1" fy="64.8" r="1408.1" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e0dd47"/>
+      <stop offset="1" stop-color="#f58820"/>
+    </radialGradient>
+    <radialGradient id="radial-gradient1" cx="1209.1" fx="1209.1" r="1408.1" xlink:href="#radial-gradient"/>
+    <radialGradient id="radial-gradient2" cx="1209.1" cy="64.8" fx="1209.1" fy="64.8" r="1408.1" xlink:href="#radial-gradient"/>
+    <radialGradient id="radial-gradient3" cy="64.8" fy="64.8" r="1408.1" xlink:href="#radial-gradient"/>
+  </defs>
+  <rect class="st0" x="-18.4" y="-25.3" width="1296" height="1296"/>
+  <g>
+    <polygon class="st1" points="340.3 1117.9 340.3 911.9 108.1 911.9 392.8 627.2 392.8 833.1 625 833.1 340.3 1117.9"/>
+    <polygon class="st2" points="857.2 1117.9 857.2 911.9 625 911.9 909.8 627.2 909.8 833.1 1142 833.1 857.2 1117.9"/>
+    <polygon class="st3" points="857.2 618.3 857.2 412.3 625 412.3 909.8 127.6 909.8 333.5 1142 333.5 857.2 618.3"/>
+    <polygon class="st4" points="340.3 618.3 340.3 412.3 108.1 412.3 392.8 127.6 392.8 333.5 625 333.5 340.3 618.3"/>
+  </g>
+</svg>

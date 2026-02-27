@@ -1,0 +1,23 @@
+{
+  "level_num": 2,
+  "file_base": "02_quick_charge_express",
+  "name": "QuickCharge Express",
+  "archetype": "gas_station",
+  "grid_size": [16, 12],
+  "grid_capacity_kva": 500.0,
+  "popularity": 85,
+  "rent_cost": 5000,
+  "challenge_level": 2,
+  "description": "A high-traffic conversion of a classic interstate fuel station. 500 kVA utility connection supports 1x350kW + 1x50kW DCFC. Features a centered convenience store, a large illuminated canopy, and optimized charging bays near the service area.",
+  "visual_description": "Converted gas station. Large red canopy covering the center charging area (cols 4-11, rows 2-5). Convenience store building (blue accents) in the middle rows. Disabled gas pump islands on the left side. Gas station sign near entry. Dumpster area bottom-left. Street trees top corners. Road along top and bottom rows.",
+  "zones": [
+    {"type": "road",         "rects": [[0, 0, 15, 0], [2, 11, 13, 11]]},
+    {"type": "entry",        "points": [[0, 0]]},
+    {"type": "exit",         "points": [[15, 0]]},
+    {"type": "locked",       "rects": [[4, 2, 11, 5]]},
+    {"type": "driveable",    "rects": [[0, 1, 3, 10], [0, 9, 15, 10], [12, 1, 15, 10]]},
+    {"type": "parking",      "rects": [[0, 1, 3, 8], [12, 1, 15, 8]]},
+    {"type": "charger_area", "rects": [[4, 6, 11, 8]]},
+    {"type": "buildable",    "rects": [[12, 9, 15, 10]]}
+  ]
+}

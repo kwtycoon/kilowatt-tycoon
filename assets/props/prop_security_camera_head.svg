@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Pivot at center (32, 32) — maps to pole top in-game.
+       Camera arm goes upper-left from pivot to housing.
+       ALL elements kept within the 0-64 viewport so nothing is clipped. -->
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="1" dy="1" stdDeviation="1.5" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+    <filter id="led_glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="housing_body" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6B7280;stop-opacity:1"/>
+      <stop offset="40%" style="stop-color:#4B5563;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#374151;stop-opacity:1"/>
+    </linearGradient>
+    <linearGradient id="housing_inner" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6B7280;stop-opacity:1"/>
+      <stop offset="50%" style="stop-color:#4B5563;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#3D4A5C;stop-opacity:1"/>
+    </linearGradient>
+    <radialGradient id="lens_outer" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" style="stop-color:#1E3A5F;stop-opacity:1"/>
+      <stop offset="60%" style="stop-color:#0F1923;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#0A0F14;stop-opacity:1"/>
+    </radialGradient>
+    <radialGradient id="lens_inner" cx="35%" cy="35%" r="50%">
+      <stop offset="0%" style="stop-color:#3B82F6;stop-opacity:0.5"/>
+      <stop offset="100%" style="stop-color:#1E3A5F;stop-opacity:1"/>
+    </radialGradient>
+    <linearGradient id="arm_metal" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#7B8899;stop-opacity:1"/>
+      <stop offset="50%" style="stop-color:#9CA3AF;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#5A6577;stop-opacity:1"/>
+    </linearGradient>
+    <linearGradient id="visor_grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#5A6577;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#374151;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Camera arm from pivot (32,32) up-left to housing connection (~18,14) -->
+  <path d="M32 32 L32 20 L18 14" stroke="url(#arm_metal)" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#shadow)"/>
+  <!-- Arm highlight -->
+  <path d="M31 31 L31 20 L19 14.5" stroke="#D1D5DB" stroke-width="0.8" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.25"/>
+
+  <!-- Mounting bracket at pivot -->
+  <circle cx="32" cy="32" r="5" fill="#4B5563"/>
+  <circle cx="32" cy="32" r="3.5" fill="#6B7280"/>
+  <circle cx="32" cy="32" r="1.5" fill="#4B5563"/>
+
+  <!-- Camera housing — fully within viewport -->
+  <rect x="2" y="3" width="28" height="20" rx="4" fill="url(#housing_body)" filter="url(#shadow)"/>
+  <rect x="4" y="5" width="24" height="16" rx="3" fill="url(#housing_inner)"/>
+  <!-- Housing top highlight -->
+  <rect x="5" y="5.5" width="22" height="1.5" rx="0.75" fill="#9CA3AF" opacity="0.25"/>
+
+  <!-- Sun visor / hood above camera -->
+  <path d="M2 3 L1 0 L24 0 L22 3" fill="url(#visor_grad)"/>
+  <path d="M2 1 L23 1" stroke="#9CA3AF" stroke-width="0.5" opacity="0.3"/>
+
+  <!-- Lens — centered in housing, clearly visible -->
+  <circle cx="14" cy="13" r="7.5" fill="#1A202C"/>
+  <circle cx="14" cy="13" r="6.5" fill="url(#lens_outer)"/>
+  <circle cx="14" cy="13" r="4.5" fill="url(#lens_inner)"/>
+  <!-- Lens glint -->
+  <circle cx="11.5" cy="11" r="1.8" fill="rgba(255,255,255,0.4)"/>
+  <circle cx="15" cy="15" r="0.7" fill="rgba(255,255,255,0.15)"/>
+  <!-- Lens rim -->
+  <circle cx="14" cy="13" r="7" fill="none" stroke="#6B7280" stroke-width="0.6" opacity="0.5"/>
+
+  <!-- IR LEDs -->
+  <circle cx="6" cy="7" r="1.5" fill="#E53E3E" opacity="0.7" filter="url(#led_glow)"/>
+  <circle cx="6" cy="7" r="1.0" fill="#FC8181" opacity="0.9"/>
+  <circle cx="6" cy="19" r="1.5" fill="#E53E3E" opacity="0.7" filter="url(#led_glow)"/>
+  <circle cx="6" cy="19" r="1.0" fill="#FC8181" opacity="0.9"/>
+
+  <!-- Recording indicator LED (right side of housing) -->
+  <circle cx="26" cy="8" r="2.2" fill="#E53E3E" opacity="0.5" filter="url(#led_glow)"/>
+  <circle cx="26" cy="8" r="1.3" fill="#FC8181"/>
+
+  <!-- Cable from arm junction to housing -->
+  <path d="M18 14 L18 20 Q18 22 16 22" stroke="#4A5568" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+
+  <!-- Signal waves (right of pivot) -->
+  <path d="M40 14 Q46 8 40 2" stroke="#A0AEC0" stroke-width="1.5" fill="none" opacity="0.5"/>
+  <path d="M44 16 Q52 8 44 0" stroke="#A0AEC0" stroke-width="1.2" fill="none" opacity="0.35"/>
+  <path d="M48 18 Q56 10 48 2" stroke="#A0AEC0" stroke-width="0.8" fill="none" opacity="0.2"/>
+</svg>

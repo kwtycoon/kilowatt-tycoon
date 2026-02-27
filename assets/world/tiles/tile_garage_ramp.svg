@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="ramp_grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4F5663;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#2E323D;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="64" height="64" fill="url(#ramp_grad)"/>
+  <line x1="0" y1="8" x2="64" y2="16" stroke="#F5C542" stroke-width="2" opacity="0.6"/>
+  <line x1="0" y1="20" x2="64" y2="28" stroke="#F5C542" stroke-width="2" opacity="0.6"/>
+  <line x1="0" y1="32" x2="64" y2="40" stroke="#F5C542" stroke-width="2" opacity="0.6"/>
+  <line x1="0" y1="44" x2="64" y2="52" stroke="#F5C542" stroke-width="2" opacity="0.6"/>
+  <line x1="0" y1="56" x2="64" y2="64" stroke="#F5C542" stroke-width="2" opacity="0.6"/>
+</svg>

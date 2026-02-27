@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="-24.0 -8.0 64 64">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="meter_body" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#A1A1AA;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#52525B;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="20" width="4" height="26" rx="1" fill="#71717A" filter="url(#shadow)"/>
+  <rect x="2" y="4" width="12" height="18" rx="2" fill="url(#meter_body)" filter="url(#shadow)"/>
+  <rect x="4" y="8" width="8" height="6" rx="1" fill="#1F2937" filter="url(#shadow)"/>
+  <rect x="6" y="16" width="4" height="3" rx="0.5" fill="#1F2937"/>
+</svg>

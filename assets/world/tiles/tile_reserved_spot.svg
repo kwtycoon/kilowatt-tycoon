@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="64" height="64" fill="#3D4451"/>
+  <rect x="0" y="0" width="3" height="64" fill="#FFFFFF" opacity="0.9"/>
+  <rect x="61" y="0" width="3" height="64" fill="#FFFFFF" opacity="0.9"/>
+  <rect x="0" y="61" width="64" height="3" fill="#FFFFFF" opacity="0.9"/>
+  <text x="32" y="36" font-family="Arial" font-size="10" font-weight="bold" fill="#FFFFFF" text-anchor="middle" opacity="0.6">RESERVED</text>
+</svg>

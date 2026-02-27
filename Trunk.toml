@@ -1,0 +1,22 @@
+[build]
+target = "index.html"
+dist = "dist"
+
+[watch]
+ignore = ["./target", "./dist"]
+
+[serve]
+addresses = ["127.0.0.1"]
+port = 8080
+open = true
+# Disable SPA fallback - return 404 for non-existent files instead of index.html
+# This prevents Bevy from getting empty/invalid responses for .meta files
+no_spa = true
+
+# Remove .svg and .hash files from dist - only PNGs are needed at runtime
+# Note: post_build hooks run while files are still in the staging directory
+# .hash files won't exist in CI (not in git), but may exist locally
+[[hooks]]
+stage = "post_build"
+command = "sh"
+command_arguments = ["-c", "find dist/.stage/assets \\( -name '*.svg' -o -name '*.hash' \\) -delete"]

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <!-- Dark asphalt background -->
+  <rect x="0" y="0" width="64" height="64" fill="#2A2E36"/>
+  <!-- White border lines - left, right, bottom (north-facing bay: open end at top) -->
+  <rect x="0" y="0" width="3" height="64" fill="#FFFFFF" opacity="0.85"/>
+  <rect x="61" y="0" width="3" height="64" fill="#FFFFFF" opacity="0.85"/>
+  <rect x="0" y="61" width="64" height="3" fill="#FFFFFF" opacity="0.85"/>
+  <!-- Small green EV indicator circle at bottom (where charging port is) -->
+  <circle cx="32" cy="52" r="6" fill="#4ADE80" opacity="0.8"/>
+</svg>

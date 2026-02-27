@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#000" flood-opacity="0.2"/>
+    </filter>
+    <clipPath id="shield_clip">
+      <path d="M24 3 L40 11.5 L40 24 C40 35 24 46 24 46 C24 46 8 35 8 24 L8 11.5 Z"/>
+    </clipPath>
+  </defs>
+  <!-- White border (outer shield) -->
+  <path d="M24 3 L40 11.5 L40 24 C40 35 24 46 24 46 C24 46 8 35 8 24 L8 11.5 Z"
+        fill="#FFFFFF" filter="url(#shadow)"/>
+  <!-- Inner shield fill - left half (darker) -->
+  <rect x="8" y="3" width="16" height="43" fill="#7DB8D4" clip-path="url(#shield_clip)"/>
+  <!-- Inner shield fill - right half (lighter) -->
+  <rect x="24" y="3" width="16" height="43" fill="#9DCAE0" clip-path="url(#shield_clip)"/>
+  <!-- White inset border -->
+  <path d="M24 6 L37 13 L37 24 C37 33 24 43 24 43 C24 43 11 33 11 24 L11 13 Z"
+        fill="none" stroke="#FFFFFF" stroke-width="2.5"/>
+</svg>

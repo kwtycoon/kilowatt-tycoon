@@ -1,0 +1,191 @@
+# Bevy Game Development Rules
+
+You are an expert Rust game developer specializing in the Bevy engine (0.17+). Follow these conventions when writing Bevy code.
+
+## Project Architecture
+
+- Organize game logic into modular `Plugin` structs. Each plugin should encapsulate a single feature or system domain (e.g., `PlayerPlugin`, `AudioPlugin`, `UiPlugin`).
+- Use `App::new().add_plugins(DefaultPlugins)` as the foundation, then add custom plugins.
+- Keep `main.rs` minimal—delegate setup to plugins and systems.
+
+## ECS Fundamentals
+
+### Components
+- Define components as small, focused structs. Prefer composition over inheritance.
+- Use `#[derive(Component)]` for all component types.
+- Use the `#[require(...)]` attribute to define component dependencies (e.g., `#[require(Sprite, Transform)]`).
+- Use `#[derive(Component, Default)]` when a component should be auto-inserted via `#[require]`.
+- Implement builder methods on components for reusable spawn logic (see `Wall::new()` pattern).
+
+### Entities
+- Use `commands.spawn((Component1, Component2, ...))` with tuple bundles for spawning.
+- Use the `children![]` macro (with square brackets) for spawning hierarchies inline.
+- Prefer `Entity` handles stored in resources for cross-system entity references.
+
+### Systems
+- Name systems as verbs describing their action: `move_player`, `spawn_enemies`, `check_collisions`.
+- Use `Single<T>` for queries that expect exactly one result (e.g., `Single<&mut Transform, With<Player>>`).
+- Use `Query<T>` for zero-to-many entity iteration.
+- Prefer `Res<T>` for read-only resources and `ResMut<T>` for mutable access.
+- Chain related systems with `.chain()` when order matters.
+- Use `run_if(in_state(GameState::X))` to conditionally run systems based on game state.
+
+### Events and Observers
+- Define custom events with `#[derive(Event)]`.
+- Use `commands.trigger(MyEvent)` to emit events.
+- Use `app.add_observer(my_observer_fn)` for event-driven logic.
+- Observer functions take `On<MyEvent>` as the first parameter.
+
+## State Management
+
+- Define game states as enums with `#[derive(States, Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]`.
+- Mark the default state with `#[default]`.
+- Register states with `app.init_state::<GameState>()`.
+- Use `OnEnter(State)` and `OnExit(State)` schedules for state transitions.
+- Use `DespawnOnExit(State)` component to automatically clean up entities when leaving a state.
+- Transition states via `ResMut<NextState<GameState>>`.
+
+## Resources
+
+- Use `#[derive(Resource)]` for all resource types.
+- Initialize resources with `app.init_resource::<T>()` (requires `Default`) or `app.insert_resource(value)`.
+- Use `Deref` and `DerefMut` derives for newtype resources for ergonomic access.
+
+## Time and Fixed Updates
+
+- Use `FixedUpdate` schedule for physics and gameplay simulation (runs at 64 Hz by default).
+- Use `Update` schedule for frame-rate dependent logic (rendering, UI updates).
+- Access delta time via `time.delta_secs()` from `Res<Time>`.
+- Use `Timer` and `Stopwatch` from `bevy::time` for time-based logic.
+
+## Transforms and Coordinates
+
+- 2D games: Use `Camera2d`. Coordinates map 1:1 with screen pixels by default.
+- 3D games: Use `Camera3d` with explicit `Transform::from_xyz(...).looking_at(...)`.
+- Use `Vec2::extend(z)` to convert 2D positions to 3D with proper z-ordering.
+- The z-scale of 2D objects must always be 1.0 to avoid rendering order issues.
+- Use `Transform { translation, rotation, scale, ..default() }` for clarity.
+
+## Deterministic Math (Critical)
+
+For cross-platform determinism, **never use** these `f32` methods directly:
+- `powi`, `powf`, `log`, `exp`, `exp2`, `ln`, `log2`, `log10`
+- `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sin_cos`
+- `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`
+- `cbrt`, `hypot`, `exp_m1`, `ln_1p`
+
+**Instead use** the equivalent functions from `bevy_math::ops`:
+```rust
+use bevy::math::ops;
+
+// Examples:
+let angle = ops::sin(x);
+let power = ops::powf(base, exp);
+let squared = x.squared();  // FloatPow trait
+let cubed = x.cubed();      // FloatPow trait
+```
+
+## Assets
+
+- Load assets via `asset_server.load("path/to/asset.ext")`.
+- For GLTF scenes, use `GltfAssetLabel::Scene(0).from_asset("model.glb")`.
+- Store asset handles in resources for reuse across systems.
+- Place assets in the `assets/` directory at the project root.
+
+## Audio
+
+- Use `AudioPlayer(handle)` component with `PlaybackSettings` for sound playback.
+- Use `PlaybackSettings::DESPAWN` for one-shot sounds that auto-cleanup.
+- Load audio with `asset_server.load("sounds/effect.ogg")`.
+
+## UI (bevy_ui)
+
+- Use `Node` for layout with flexbox properties (`width`, `height`, `justify_content`, `align_items`).
+- Use `Text` with `TextFont` and `TextColor` for text rendering.
+- Position UI absolutely with `position_type: PositionType::Absolute` and `top`/`left`/`right`/`bottom`.
+- Use `Val::Px(n)` or the `px(n)` helper for pixel values.
+- Use `Val::Percent(n)` or `percent(n)` for relative sizing.
+- Update text content via `TextUiWriter` or direct `Text` component mutation.
+
+## Input
+
+- Read keyboard input with `Res<ButtonInput<KeyCode>>`.
+- Use `.pressed(KeyCode::X)` for held keys, `.just_pressed()` for single-frame detection.
+- Common key codes: `KeyCode::ArrowUp`, `KeyCode::ArrowDown`, `KeyCode::ArrowLeft`, `KeyCode::ArrowRight`, `KeyCode::Space`.
+
+## Collision and Physics
+
+- Use `bevy::math::bounding` types: `Aabb2d`, `BoundingCircle`, `BoundingVolume`.
+- Check intersections with `.intersects(&other)`.
+- Find closest points with `.closest_point(position)`.
+- Implement custom collision response based on game needs.
+
+## Common Patterns
+
+### Velocity Component
+```rust
+#[derive(Component, Deref, DerefMut)]
+struct Velocity(Vec2);
+
+fn apply_velocity(mut query: Query<(&mut Transform, &Velocity)>, time: Res<Time>) {
+    for (mut transform, velocity) in &mut query {
+        transform.translation.x += velocity.x * time.delta_secs();
+        transform.translation.y += velocity.y * time.delta_secs();
+    }
+}
+```
+
+### Required Components Pattern
+```rust
+#[derive(Component, Default)]
+struct Collider;
+
+#[derive(Component)]
+#[require(Sprite, Transform, Collider)]
+struct Wall;
+
+impl Wall {
+    fn new(/* params */) -> (Wall, Sprite, Transform) {
+        (Wall, Sprite::from_color(COLOR, Vec2::ONE), Transform { ... })
+    }
+}
+```
+
+### Game State Scoped Entities
+```rust
+commands.spawn((
+    DespawnOnExit(GameState::Playing),
+    // ... other components
+));
+```
+
+## Performance Tips
+
+- Avoid spawning/despawning entities every frame; reuse and toggle visibility instead.
+- Use `Changed<T>` and `Added<T>` query filters to minimize work.
+- Batch related systems in the same schedule stage when possible.
+- Use `ParamSet` when a system needs conflicting query access.
+
+## Code Style
+
+- Use `..default()` for struct field defaults.
+- Prefer tuple bundles over custom bundle structs.
+- Use constants for magic numbers (speeds, sizes, colors).
+- Define colors with `Color::srgb(r, g, b)` or `Color::srgba(r, g, b, a)`.
+- Follow Rust naming: `snake_case` for functions/variables, `PascalCase` for types.
+
+## Language Guidance
+
+### Rust
+
+- Do NOT use unwraps or anything that can panic in Rust code, handle errors. Obviously in tests unwraps and panics are fine!
+- In Rust code I prefer using `crate::` to `super::`; please don't use `super::`. If you see a lingering `super::` from someone else clean it up.
+- Avoid `pub use` on imports unless you are re-exposing a dependency so downstream consumers do not have to depend on it directly.
+- Skip global state via `lazy_static!`, `Once`, or similar; prefer passing explicit context structs for any shared state.
+- Prefer strong types over strings, use enums and newtypes when the domain is closed or needs validation.
+
+#### Rust Workflow Checklist
+
+1. Run `cargo fmt`.
+1. Run `cargo clippy --all --benches --tests --examples --all-features` and address warnings.
+1. Execute the relevant `cargo test` or `just` targets to cover unit and end-to-end paths.

@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="56" height="96" viewBox="0 0 56 96">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="body_suv" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#1F2937;stop-opacity:1"/>
+      <stop offset="20%" style="stop-color:#374151;stop-opacity:1"/>
+      <stop offset="80%" style="stop-color:#374151;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#1F2937;stop-opacity:1"/>
+    </linearGradient>
+    <linearGradient id="glass_suv" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#2563EB;stop-opacity:0.6"/>
+      <stop offset="100%" style="stop-color:#1E3A5F;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+  <path d="M6 14
+            Q4 8 28 4
+            Q52 8 50 14
+            L52 26
+            Q54 28 54 34
+            L54 66
+            Q54 74 52 78
+            L50 88
+            Q48 92 28 94
+            Q8 92 6 88
+            L4 78
+            Q2 74 2 66
+            L2 34
+            Q2 28 4 26
+            L6 14 Z" fill="#000000" opacity="0.25" transform="translate(2, 3)"/>
+  <path d="M6 14
+            Q4 8 28 4
+            Q52 8 50 14
+            L52 26
+            Q54 28 54 34
+            L54 66
+            Q54 74 52 78
+            L50 88
+            Q48 92 28 94
+            Q8 92 6 88
+            L4 78
+            Q2 74 2 66
+            L2 34
+            Q2 28 4 26
+            L6 14 Z" fill="url(#body_suv)"/>
+  <path d="M6 14
+            Q4 8 28 4
+            Q52 8 50 14
+            L52 26
+            Q54 28 54 34
+            L54 66
+            Q54 74 52 78
+            L50 88
+            Q48 92 28 94
+            Q8 92 6 88
+            L4 78
+            Q2 74 2 66
+            L2 34
+            Q2 28 4 26
+            L6 14 Z" fill="none" stroke="#111827" stroke-width="2"/>
+  <rect x="8" y="8" width="40" height="12" rx="4" fill="#374151" opacity="0.3"/>
+  <line x1="12" y1="20" x2="44" y2="20" stroke="#1F2937" stroke-width="1.5" opacity="0.5"/>
+  <path d="M14 24 
+        L42 24 
+        L46 32 
+        L10 32 Z" 
+        fill="url(#glass_suv)"/>
+  <path d="M14 24 
+        L42 24 
+        L46 32 
+        L10 32 Z" 
+        fill="none" stroke="#111827" stroke-width="1"/>
+  <rect x="16" y="26" width="9" height="4" rx="1" fill="#FFFFFF" opacity="0.2"/>
+  <rect x="9" y="34" width="38" height="28" rx="3" fill="#1F2937" opacity="0.2"/>
+  <rect x="9" y="34" width="38" height="28" rx="3" fill="none" stroke="#111827" stroke-width="1" opacity="0.5"/>
+  <path d="M11 64 
+            L45 64 
+            L42 66 
+            L14 66 Z" 
+            fill="url(#glass_suv)"/>
+  <path d="M11 64 
+            L45 64 
+            L42 66 
+            L14 66 Z" 
+            fill="none" stroke="#111827" stroke-width="1"/>
+  <line x1="13" y1="68" x2="43" y2="68" stroke="#1F2937" stroke-width="1.5" opacity="0.5"/>
+  <ellipse cx="12" cy="10" rx="4" ry="2" fill="#F3F4F6"/>
+  <ellipse cx="44" cy="10" rx="4" ry="2" fill="#F3F4F6"/>
+  <ellipse cx="12" cy="10" rx="3" ry="1" fill="#FEF3C7"/>
+  <ellipse cx="44" cy="10" rx="3" ry="1" fill="#FEF3C7"/>
+  <rect x="8" y="84" width="10" height="4" rx="2" fill="#DC2626"/>
+  <rect x="38" y="84" width="10" height="4" rx="2" fill="#DC2626"/>
+  <rect x="9" y="85" width="8" height="2" rx="1" fill="#FCA5A5" opacity="0.5"/>
+  <rect x="39" y="85" width="8" height="2" rx="1" fill="#FCA5A5" opacity="0.5"/>
+  <rect x="25" y="6" width="6" height="16" rx="1" fill="#F59E0B" opacity="0.9"/>
+  <rect x="25" y="72" width="6" height="12" rx="1" fill="#F59E0B" opacity="0.9"/>
+  <path d="M12 6 Q28 4 44 6" stroke="#FFFFFF" stroke-width="1" fill="none" opacity="0.3"/>
+  <rect x="2" y="72" width="4" height="6" rx="1" fill="#10B981"/>
+  <rect x="3" y="73" width="2" height="4" rx="0.5" fill="#34D399"/>
+</svg>

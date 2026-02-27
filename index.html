@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Trunk build directives -->
+    <link data-trunk rel="rust" data-wasm-opt="1"/>
+    <link data-trunk rel="copy-dir" href="assets" data-target-path="assets"/>
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kilowatt Tycoon - EV Charging Network Simulation Game</title>
+    <meta name="description" content="Run an EV charging network where nothing ever goes according to plan. Chargers fail, the grid pushes back. Keep uptime high, costs low, and the lights on.">
+    <meta name="robots" content="index, follow">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="canonical" href="https://kwtycoon.com/">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/ui/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="assets/ui/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/ui/apple-touch-icon.png">
+    
+    <!-- Open Graph -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://kwtycoon.com/">
+    <meta property="og:title" content="Kilowatt Tycoon - EV Charging Network Simulation Game">
+    <meta property="og:description" content="Run an EV charging network where nothing ever goes according to plan. Chargers fail, the grid pushes back. Keep uptime high, costs low, and the lights on.">
+    <meta property="og:image" content="https://kwtycoon.com/assets/ui/logo_full.png">
+    <meta property="og:image:width" content="2766">
+    <meta property="og:image:height" content="1029">
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Kilowatt Tycoon - EV Charging Network Simulation Game">
+    <meta name="twitter:description" content="Run an EV charging network where nothing ever goes according to plan. Chargers fail, the grid pushes back. Keep uptime high, costs low, and the lights on.">
+    <meta name="twitter:image" content="https://kwtycoon.com/assets/ui/logo_full.png">
+    
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "VideoGame",
+        "name": "Kilowatt Tycoon",
+        "description": "Run a profitable EV charging network in a world where everything breaks. Manage chargers, dispatch technicians, handle support tickets, and keep your uptime high.",
+        "url": "https://kwtycoon.com/",
+        "applicationCategory": "Game",
+        "operatingSystem": "Web Browser",
+        "gamePlatform": "Web Browser",
+        "genre": ["Simulation", "Tycoon", "Management"],
+        "image": "https://kwtycoon.com/assets/ui/logo_full.png",
+        "thumbnailUrl": "https://kwtycoon.com/assets/ui/logo_mark_light.png",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        }
+    }
+    </script>
+
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-7HZ49YK3E6"></script>
+    <script>window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag('js', new Date()); gtag('config', 'G-7HZ49YK3E6');</script>
+
+    <!-- External resources -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>window.FontAwesomeConfig = { autoReplaceSvg: 'nest' };</script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        ::-webkit-scrollbar { display: none; }
+        
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        /* Game mode: fullscreen canvas when splash is removed */
+        body.game-mode {
+            background: #1a1a2e;
+        }
+        
+        /* Bevy canvas (created by WASM) - fill viewport in game mode */
+        body.game-mode > canvas {
+            display: block;
+            width: 100% !important;
+            height: 100% !important;
+        }
+        
+        /* Splash page overlays the game canvas */
+        #splash-page {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 100;
+            overflow-y: auto;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 25%, #334155 50%, #1e293b 75%, #0f172a 100%);
+        }
+        
+        .electric-glow {
+            box-shadow: 0 0 20px #00d4ff, 0 0 40px #00d4ff, 0 0 60px #00d4ff;
+        }
+        
+        .energy-pulse {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .floating {
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+        }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 25%, #334155 50%, #1e293b 75%, #0f172a 100%);
+        }
+
+        /* Portrait mode warning - shown on phones/tablets held vertically */
+        #rotate-prompt {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 9999;
+            background: #0f172a;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 12px;
+            text-align: center;
+            padding: 32px;
+            box-sizing: border-box;
+        }
+
+        @media (orientation: portrait) and (max-width: 1024px) {
+            #rotate-prompt { display: flex; }
+        }
+    </style>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'orbitron': ['Orbitron', 'monospace'],
+                        'inter': ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+        
+        function startGame() {
+            // Hide splash page and center the game
+            const splash = document.getElementById('splash-page');
+            splash.style.display = 'none';
+            document.body.classList.remove('gradient-bg', 'font-inter', 'text-white', 'overflow-x-hidden');
+            document.body.classList.add('game-mode');
+            
+            // Push history state so back button can return to splash
+            history.pushState({ view: 'game' }, '', '#play');
+        }
+        
+        function showSplash() {
+            const splash = document.getElementById('splash-page');
+            if (splash) {
+                splash.style.display = 'block';
+                splash.scrollTop = 0;
+                document.body.classList.add('gradient-bg', 'font-inter', 'text-white', 'overflow-x-hidden');
+                document.body.classList.remove('game-mode');
+            }
+        }
+        
+        // Handle browser back/forward navigation
+        window.addEventListener('popstate', function(event) {
+            if (!event.state || event.state.view !== 'game') {
+                showSplash();
+            }
+        });
+        
+        // If page loads with #play hash, start game automatically
+        window.addEventListener('DOMContentLoaded', function() {
+            if (window.location.hash === '#play') {
+                // Replace current state so back goes to splash, not previous page
+                history.replaceState({ view: 'splash' }, '', window.location.pathname);
+            }
+        });
+    </script>
+</head>
+<body class="gradient-bg font-inter text-white overflow-x-hidden">
+
+<!-- Portrait mode rotation prompt (hidden in landscape via CSS media query) -->
+<div id="rotate-prompt">
+    <div style="font-size: 56px; animation: float 3s ease-in-out infinite;">&#x1F4F1;</div>
+    <p style="font-family: 'Orbitron', monospace; font-size: 22px; font-weight: 700; color: #DCF251; margin: 0;">Rotate Your Device</p>
+    <p style="font-size: 16px; color: #94a3b8; margin: 0;">Kilowatt Tycoon plays best in landscape mode</p>
+</div>
+
+<!-- Splash Page -->
+<div id="splash-page">
+    <header class="relative z-50 px-8 py-6">
+        <nav class="flex items-center justify-between max-w-7xl mx-auto">
+            <div class="flex items-center space-x-3">
+                <img src="assets/ui/logo_mark.png" alt="Kilowatt Tycoon" class="h-10 w-10 rounded-lg">
+                <span class="font-orbitron font-bold text-2xl bg-gradient-to-r from-[#DCF251] to-orange-500 bg-clip-text text-transparent">KILOWATT TYCOON</span>
+            </div>
+            <div class="flex items-center space-x-6">
+                <a href="#features" class="text-gray-300 hover:text-yellow-400 transition-colors duration-300">Features</a>
+                <a href="#about" class="text-gray-300 hover:text-yellow-400 transition-colors duration-300">About</a>
+                <a href="https://discord.gg/taT77Aupxz" target="_blank" class="flex items-center space-x-2 bg-[#5865F2] hover:bg-[#4752C4] px-4 py-2 rounded-lg transition-all duration-300">
+                    <i class="fab fa-discord"></i>
+                    <span>Discord</span>
+                </a>
+                <a href="https://github.com/kwtycoon/kilowatt-tycoon" target="_blank" class="flex items-center space-x-2 bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg transition-all duration-300">
+                    <i class="fab fa-github"></i>
+                    <span>GitHub</span>
+                </a>
+                <div class="flex items-center space-x-2 text-gray-300 font-medium ml-4 border-l border-gray-600 pl-4">
+                    <span>made with</span>
+                    <i class="fas fa-heart text-red-500"></i>
+                    <span>by</span>
+                    <a href="https://www.relioncharging.com/?utm_campaign=kwtycoon" target="_blank" class="hover:opacity-80 transition-opacity">
+                        <img src="assets/ui/relion_logo.png" alt="Relion" class="h-8 inline-block">
+                    </a>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <section id="hero" class="relative h-[700px] flex items-center justify-center overflow-hidden">
+            <div class="absolute inset-0 bg-gradient-to-b from-transparent via-slate-900/20 to-slate-900/40"></div>
+            
+            <!-- Floating icons -->
+            <div class="absolute top-20 left-20 floating">
+                <div class="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center">
+                    <i class="fas fa-charging-station text-blue-400 text-2xl"></i>
+                </div>
+            </div>
+            
+            <div class="absolute top-32 right-32 floating" style="animation-delay: -2s;">
+                <div class="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center">
+                    <i class="fas fa-plug text-green-400 text-3xl"></i>
+                </div>
+            </div>
+            
+            <div class="absolute bottom-32 left-32 floating" style="animation-delay: -4s;">
+                <div class="w-12 h-12 bg-yellow-500/20 rounded-full flex items-center justify-center">
+                    <i class="fas fa-tools text-yellow-400 text-xl"></i>
+                </div>
+            </div>
+            
+            <div class="absolute bottom-40 right-20 floating" style="animation-delay: -1s;">
+                <div class="w-14 h-14 bg-purple-500/20 rounded-full flex items-center justify-center">
+                    <i class="fas fa-car text-purple-400 text-2xl"></i>
+                </div>
+            </div>
+
+            <div class="relative z-10 text-center max-w-4xl mx-auto px-8">
+                <div class="mb-8">
+                    <img src="assets/ui/logo_full.png" alt="Kilowatt Tycoon" class="mx-auto h-56 energy-pulse">
+                </div>
+
+                <h1 class="sr-only">KILOWATT TYCOON</h1>
+                
+                <p class="text-2xl text-gray-300 mb-4 max-w-3xl mx-auto leading-relaxed">
+                    Run an EV charging network where nothing ever goes according to plan.
+                </p>
+                
+                <p class="text-xl text-gray-400 mb-8 max-w-3xl mx-auto leading-relaxed">
+                    Chargers fail. The grid pushes back.<br>
+                    Your job? Keep uptime high, costs low, and the lights on.
+                </p>
+                
+                <div class="flex items-center justify-center space-x-6">
+                    <button onclick="startGame()" class="group relative bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-[#DCF251] hover:to-orange-500 px-12 py-5 rounded-xl font-bold text-xl text-white transition-all duration-300 transform hover:scale-105 electric-glow">
+                        <div class="flex items-center space-x-3">
+                            <i class="fas fa-play text-2xl"></i>
+                            <span>PLAY NOW</span>
+                        </div>
+                        <div class="absolute inset-0 bg-white/20 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    </button>
+                    
+                    <a href="https://github.com/kwtycoon/kilowatt-tycoon" target="_blank" class="group flex items-center space-x-3 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-600 hover:border-gray-500 px-8 py-5 rounded-xl font-semibold text-lg transition-all duration-300 transform hover:scale-105">
+                        <i class="fab fa-github text-2xl"></i>
+                        <span>Contribute on GitHub</span>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <section class="py-20 px-8 bg-slate-800/30">
+            <div class="max-w-4xl mx-auto text-center">
+                <h2 class="font-orbitron font-bold text-5xl mb-8 bg-gradient-to-r from-[#DCF251] to-orange-500 bg-clip-text text-transparent">The Game</h2>
+                <p class="text-xl text-gray-300 mb-6 leading-relaxed">
+                    Kilowatt Tycoon is a management simulation about the unsexy reality of EV charging.<br>
+                    You're not building cities or driving cars — you're running the infrastructure that makes electrification possible.
+                </p>
+                <p class="text-xl text-gray-300 mb-6 leading-relaxed">
+                    Every decision affects uptime, revenue, and reputation.<br>
+                    Ignore problems too long, and the system will remind you.
+                </p>
+            </div>
+        </section>
+
+        <section id="features" class="py-20 px-8">
+            <div class="max-w-7xl mx-auto">
+                <div class="text-center mb-16">
+                    <h2 class="font-orbitron font-bold text-5xl mb-6 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">Core Gameplay</h2>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div class="bg-gradient-to-br from-slate-800/50 to-slate-900/50 border border-slate-700 rounded-2xl p-8 hover:border-blue-500/50 transition-all duration-300 group">
+                        <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                            <i class="fas fa-charging-station text-white text-2xl"></i>
+                        </div>
+                        <h3 class="font-orbitron font-bold text-2xl mb-4 text-blue-400">Charger Operations</h3>
+                        <p class="text-gray-400 leading-relaxed">Deploy and manage chargers across multiple sites. Perform remote resets and decide when a truck roll is worth the cost.</p>
+                    </div>
+                    
+                    <div class="bg-gradient-to-br from-slate-800/50 to-slate-900/50 border border-slate-700 rounded-2xl p-8 hover:border-green-500/50 transition-all duration-300 group">
+                        <div class="w-16 h-16 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                            <i class="fas fa-bolt text-white text-2xl"></i>
+                        </div>
+                        <h3 class="font-orbitron font-bold text-2xl mb-4 text-green-400">Grid & Power Management</h3>
+                        <p class="text-gray-400 leading-relaxed">Balance three-phase power, manage demand charges, and avoid transformer overloads. The grid doesn't care about your roadmap.</p>
+                    </div>
+                    
+                    <div class="bg-gradient-to-br from-slate-800/50 to-slate-900/50 border border-slate-700 rounded-2xl p-8 hover:border-purple-500/50 transition-all duration-300 group">
+                        <div class="w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                            <i class="fas fa-coins text-white text-2xl"></i>
+                        </div>
+                        <h3 class="font-orbitron font-bold text-2xl mb-4 text-purple-400">Hustle & Revenue</h3>
+                        <p class="text-gray-400 leading-relaxed">Protect your copper from cable thieves. Monetize charger screens with video ads while drivers wait. Dial in the perfect lemonade recipe to squeeze every cent from ancillary sales.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="about" class="py-20 px-8">
+            <div class="max-w-4xl mx-auto text-center">
+                <h2 class="font-orbitron font-bold text-5xl mb-12 bg-gradient-to-r from-[#DCF251] to-orange-500 bg-clip-text text-transparent">Simulation Depth</h2>
+                
+                <div class="space-y-6 mb-12">
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
+                        <div class="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-bolt text-blue-400 text-xl"></i>
+                        </div>
+                        <span class="text-lg text-gray-300 text-left">Real-time power and thermal simulation</span>
+                    </div>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
+                        <div class="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-dollar-sign text-green-400 text-xl"></i>
+                        </div>
+                        <span class="text-lg text-gray-300 text-left">Dynamic electricity pricing and demand charges</span>
+                    </div>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
+                        <div class="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-shield-alt text-red-400 text-xl"></i>
+                        </div>
+                        <span class="text-lg text-gray-300 text-left">Cable theft, vandalism, and site security events</span>
+                    </div>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
+                        <div class="w-12 h-12 bg-cyan-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-cloud-sun text-cyan-400 text-xl"></i>
+                        </div>
+                        <span class="text-lg text-gray-300 text-left">Weather and seasonal effects on driver demand</span>
+                    </div>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
+                        <div class="w-12 h-12 bg-pink-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-heartbeat text-pink-400 text-xl"></i>
+                        </div>
+                        <span class="text-lg text-gray-300 text-left">Equipment degradation and lifecycle tracking</span>
+                    </div>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
+                        <div class="w-12 h-12 bg-indigo-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-tv text-indigo-400 text-xl"></i>
+                        </div>
+                        <span class="text-lg text-gray-300 text-left">Ad-screen revenue optimization</span>
+                    </div>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
+                        <div class="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-map-marker-alt text-green-400 text-xl"></i>
+                        </div>
+                        <span class="text-lg text-gray-300 text-left">12 unique site types, each with different constraints</span>
+                    </div>
+                </div>
+                
+                <p class="text-2xl text-gray-300 font-semibold italic">
+                    This isn't a puzzle game. It's controlled chaos.
+                </p>
+            </div>
+        </section>
+
+        <section id="cta" class="py-20 px-8 bg-slate-800/30">
+            <div class="max-w-4xl mx-auto text-center">
+                <h2 class="font-orbitron font-bold text-5xl mb-8 bg-gradient-to-r from-[#DCF251] to-orange-500 bg-clip-text text-transparent">Ready to Keep the Lights On?</h2>
+                <p class="text-xl text-gray-300 mb-12 max-w-2xl mx-auto leading-relaxed">
+                    Things will break.<br>
+                    Margins will be thin.<br>
+                    The grid won't wait.<br><br>
+                    Can you keep the network alive — and profitable?
+                </p>
+                
+                <div class="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-8">
+                    <button onclick="startGame()" class="group relative bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-[#DCF251] hover:to-orange-500 px-16 py-6 rounded-2xl font-bold text-2xl text-white transition-all duration-300 transform hover:scale-105 electric-glow">
+                        <div class="flex items-center space-x-4">
+                            <i class="fas fa-play text-3xl"></i>
+                            <span>START PLAYING</span>
+                        </div>
+                    </button>
+                    
+                    <a href="https://github.com/kwtycoon/kilowatt-tycoon" target="_blank" class="group flex items-center space-x-4 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-600 hover:border-gray-500 px-12 py-6 rounded-2xl font-semibold text-xl transition-all duration-300 transform hover:scale-105">
+                        <i class="fab fa-github text-3xl"></i>
+                        <span>Contribute on GitHub</span>
+                    </a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="bg-slate-900/50 border-t border-slate-800 py-12 px-8">
+        <div class="max-w-7xl mx-auto">
+            <div class="text-center mb-8">
+                <p class="text-gray-400 text-lg mb-2">Built with AI</p>
+                <p class="text-gray-500">The robots started it — join us us to help finish it.</p>
+            </div>
+            
+            <div class="flex flex-col md:flex-row items-center justify-between">
+                <div class="flex items-center space-x-3 mb-6 md:mb-0">
+                    <img src="assets/ui/logo_mark.png" alt="Kilowatt Tycoon" class="h-10 w-10 rounded-lg">
+                    <span class="font-orbitron font-bold text-xl bg-gradient-to-r from-[#DCF251] to-orange-500 bg-clip-text text-transparent">KILOWATT TYCOON</span>
+                </div>
+                
+                <div class="flex items-center justify-center space-x-2 text-gray-300 font-medium">
+                    <span>made with</span>
+                    <i class="fas fa-heart text-red-500"></i>
+                    <span>by</span>
+                    <a href="https://www.relioncharging.com/?utm_campaign=kwtycoon" target="_blank" class="hover:opacity-80 transition-opacity">
+                        <img src="assets/ui/relion_logo.png" alt="Relion" class="h-8 inline-block">
+                    </a>
+                </div>
+                
+                <div class="flex items-center space-x-8">
+                    <a href="https://discord.gg/taT77Aupxz" target="_blank" class="text-gray-400 hover:text-yellow-400 transition-colors duration-300">
+                        <i class="fab fa-discord text-2xl"></i>
+                    </a>
+                    <a href="https://github.com/kwtycoon/kilowatt-tycoon" target="_blank" class="text-gray-400 hover:text-yellow-400 transition-colors duration-300">
+                        <i class="fab fa-github text-2xl"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </footer>
+</div>
+
+</body>
+</html>

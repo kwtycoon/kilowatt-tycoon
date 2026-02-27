@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <pattern id="cobble_pattern" patternUnits="userSpaceOnUse" width="16" height="16">
+      <rect width="16" height="16" fill="#9BA3AF"/>
+      <ellipse cx="4" cy="4" rx="3" ry="3.5" fill="#CBD2D9" opacity="0.3"/>
+      <ellipse cx="12" cy="4" rx="3" ry="3.5" fill="#6B7280" opacity="0.2"/>
+      <ellipse cx="4" cy="12" rx="3" ry="3.5" fill="#6B7280" opacity="0.2"/>
+      <ellipse cx="12" cy="12" rx="3" ry="3.5" fill="#CBD2D9" opacity="0.3"/>
+      <line x1="0" y1="8" x2="16" y2="8" stroke="#6B7280" stroke-width="0.5" opacity="0.4"/>
+      <line x1="8" y1="0" x2="8" y2="16" stroke="#6B7280" stroke-width="0.5" opacity="0.4"/>
+    </pattern>
+  </defs>
+  <rect x="0" y="0" width="64" height="64" fill="#9BA3AF"/>
+  <rect x="0" y="0" width="64" height="64" fill="url(#cobble_pattern)"/>
+</svg>

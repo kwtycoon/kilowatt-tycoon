@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="80" viewBox="0 0 48 80">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="dcfc50body" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#78716C;stop-opacity:1"/>
+      <stop offset="50%" style="stop-color:#57534E;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#44403C;stop-opacity:1"/>
+    </linearGradient>
+    <radialGradient id="dcfc50glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#90CAF9;stop-opacity:1"/>
+      <stop offset="60%" style="stop-color:#2196F3;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#1976D2;stop-opacity:0.7"/>
+    </radialGradient>
+    <linearGradient id="dcfc50screen" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#292524;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#1C1917;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="72" width="28" height="6" rx="2" fill="#44403C" filter="url(#shadow)"/>
+  <rect x="6" y="4" width="36" height="70" rx="4" fill="#44403C" filter="url(#shadow)"/>
+  <rect x="8" y="2" width="32" height="70" rx="3" fill="url(#dcfc50body)"/>
+  <rect x="8" y="2" width="32" height="8" rx="3" fill="#2196F3"/>
+  <rect x="8" y="8" width="32" height="2" fill="#2196F3"/>
+  <circle cx="24" cy="6" r="3" fill="#1976D2"/>
+  <circle cx="24" cy="6" r="2" fill="#64B5F6"/>
+  <circle cx="23" cy="5" r="0.8" fill="#FFFFFF" opacity="0.6"/>
+  <rect x="12" y="14" width="24" height="14" rx="2" fill="#44403C"/>
+  <rect x="14" y="16" width="20" height="10" rx="1" fill="url(#dcfc50screen)"/>
+  <rect x="16" y="19" width="4" height="5" fill="#64B5F6"/>
+  <rect x="21" y="18" width="4" height="6" fill="#2196F3"/>
+  <rect x="26" y="20" width="4" height="4" fill="#64B5F6"/>
+  <rect x="14" y="32" width="20" height="24" rx="3" fill="#44403C"/>
+  <rect x="16" y="34" width="16" height="20" rx="2" fill="#1C1917"/>
+  <circle cx="24" cy="44" r="5" fill="#78716C"/>
+  <circle cx="24" cy="44" r="3" fill="#1C1917"/>
+  <circle cx="24" cy="44" r="1.5" fill="#78716C"/>
+  <rect x="20" y="56" width="8" height="10" rx="2" fill="#44403C"/>
+  <path d="M24 60 Q20 68 24 74" stroke="#57534E" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <rect x="12" y="62" width="6" height="4" rx="1" fill="#2196F3" opacity="0.8"/>
+</svg>

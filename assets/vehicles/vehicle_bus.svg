@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="60" height="120" viewBox="0 0 60 120">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="body_bus" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#064E3B;stop-opacity:1"/>
+      <stop offset="20%" style="stop-color:#047857;stop-opacity:1"/>
+      <stop offset="80%" style="stop-color:#047857;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#064E3B;stop-opacity:1"/>
+    </linearGradient>
+    <linearGradient id="glass_bus" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#2563EB;stop-opacity:0.6"/>
+      <stop offset="100%" style="stop-color:#1E3A5F;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+  <path d="M6 16
+            Q4 10 30 6
+            Q56 10 54 16
+            L58 28
+            Q59 32 59 38
+            L59 100
+            Q59 108 57 112
+            L54 116
+            Q50 118 30 118
+            Q10 118 6 116
+            L3 112
+            Q1 108 1 100
+            L1 38
+            Q1 32 2 28
+            L6 16 Z" fill="#000000" opacity="0.25" transform="translate(2, 3)"/>
+  <path d="M6 16
+            Q4 10 30 6
+            Q56 10 54 16
+            L58 28
+            Q59 32 59 38
+            L59 100
+            Q59 108 57 112
+            L54 116
+            Q50 118 30 118
+            Q10 118 6 116
+            L3 112
+            Q1 108 1 100
+            L1 38
+            Q1 32 2 28
+            L6 16 Z" fill="url(#body_bus)"/>
+  <path d="M6 16
+            Q4 10 30 6
+            Q56 10 54 16
+            L58 28
+            Q59 32 59 38
+            L59 100
+            Q59 108 57 112
+            L54 116
+            Q50 118 30 118
+            Q10 118 6 116
+            L3 112
+            Q1 108 1 100
+            L1 38
+            Q1 32 2 28
+            L6 16 Z" fill="none" stroke="#111827" stroke-width="2"/>
+  <rect x="8" y="8" width="44" height="12" rx="4" fill="#047857" opacity="0.3"/>
+  <line x1="12" y1="20" x2="48" y2="20" stroke="#064E3B" stroke-width="1.5" opacity="0.5"/>
+  <path d="M14 24 
+        L46 24 
+        L50 34 
+        L10 34 Z" 
+        fill="url(#glass_bus)"/>
+  <path d="M14 24 
+        L46 24 
+        L50 34 
+        L10 34 Z" 
+        fill="none" stroke="#111827" stroke-width="1"/>
+  <rect x="16" y="26" width="10" height="6" rx="1" fill="#FFFFFF" opacity="0.2"/>
+  <rect x="9" y="36" width="42" height="64" rx="3" fill="#064E3B" opacity="0.2"/>
+  <rect x="9" y="36" width="42" height="64" rx="3" fill="none" stroke="#111827" stroke-width="1" opacity="0.5"/>
+  <rect x="10" y="41" width="40" height="8" rx="1" fill="url(#glass_bus)"/>
+  <rect x="10" y="41" width="40" height="8" rx="1" fill="none" stroke="#111827" stroke-width="1"/>
+  <rect x="10" y="50" width="40" height="8" rx="1" fill="url(#glass_bus)"/>
+  <rect x="10" y="50" width="40" height="8" rx="1" fill="none" stroke="#111827" stroke-width="1"/>
+  <rect x="10" y="59" width="40" height="8" rx="1" fill="url(#glass_bus)"/>
+  <rect x="10" y="59" width="40" height="8" rx="1" fill="none" stroke="#111827" stroke-width="1"/>
+  <rect x="10" y="68" width="40" height="8" rx="1" fill="url(#glass_bus)"/>
+  <rect x="10" y="68" width="40" height="8" rx="1" fill="none" stroke="#111827" stroke-width="1"/>
+  <rect x="10" y="77" width="40" height="8" rx="1" fill="url(#glass_bus)"/>
+  <rect x="10" y="77" width="40" height="8" rx="1" fill="none" stroke="#111827" stroke-width="1"/>
+  <rect x="10" y="86" width="40" height="8" rx="1" fill="url(#glass_bus)"/>
+  <rect x="10" y="86" width="40" height="8" rx="1" fill="none" stroke="#111827" stroke-width="1"/>
+  <rect x="10" y="95" width="40" height="8" rx="1" fill="url(#glass_bus)"/>
+  <rect x="10" y="95" width="40" height="8" rx="1" fill="none" stroke="#111827" stroke-width="1"/>
+  <rect x="10" y="18" width="40" height="4" rx="1" fill="#FCD34D"/>
+  <rect x="22" y="34" width="16" height="3" rx="1" fill="#064E3B"/>
+  <rect x="20" y="104" width="20" height="6" rx="2" fill="#064E3B" opacity="0.3"/>
+  <ellipse cx="12" cy="10" rx="4" ry="2" fill="#F3F4F6"/>
+  <ellipse cx="48" cy="10" rx="4" ry="2" fill="#F3F4F6"/>
+  <ellipse cx="12" cy="10" rx="3" ry="1" fill="#FEF3C7"/>
+  <ellipse cx="48" cy="10" rx="3" ry="1" fill="#FEF3C7"/>
+  <rect x="8" y="110" width="10" height="4" rx="2" fill="#DC2626"/>
+  <rect x="42" y="110" width="10" height="4" rx="2" fill="#DC2626"/>
+  <rect x="9" y="111" width="8" height="2" rx="1" fill="#FCA5A5" opacity="0.5"/>
+  <rect x="43" y="111" width="8" height="2" rx="1" fill="#FCA5A5" opacity="0.5"/>
+  <rect x="27" y="6" width="6" height="16" rx="1" fill="#FCD34D" opacity="0.9"/>
+  <rect x="27" y="108" width="6" height="2" rx="1" fill="#FCD34D" opacity="0.9"/>
+  <path d="M12 6 Q30 4 48 6" stroke="#FFFFFF" stroke-width="1" fill="none" opacity="0.3"/>
+  <rect x="2" y="108" width="4" height="6" rx="1" fill="#10B981"/>
+  <rect x="3" y="109" width="2" height="4" rx="0.5" fill="#34D399"/>
+</svg>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="30" height="20" tilewidth="64" tileheight="64" infinite="0" nextlayerid="3" nextobjectid="6">
+ <properties>
+  <property name="archetype" value="fleet_depot"/>
+  <property name="challenge_level" type="int" value="3"/>
+  <property name="description" value="Large commercial fleet charging facility. 3000 kVA (3 MW!) utility connection. Shift-change demand spikes require careful power management. The ultimate challenge. Transformer purchase required."/>
+  <property name="grid_capacity_kva" type="float" value="3000"/>
+  <property name="popularity" type="float" value="75"/>
+  <property name="rent_cost" type="float" value="35000"/>
+  <property name="site_name" value="Central Fleet Plaza"/>
+ </properties>
+ <tileset firstgid="1" source="../tilesets/kilowatt_tiles.tsx"/>
+ <layer id="1" name="tiles" width="30" height="20">
+  <data encoding="csv">
+5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,101,102,
+5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,100,99,
+5,5,6,5,6,5,6,5,6,5,6,5,6,5,5,6,5,6,5,6,5,6,5,6,5,6,5,5,5,5,
+5,5,37,5,37,5,37,5,37,5,37,5,37,5,5,37,5,37,5,37,5,37,5,37,5,37,5,5,5,5,
+5,5,37,5,37,5,37,5,37,5,37,5,37,5,5,37,5,37,5,37,5,37,5,37,5,37,5,5,5,5,
+5,5,7,5,7,5,7,5,7,5,7,5,7,5,5,7,5,7,5,7,5,7,5,7,5,7,5,5,5,5,
+5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+</data>
+ </layer>
+ <objectgroup id="2" name="zones">
+  <object id="3" type="entry" x="0" y="576" width="64" height="64"/>
+  <object id="4" type="exit" x="1792" y="576" width="64" height="64"/>
+  <object id="4" type="parking_area" x="9.38933" y="9.38933" width="1767.54" height="532.844"/>
+ </objectgroup>
+</map>

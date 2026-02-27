@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="48" viewBox="0 0 32 48">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <path d="M16 4 Q6 18 14 32 Q22 42 16 46" stroke="#4B5563" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M16 4 Q6 18 14 32 Q22 42 16 46" stroke="#D32F2F" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M15 6 Q8 16 13 28" stroke="#F44336" stroke-width="1" fill="none" stroke-linecap="round" opacity="0.6"/>
+  <rect x="8" y="40" width="16" height="8" rx="3" fill="#4B5563" filter="url(#shadow)"/>
+  <rect x="10" y="41" width="12" height="6" rx="2" fill="#F44336"/>
+  <circle cx="14" cy="44" r="2" fill="#111827"/>
+  <circle cx="18" cy="44" r="2" fill="#111827"/>
+</svg>

@@ -1,0 +1,454 @@
+//! OCPP 1.6J message generation systems.
+//!
+//! These Bevy systems observe charger state, game events, and session
+//! lifecycle to produce protocol-compliant OCPP messages that are pushed
+//! into the [`OcppMessageQueue`].
+//!
+//! All message types and enums come from the canonical `rust-ocpp` crate
+//! on crates.io. Wire-format serialization uses the thin `serialize_call`
+//! helper in `types.rs`.
+
+use bevy::prelude::*;
+
+use crate::components::charger::Charger;
+use crate::components::driver::Driver;
+use crate::resources::GameClock;
+
+use super::queue::{
+    HEARTBEAT_INTERVAL_GAME_SECS, METER_VALUES_INTERVAL_GAME_SECS, OcppMessageQueue,
+};
+use super::types::*;
+
+// ─────────────────────────────────────────────────────
+//  1. BootNotification system
+// ─────────────────────────────────────────────────────
+
+/// Send `BootNotification` + initial `StatusNotification` for every charger
+/// that hasn't been booted yet.
+pub fn ocpp_boot_system(
+    chargers: Query<(Entity, &Charger)>,
+    mut queue: ResMut<OcppMessageQueue>,
+    game_clock: Res<GameClock>,
+) {
+    if !queue.is_active() {
+        return;
+    }
+
+    for (entity, charger) in chargers.iter() {
+        let state = queue.get_or_create(entity);
+        if state.boot_sent {
+            continue;
+        }
+
+        // Cache the charger ID
+        state.charger_id = charger.id.clone();
+        state.boot_sent = true;
+
+        let charger_id = charger.id.clone();
+        let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
+
+        // Determine model from charger type
+        let model = match charger.charger_type {
+            crate::components::charger::ChargerType::DcFast => "DCFC-50kW",
+            crate::components::charger::ChargerType::AcLevel2 => "AC-L2-7kW",
+        };
+
+        // BootNotification
+        let boot = BootNotificationRequest {
+            charge_point_model: model.to_string(),
+            charge_point_vendor: "KilowattTycoon".to_string(),
+            charge_point_serial_number: Some(charger_id.clone()),
+            firmware_version: Some("1.0.0".to_string()),
+            ..Default::default()
+        };
+        queue.push(
+            charger_id.clone(),
+            serialize_call(&new_unique_id(), "BootNotification", &boot),
+        );
+
+        // Initial StatusNotification
+        let ocpp_status = charger_state_to_ocpp_status(charger.state());
+        let error_code = charger
+            .current_fault
+            .map(fault_to_ocpp_error)
+            .unwrap_or(ChargePointErrorCode::NoError);
+
+        let status_notif = StatusNotificationRequest {
+            connector_id: 1,
+            error_code,
+            status: ocpp_status.clone(),
+            timestamp: Some(timestamp),
+            info: None,
+            vendor_id: None,
+            vendor_error_code: None,
+        };
+        queue.push(
+            charger_id,
+            serialize_call(&new_unique_id(), "StatusNotification", &status_notif),
+        );
+
+        // Update tracked status
+        let state = queue.get_or_create(entity);
+        state.last_status = Some(ocpp_status);
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  2. StatusNotification system (state change detection)
+// ─────────────────────────────────────────────────────
+
+/// Compare each charger's current state with the last sent status.
+/// If it changed, emit a `StatusNotification`.
+pub fn ocpp_status_system(
+    chargers: Query<(Entity, &Charger)>,
+    mut queue: ResMut<OcppMessageQueue>,
+    game_clock: Res<GameClock>,
+) {
+    if !queue.is_active() {
+        return;
+    }
+
+    for (entity, charger) in chargers.iter() {
+        let ocpp_status = charger_state_to_ocpp_status(charger.state());
+
+        let charger_id = {
+            let state = queue.get_or_create(entity);
+            if !state.boot_sent {
+                continue; // Wait for boot
+            }
+
+            // Check if status actually changed
+            if state.last_status.as_ref() == Some(&ocpp_status) {
+                continue;
+            }
+
+            state.last_status = Some(ocpp_status.clone());
+            state.charger_id.clone()
+        };
+
+        let error_code = charger
+            .current_fault
+            .map(fault_to_ocpp_error)
+            .unwrap_or(ChargePointErrorCode::NoError);
+
+        let info = charger.current_fault.map(|f| f.display_name().to_string());
+
+        let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
+
+        let notif = StatusNotificationRequest {
+            connector_id: 1,
+            error_code,
+            status: ocpp_status,
+            timestamp: Some(timestamp),
+            info,
+            vendor_id: None,
+            vendor_error_code: None,
+        };
+        queue.push(
+            charger_id,
+            serialize_call(&new_unique_id(), "StatusNotification", &notif),
+        );
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  3. StartTransaction system
+// ─────────────────────────────────────────────────────
+
+/// Detect when a charger transitions to `is_charging` and emit `StartTransaction`.
+/// We detect this by checking chargers that are charging but don't have an active
+/// OCPP transaction yet.
+pub fn ocpp_start_transaction_system(
+    chargers: Query<(Entity, &Charger)>,
+    drivers: Query<(Entity, &Driver)>,
+    mut queue: ResMut<OcppMessageQueue>,
+    game_clock: Res<GameClock>,
+) {
+    if !queue.is_active() {
+        return;
+    }
+
+    for (entity, charger) in chargers.iter() {
+        if !charger.is_charging {
+            continue;
+        }
+
+        // Check if we already have a transaction for this charger
+        let needs_start = {
+            let state = queue.get_or_create(entity);
+            if !state.boot_sent {
+                continue;
+            }
+            state.transaction_id.is_none()
+        };
+
+        if !needs_start {
+            continue;
+        }
+
+        // Find the driver assigned to this charger
+        let driver_info = drivers
+            .iter()
+            .find(|(_, d)| d.assigned_charger == Some(entity))
+            .map(|(de, d)| (de, d.id.clone()));
+
+        let (driver_entity, id_tag) = match driver_info {
+            Some((de, id)) => (Some(de), id),
+            None => (None, "UNKNOWN".to_string()),
+        };
+
+        let meter_start_wh = (charger.total_energy_delivered_kwh * 1000.0) as i32;
+        let transaction_id = queue.next_transaction_id();
+        let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
+        let charger_id = charger.id.clone();
+
+        let start_tx = StartTransactionRequest {
+            connector_id: 1,
+            id_tag: id_tag.clone(),
+            meter_start: meter_start_wh,
+            timestamp,
+            reservation_id: None,
+        };
+        queue.push(
+            charger_id,
+            serialize_call(&new_unique_id(), "StartTransaction", &start_tx),
+        );
+
+        // Record transaction state
+        let state = queue.get_or_create(entity);
+        state.transaction_id = Some(transaction_id);
+        state.meter_start_wh = meter_start_wh;
+        state.active_driver = driver_entity;
+        state.last_meter_game_time = game_clock.total_game_time;
+
+        info!(
+            "OCPP StartTransaction: charger={}, txn={}, driver={}",
+            state.charger_id, transaction_id, id_tag
+        );
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  4. StopTransaction system
+// ─────────────────────────────────────────────────────
+
+/// Detect when a charger stops charging and emit `StopTransaction`.
+/// Triggered when a charger has an active OCPP transaction but is no longer charging.
+pub fn ocpp_stop_transaction_system(
+    chargers: Query<(Entity, &Charger)>,
+    mut queue: ResMut<OcppMessageQueue>,
+    game_clock: Res<GameClock>,
+) {
+    if !queue.is_active() {
+        return;
+    }
+
+    // Collect entities that need StopTransaction to avoid borrow conflicts
+    let to_stop: Vec<(Entity, String, i32, i32, Option<Reason>)> = chargers
+        .iter()
+        .filter_map(|(entity, charger)| {
+            let state = queue.charger_state.get(&entity)?;
+            let txn_id = state.transaction_id?;
+
+            // Charger is no longer charging but has an active transaction
+            if charger.is_charging {
+                return None;
+            }
+
+            let meter_stop_wh = (charger.total_energy_delivered_kwh * 1000.0) as i32;
+            let reason = if charger.current_fault.is_some() {
+                Some(Reason::PowerLoss)
+            } else {
+                Some(Reason::Local) // Normal completion
+            };
+
+            Some((
+                entity,
+                state.charger_id.clone(),
+                txn_id,
+                meter_stop_wh,
+                reason,
+            ))
+        })
+        .collect();
+
+    for (entity, charger_id, txn_id, meter_stop_wh, reason) in to_stop {
+        let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
+
+        // Final meter reading
+        let final_meter = MeterValue {
+            timestamp,
+            sampled_value: vec![SampledValue {
+                value: meter_stop_wh.to_string(),
+                context: Some(ReadingContext::TransactionEnd),
+                format: Some(ValueFormat::Raw),
+                measurand: Some(Measurand::EnergyActiveImportRegister),
+                phase: None,
+                location: Some(Location::Outlet),
+                unit: Some(UnitOfMeasure::Wh),
+            }],
+        };
+
+        let stop_tx = StopTransactionRequest {
+            id_tag: None,
+            meter_stop: meter_stop_wh,
+            timestamp,
+            transaction_id: txn_id,
+            reason,
+            transaction_data: Some(vec![final_meter]),
+        };
+        queue.push(
+            charger_id.clone(),
+            serialize_call(&new_unique_id(), "StopTransaction", &stop_tx),
+        );
+
+        // Clear transaction state
+        if let Some(state) = queue.charger_state.get_mut(&entity) {
+            info!(
+                "OCPP StopTransaction: charger={}, txn={}",
+                charger_id, txn_id
+            );
+            state.transaction_id = None;
+            state.active_driver = None;
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  5. MeterValues system (periodic sampling)
+// ─────────────────────────────────────────────────────
+
+/// Periodically emit `MeterValues` for all actively charging connectors.
+/// Samples: energy (Wh), power (W), and SoC (%).
+pub fn ocpp_meter_values_system(
+    chargers: Query<(Entity, &Charger)>,
+    drivers: Query<&Driver>,
+    mut queue: ResMut<OcppMessageQueue>,
+    game_clock: Res<GameClock>,
+) {
+    if !queue.is_active() || game_clock.is_paused() {
+        return;
+    }
+
+    let now = game_clock.total_game_time;
+
+    // Collect what we need to avoid borrow conflicts
+    let to_send: Vec<(Entity, String, i32, f32, f32, Option<f32>)> = chargers
+        .iter()
+        .filter_map(|(entity, charger)| {
+            if !charger.is_charging {
+                return None;
+            }
+
+            let state = queue.charger_state.get(&entity)?;
+            let txn_id = state.transaction_id?;
+
+            // Check interval
+            if now - state.last_meter_game_time < METER_VALUES_INTERVAL_GAME_SECS {
+                return None;
+            }
+
+            // Look up driver SoC
+            let soc = state
+                .active_driver
+                .and_then(|de| drivers.get(de).ok())
+                .map(|d| d.charge_progress() * 100.0);
+
+            let energy_wh = charger.total_energy_delivered_kwh * 1000.0;
+            let power_w = charger.current_power_kw * 1000.0;
+
+            Some((entity, charger.id.clone(), txn_id, energy_wh, power_w, soc))
+        })
+        .collect();
+
+    for (entity, charger_id, txn_id, energy_wh, power_w, soc) in to_send {
+        let timestamp = queue.game_time_to_utc(now);
+
+        let mut sampled = vec![
+            SampledValue {
+                value: format!("{:.0}", energy_wh),
+                context: Some(ReadingContext::SamplePeriodic),
+                format: Some(ValueFormat::Raw),
+                measurand: Some(Measurand::EnergyActiveImportRegister),
+                phase: None,
+                location: Some(Location::Outlet),
+                unit: Some(UnitOfMeasure::Wh),
+            },
+            SampledValue {
+                value: format!("{:.0}", power_w),
+                context: Some(ReadingContext::SamplePeriodic),
+                format: Some(ValueFormat::Raw),
+                measurand: Some(Measurand::PowerActiveImport),
+                phase: None,
+                location: Some(Location::Outlet),
+                unit: Some(UnitOfMeasure::W),
+            },
+        ];
+
+        if let Some(soc_val) = soc {
+            sampled.push(SampledValue {
+                value: format!("{:.0}", soc_val),
+                context: Some(ReadingContext::SamplePeriodic),
+                format: Some(ValueFormat::Raw),
+                measurand: Some(Measurand::SoC),
+                phase: None,
+                location: None,
+                unit: Some(UnitOfMeasure::Percent),
+            });
+        }
+
+        let meter = MeterValuesRequest {
+            connector_id: 1,
+            transaction_id: Some(txn_id),
+            meter_value: vec![MeterValue {
+                timestamp,
+                sampled_value: sampled,
+            }],
+        };
+        queue.push(
+            charger_id,
+            serialize_call(&new_unique_id(), "MeterValues", &meter),
+        );
+
+        // Update last meter time
+        if let Some(state) = queue.charger_state.get_mut(&entity) {
+            state.last_meter_game_time = now;
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  6. Heartbeat system
+// ─────────────────────────────────────────────────────
+
+/// Periodically emit `Heartbeat` messages (one per charger).
+pub fn ocpp_heartbeat_system(
+    chargers: Query<(Entity, &Charger)>,
+    mut queue: ResMut<OcppMessageQueue>,
+    game_clock: Res<GameClock>,
+) {
+    if !queue.is_active() || game_clock.is_paused() {
+        return;
+    }
+
+    let now = game_clock.total_game_time;
+
+    if now - queue.last_heartbeat_game_time < HEARTBEAT_INTERVAL_GAME_SECS {
+        return;
+    }
+
+    queue.last_heartbeat_game_time = now;
+
+    let heartbeat = HeartbeatRequest {};
+
+    for (entity, charger) in chargers.iter() {
+        let state = queue.get_or_create(entity);
+        if !state.boot_sent {
+            continue;
+        }
+        queue.push(
+            charger.id.clone(),
+            serialize_call(&new_unique_id(), "Heartbeat", &heartbeat),
+        );
+    }
+}

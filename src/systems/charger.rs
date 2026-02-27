@@ -1,0 +1,567 @@
+//! Charger systems
+
+use bevy::prelude::*;
+use rand::Rng;
+
+use crate::components::charger::{Charger, FaultType};
+use crate::components::driver::{Driver, DriverState};
+use crate::data::LoadedChargers;
+use crate::events::{ChargerFaultEvent, DriverLeftEvent};
+use crate::resources::{
+    GameClock, GameState, MultiSiteManager, OemTier, SiteConfig, TutorialState, TutorialStep,
+};
+
+/// Spawn charger entities from loaded data
+pub fn spawn_chargers_system(
+    mut commands: Commands,
+    loaded_chargers: Option<Res<LoadedChargers>>,
+    site_config: Res<SiteConfig>,
+    multi_site: Res<crate::resources::MultiSiteManager>,
+) {
+    let Some(loaded) = loaded_chargers else {
+        return;
+    };
+
+    info!(
+        "Spawning {} chargers for site {}",
+        loaded.0.len(),
+        site_config.name
+    );
+
+    for charger_data in &loaded.0 {
+        let scripted_fault = charger_data.scripted_fault.as_ref();
+
+        let charger = Charger {
+            id: charger_data.id.clone(),
+            charger_type: charger_data.charger_type,
+            rated_power_kw: charger_data.rated_power_kw,
+            phase: charger_data.phase,
+            health: charger_data.health,
+            connector_jam_chance: charger_data.connector_jam_chance,
+            scripted_fault_time: scripted_fault.map(|f| f.trigger_time),
+            scripted_fault_type: scripted_fault.map(|f| f.fault_type),
+            ..default()
+        };
+
+        // Spawn charger entity with sprite
+        let pos = Vec3::new(charger_data.position.x, charger_data.position.y, 0.0);
+
+        // Get active site ID for tagging
+        let site_id = multi_site
+            .viewed_site_id
+            .unwrap_or(crate::resources::SiteId(0));
+
+        commands.spawn((
+            charger,
+            Transform::from_translation(pos),
+            Visibility::default(),
+            crate::components::BelongsToSite::new(site_id),
+        ));
+
+        info!(
+            "  Spawned charger {} at ({}, {}) for site {:?}",
+            charger_data.id, charger_data.position.x, charger_data.position.y, site_id
+        );
+    }
+}
+
+/// Update charger cooldowns
+pub fn charger_cooldown_system(
+    mut chargers: Query<&mut Charger>,
+    game_clock: Res<GameClock>,
+    time: Res<Time>,
+) {
+    if game_clock.is_paused() {
+        return;
+    }
+
+    let delta = time.delta_secs() * game_clock.speed.multiplier();
+
+    for mut charger in &mut chargers {
+        charger.update_cooldowns(delta);
+    }
+}
+
+/// Helper to inject a fault and immediately clear all session state.
+/// This ensures no power flows through a faulted charger even within the same frame.
+/// The fault is NOT immediately visible to the player - detection depends on OEM tier.
+fn inject_fault(charger: &mut Charger, fault_type: FaultType, game_time: f32) {
+    charger.current_fault = Some(fault_type);
+    charger.fault_occurred_at = Some(game_time);
+    charger.fault_detected_at = None;
+    charger.fault_is_detected = false;
+    charger.fault_discovered = false; // Fault starts as undiscovered
+    // Degrade reliability on fault occurrence (severity-based)
+    charger.degrade_reliability_fault(&fault_type);
+    // Immediately clear ALL session state to prevent any power flow
+    charger.is_charging = false;
+    charger.current_power_kw = 0.0;
+    charger.requested_power_kw = 0.0;
+    charger.allocated_power_kw = 0.0;
+    charger.session_start_game_time = None;
+}
+
+/// Check for scripted fault triggers
+pub fn scripted_fault_system(
+    mut chargers: Query<(Entity, &mut Charger, &crate::components::BelongsToSite)>,
+    game_clock: Res<GameClock>,
+    mut game_state: ResMut<GameState>,
+    _multi_site: Res<crate::resources::MultiSiteManager>,
+    tutorial_state: Option<Res<TutorialState>>,
+) {
+    // Suppress non-tutorial faults during the FixCharger tutorial step
+    if tutorial_state
+        .as_ref()
+        .is_some_and(|ts| ts.current_step == Some(TutorialStep::FixCharger))
+    {
+        return;
+    }
+
+    for (_entity, mut charger, _belongs_to_site) in &mut chargers {
+        // Check scripted fault
+        if let (Some(trigger_time), Some(fault_type)) =
+            (charger.scripted_fault_time, charger.scripted_fault_type)
+            && game_clock.game_time >= trigger_time
+            && charger.current_fault.is_none()
+        {
+            // Trigger the fault and clear all session state immediately
+            inject_fault(&mut charger, fault_type, game_clock.total_game_time);
+
+            // Clear the trigger so it doesn't fire again
+            charger.scripted_fault_time = None;
+
+            info!(
+                "Scripted fault triggered on {}: {:?} (detection pending)",
+                charger.id, fault_type
+            );
+
+            // NOTE: ChargerFaultEvent is now emitted by fault_detection_system
+            // after the detection delay, NOT immediately here.
+
+            // First fault tutorial
+            if !game_state.first_fault_seen {
+                game_state.first_fault_seen = true;
+            }
+        }
+    }
+}
+
+/// Safety watchdog system - enforces state consistency every frame.
+/// If a charger cannot deliver power (disabled or faulted), this system
+/// force-clears all session-related fields to prevent any other system
+/// from accidentally thinking a charging session is active.
+pub fn charger_state_system(mut chargers: Query<&mut Charger>, game_clock: Res<GameClock>) {
+    if game_clock.is_paused() {
+        return;
+    }
+
+    for mut charger in &mut chargers {
+        // SAFETY WATCHDOG: If hardware cannot deliver power, force-clear ALL session state.
+        // This is the authoritative enforcer - even if other systems incorrectly set
+        // is_charging = true, this will catch and correct it every frame.
+        if !charger.can_deliver_power() {
+            charger.is_charging = false;
+            charger.current_power_kw = 0.0;
+            charger.requested_power_kw = 0.0;
+            charger.allocated_power_kw = 0.0;
+            continue;
+        }
+
+        // Clear power if not charging (but hardware is functional)
+        if !charger.is_charging {
+            charger.current_power_kw = 0.0;
+            charger.requested_power_kw = 0.0;
+            charger.allocated_power_kw = 0.0;
+        }
+    }
+}
+
+/// Check for connector jam when session ends (uses tier-adjusted chance).
+/// Suppressed during the FixCharger tutorial step to avoid blocking tutorial progression.
+pub fn check_connector_jam(charger: &mut Charger, game_time: f32, tutorial_active: bool) -> bool {
+    // Suppress connector jams during the FixCharger tutorial step
+    if tutorial_active {
+        return false;
+    }
+
+    let effective_chance = charger.effective_jam_chance();
+    if effective_chance > 0.0 {
+        let mut rng = rand::rng();
+        if rng.random::<f32>() < effective_chance {
+            // Use inject_fault to ensure all session state is cleared
+            inject_fault(charger, FaultType::CableDamage, game_time);
+            return true;
+        }
+    }
+    false
+}
+
+/// Stochastic fault system - randomly injects faults based on charger tier MTBF
+///
+/// Chargers can develop faults both while charging (high stress) and while idle (wear and tear).
+/// Idle fault probability is 10x lower than charging fault probability.
+///
+/// Also applies per-tick maintenance effects:
+/// - `failure_rate_multiplier` from the site's maintenance investment
+/// - Wear (operating_hours) reduction from maintenance
+/// - Passive reliability recovery from maintenance
+pub fn stochastic_fault_system(
+    mut chargers: Query<(Entity, &mut Charger, &crate::components::BelongsToSite)>,
+    game_clock: Res<GameClock>,
+    time: Res<Time>,
+    mut game_state: ResMut<GameState>,
+    multi_site: Res<crate::resources::MultiSiteManager>,
+    tutorial_state: Option<Res<TutorialState>>,
+) {
+    if game_clock.is_paused() {
+        return;
+    }
+
+    // Suppress non-tutorial faults during the FixCharger tutorial step
+    if tutorial_state
+        .as_ref()
+        .is_some_and(|ts| ts.current_step == Some(TutorialStep::FixCharger))
+    {
+        return;
+    }
+
+    let delta_game_seconds = time.delta_secs() * game_clock.speed.multiplier();
+    let delta_hours = delta_game_seconds / 3600.0;
+
+    let mut rng = rand::rng();
+
+    for (_entity, mut charger, belongs_to_site) in &mut chargers {
+        let strategy = multi_site
+            .get_site(belongs_to_site.site_id)
+            .map(|s| &s.service_strategy);
+
+        // Maintenance effects: wear reduction and passive reliability recovery
+        if let Some(strat) = strategy {
+            let maintenance_rate = (strat.maintenance_investment / 50.0).clamp(0.0, 1.0);
+            let wear_recovery = (strat.maintenance_investment / 30.0).min(1.0);
+            charger.operating_hours =
+                (charger.operating_hours - wear_recovery * delta_hours).max(0.0);
+            charger.recover_reliability_maintenance(maintenance_rate, delta_hours);
+        }
+
+        // Only check operating chargers without existing faults for fault injection
+        if charger.current_fault.is_some() || charger.is_disabled {
+            continue;
+        }
+
+        // Track operating hours (both charging and idle count towards wear)
+        charger.operating_hours += delta_hours;
+        charger.hours_since_last_fault += delta_hours;
+
+        // Check for random fault (scaled by maintenance investment)
+        let failure_mult = strategy.map(|s| s.failure_rate_multiplier()).unwrap_or(1.0);
+        let fault_prob = charger.fault_probability(delta_hours) * failure_mult;
+        if fault_prob > 0.0 && rng.random::<f32>() < fault_prob {
+            // Pick a random fault type (weighted towards less severe)
+            let fault_type = match rng.random_range(0..100) {
+                0..=40 => FaultType::CommunicationError, // 40%
+                41..=65 => FaultType::PaymentError,      // 25%
+                66..=85 => FaultType::FirmwareFault,     // 20%
+                86..=95 => FaultType::GroundFault,       // 10%
+                _ => FaultType::CableDamage,             // 5%
+            };
+
+            // Inject fault and clear all session state immediately
+            inject_fault(&mut charger, fault_type, game_clock.total_game_time);
+            charger.hours_since_last_fault = 0.0;
+
+            info!(
+                "Random fault on {} (tier {:?}, {:.0} operating hours): {:?} (detection pending)",
+                charger.id, charger.tier, charger.operating_hours, fault_type
+            );
+
+            // NOTE: ChargerFaultEvent is now emitted by fault_detection_system
+            // after the detection delay, NOT immediately here.
+
+            if !game_state.first_fault_seen {
+                game_state.first_fault_seen = true;
+            }
+        }
+    }
+}
+
+/// Guaranteed Day 1 technician fault - ensures players experience the technician dispatch mechanic.
+///
+/// On Day 1 only, after sufficient gameplay (15+ real seconds and 6-10 completed sessions),
+/// this system injects a `GroundFault` (requires technician dispatch) on a random
+/// charging charger. This guarantees players learn about technician dispatch.
+pub fn guaranteed_day1_technician_fault_system(
+    mut chargers: Query<(Entity, &mut Charger, &crate::components::BelongsToSite)>,
+    game_clock: Res<GameClock>,
+    mut game_state: ResMut<GameState>,
+    _multi_site: Res<crate::resources::MultiSiteManager>,
+    tutorial_state: Option<Res<TutorialState>>,
+) {
+    // Only run on Day 1
+    if game_clock.day != 1 {
+        return;
+    }
+
+    // Suppress non-tutorial faults during the FixCharger tutorial step
+    if tutorial_state
+        .as_ref()
+        .is_some_and(|ts| ts.current_step == Some(TutorialStep::FixCharger))
+    {
+        return;
+    }
+
+    // Skip if already injected this fault
+    if game_state.first_technician_fault_injected {
+        return;
+    }
+
+    // Initialize target session count if not yet determined (random 6-10)
+    let mut rng = rand::rng();
+    let target_sessions = *game_state
+        .day1_fault_target_session
+        .get_or_insert_with(|| rng.random_range(6..=10));
+
+    // Wait until at least 15 seconds of real wall clock time has passed
+    const MIN_REAL_TIME: f32 = 15.0;
+    if game_clock.total_real_time < MIN_REAL_TIME {
+        return;
+    }
+
+    // Wait until the random target number of sessions have been completed
+    if game_state.sessions_completed < target_sessions {
+        return;
+    }
+
+    // Collect all charging chargers without existing faults
+    let charging_chargers: Vec<_> = chargers
+        .iter_mut()
+        .filter(|(_, charger, _)| charger.is_charging && charger.current_fault.is_none())
+        .collect();
+
+    // Wait until at least one charger is actively charging
+    if charging_chargers.is_empty() {
+        return;
+    }
+
+    // Pick a random charging charger
+    let index = rng.random_range(0..charging_chargers.len());
+
+    // Need to re-query to get mutable access to just the selected charger
+    let selected_entity = {
+        let charging_entities: Vec<_> = chargers
+            .iter()
+            .filter(|(_, charger, _)| charger.is_charging && charger.current_fault.is_none())
+            .map(|(e, _, _)| e)
+            .collect();
+
+        if charging_entities.is_empty() {
+            return;
+        }
+        charging_entities[index % charging_entities.len()]
+    };
+
+    // Inject ground fault on the selected charger
+    if let Ok((_entity, mut charger, _belongs_to_site)) = chargers.get_mut(selected_entity) {
+        // Use GroundFault - requires technician (15 min repair)
+        inject_fault(
+            &mut charger,
+            FaultType::GroundFault,
+            game_clock.total_game_time,
+        );
+
+        info!(
+            "Day 1 guaranteed technician fault triggered on {} after {} sessions: GroundFault (detection pending)",
+            charger.id, game_state.sessions_completed
+        );
+
+        // NOTE: ChargerFaultEvent is now emitted by fault_detection_system
+        // after the detection delay, NOT immediately here.
+
+        // Mark as injected so it doesn't trigger again
+        game_state.first_technician_fault_injected = true;
+
+        // Also mark first fault seen for tutorial purposes
+        if !game_state.first_fault_seen {
+            game_state.first_fault_seen = true;
+        }
+    }
+}
+
+/// Kick out any drivers at a charger that just developed a fault.
+///
+/// Handles drivers in both Charging and WaitingForCharger states.
+/// WaitingForCharger can occur when the charging system detects the fault first
+/// and pauses the session before this kick system runs.
+///
+/// Drivers are immediately sent away angry with no payment - the charger breaking
+/// during their session is a critical failure that ruins the customer experience.
+///
+/// Note: This system does NOT need to clear charger.is_charging because inject_fault()
+/// already clears all session state when a fault is injected (see line 89).
+pub fn kick_drivers_from_faulted_chargers(
+    mut drivers: Query<(Entity, &mut Driver)>,
+    chargers: Query<(Entity, &Charger), Changed<Charger>>,
+    mut game_state: ResMut<GameState>,
+    mut left_events: MessageWriter<DriverLeftEvent>,
+) {
+    for (charger_entity, charger) in chargers.iter() {
+        // Only process chargers that have a fault
+        if charger.current_fault.is_none() {
+            continue;
+        }
+
+        // Find any driver assigned to this charger who is charging or waiting
+        for (driver_entity, mut driver) in drivers.iter_mut() {
+            if driver.assigned_charger == Some(charger_entity)
+                && matches!(
+                    driver.state,
+                    DriverState::Charging | DriverState::WaitingForCharger
+                )
+            {
+                let previous_state = driver.state;
+
+                // Driver leaves immediately - angry, no payment
+                driver.state = DriverState::LeftAngry;
+
+                // Reputation penalty - charger broke during their session
+                game_state.change_reputation(-4);
+                game_state.sessions_failed += 1;
+                game_state.daily_history.current_day.sessions_failed_today += 1;
+
+                info!(
+                    "Driver {} kicked out - charger {} broke during session (was {:?})",
+                    driver.id, charger.id, previous_state
+                );
+
+                left_events.write(DriverLeftEvent {
+                    driver_entity,
+                    driver_id: driver.id.clone(),
+                    angry: true,
+                    revenue: 0.0,
+                });
+            }
+        }
+    }
+}
+
+// ============ Fault Detection System ============
+
+/// Fault detection system - handles the delay between when a fault occurs and when
+/// the player is notified, based on OEM tier.
+///
+/// Without O&M: faults are not detected until a driver tries to use the charger.
+/// With O&M: detection is near-instant (~10s).
+/// Both O&M tiers auto-remediate software faults (no player action needed).
+pub fn fault_detection_system(
+    mut chargers: Query<(Entity, &mut Charger, &crate::components::BelongsToSite)>,
+    game_clock: Res<GameClock>,
+    multi_site: Res<MultiSiteManager>,
+    mut game_state: ResMut<GameState>,
+    mut fault_events: MessageWriter<ChargerFaultEvent>,
+) {
+    if game_clock.is_paused() {
+        return;
+    }
+
+    for (entity, mut charger, belongs) in &mut chargers {
+        // Skip chargers without undetected faults
+        if charger.current_fault.is_none() || charger.fault_is_detected {
+            continue;
+        }
+
+        let Some(occurred_at) = charger.fault_occurred_at else {
+            // Fault exists but no timestamp - legacy, mark as detected immediately
+            charger.fault_is_detected = true;
+            charger.fault_detected_at = Some(game_clock.total_game_time);
+            continue;
+        };
+
+        // Get the OEM tier for this charger's site
+        let oem_tier = multi_site
+            .get_site(belongs.site_id)
+            .map(|site| site.site_upgrades.oem_tier)
+            .unwrap_or(OemTier::None);
+
+        // Use total_game_time for elapsed calculation (monotonic, survives day boundaries)
+        let elapsed = game_clock.total_game_time - occurred_at;
+
+        // Without O&M, faults are not auto-detected — they stay hidden until a driver
+        // tries to use the charger (handled in driver.rs). With O&M, detection is near-instant.
+        let should_detect = match oem_tier.detection_delay_secs() {
+            Some(delay) => elapsed >= delay,
+            None => false, // No O&M: not detected until a driver tries to charge
+        };
+
+        if should_detect {
+            charger.fault_is_detected = true;
+            charger.fault_discovered = true; // Sync legacy flag so drivers don't re-discover
+            charger.fault_detected_at = Some(game_clock.total_game_time);
+
+            let fault_type = charger.current_fault.unwrap();
+
+            info!(
+                "Fault detected on {} ({:?}) after {:.0}s (O&M: {:?})",
+                charger.id, fault_type, elapsed, oem_tier
+            );
+
+            // Emit the fault event (now the player sees it in UI)
+            fault_events.write(ChargerFaultEvent {
+                charger_entity: entity,
+                charger_id: charger.id.clone(),
+                fault_type,
+            });
+
+            // Achievement tracking: reset fleet session streak on fault at a fleet site
+            if let Some(site) = multi_site.get_site(belongs.site_id)
+                && site.archetype.is_fleet()
+            {
+                game_state.fleet_sessions_without_fault = 0;
+            }
+
+            // Auto-remediation: directly fix software faults (no cooldown, no player action)
+            if oem_tier.has_auto_remediation() && !fault_type.requires_technician() {
+                info!(
+                    "Auto-remediation: instantly clearing {:?} on {}",
+                    fault_type, charger.id
+                );
+
+                let resolved_at = game_clock.total_game_time;
+
+                // Directly clear the fault (bypassing cooldowns and success rolls)
+                charger.current_fault = None;
+                let downtime = resolved_at - occurred_at;
+                charger.recover_reliability_fast_fix(
+                    downtime,
+                    oem_tier.reliability_recovery_multiplier(),
+                );
+                charger.fault_occurred_at = None;
+                charger.fault_detected_at = None;
+                charger.fault_is_detected = false;
+            }
+        }
+    }
+}
+
+// ============ Reliability Degradation System ============
+
+/// Degrades charger reliability while faulted (ongoing downtime penalty).
+/// Also tracks analytics for downtime.
+pub fn reliability_degradation_system(
+    mut chargers: Query<(Entity, &mut Charger, &crate::components::BelongsToSite)>,
+    game_clock: Res<GameClock>,
+    time: Res<Time>,
+) {
+    if game_clock.is_paused() {
+        return;
+    }
+
+    let delta_game_seconds = time.delta_secs() * game_clock.speed.multiplier();
+    let delta_hours = delta_game_seconds / 3600.0;
+
+    for (_entity, mut charger, _belongs) in &mut chargers {
+        // Only degrade while charger has an active fault
+        if charger.current_fault.is_some() {
+            charger.degrade_reliability_downtime(delta_hours);
+        }
+    }
+}

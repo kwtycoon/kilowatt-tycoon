@@ -1,0 +1,44 @@
+[
+  {
+    "id": "chg_01",
+    "type": "dc_fast",
+    "rated_power_kw": 50,
+    "phase": "A",
+    "health": 0.85,
+    "position": {"x": 200, "y": 300},
+    "notes": "Reliable"
+  },
+  {
+    "id": "chg_02",
+    "type": "dc_fast",
+    "rated_power_kw": 50,
+    "phase": "A",
+    "health": 0.70,
+    "position": {"x": 350, "y": 300},
+    "scripted_fault": {
+      "type": "communication_error",
+      "trigger_time": 30
+    },
+    "notes": "Prone to faults"
+  },
+  {
+    "id": "chg_03",
+    "type": "ac_level2",
+    "rated_power_kw": 22,
+    "phase": "B",
+    "health": 0.90,
+    "position": {"x": 500, "y": 300},
+    "notes": "Reliable"
+  },
+  {
+    "id": "chg_04",
+    "type": "ac_level2",
+    "rated_power_kw": 22,
+    "phase": "C",
+    "health": 0.60,
+    "position": {"x": 650, "y": 300},
+    "connector_jam_chance": 0.4,
+    "notes": "Frequent connector issues"
+  }
+]
+

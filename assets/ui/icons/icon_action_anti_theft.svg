@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <!-- Outer circle (darker border) -->
+  <circle cx="24" cy="24" r="20" fill="#0284C7" filter="url(#shadow)"/>
+  <!-- Inner circle (lighter fill) -->
+  <circle cx="24" cy="24" r="18" fill="#0EA5E9"/>
+  <!-- Shield icon (white) -->
+  <path d="M24 10 L33 15 L33 23 C33 29 24 36 24 36 C24 36 15 29 15 23 L15 15 Z"
+        fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M24 13 L31 17 L31 23 C31 28 24 33.5 24 33.5 C24 33.5 17 28 17 23 L17 17 Z"
+        fill="rgba(255,255,255,0.2)"/>
+</svg>

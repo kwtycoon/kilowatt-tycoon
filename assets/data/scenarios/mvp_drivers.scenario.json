@@ -1,0 +1,142 @@
+{
+  "scenario_id": "mvp_5min",
+  "name": "First Street Station - MVP",
+  "duration_game_seconds": 3600,
+  "revenue_target": 100,
+  "drivers": [
+    {
+      "id": "drv_01",
+      "vehicle": "sedan",
+      "vehicle_name": "Tesla Model 3",
+      "arrival_time": 0,
+      "target_charger": "chg_01",
+      "patience": "high",
+      "charge_needed_kwh": 30,
+      "notes": "Session starts immediately"
+    },
+    {
+      "id": "drv_02",
+      "vehicle": "pickup",
+      "vehicle_name": "Rivian R1T",
+      "arrival_time": 20,
+      "target_charger": "chg_02",
+      "patience": "medium",
+      "charge_needed_kwh": 35,
+      "notes": "Will encounter comm error"
+    },
+    {
+      "id": "drv_03",
+      "vehicle": "compact",
+      "vehicle_name": "Chevy Bolt",
+      "arrival_time": 45,
+      "target_charger": "chg_03",
+      "patience": "high",
+      "charge_needed_kwh": 20,
+      "notes": "AC L2 session"
+    },
+    {
+      "id": "drv_04",
+      "vehicle": "pickup",
+      "vehicle_name": "Ford F-150 Lightning",
+      "arrival_time": 90,
+      "target_charger": "chg_01",
+      "patience": "low",
+      "charge_needed_kwh": 40,
+      "notes": "May need to queue"
+    },
+    {
+      "id": "drv_05",
+      "vehicle": "crossover",
+      "vehicle_name": "Hyundai Ioniq 5",
+      "arrival_time": 120,
+      "target_charger": "chg_02",
+      "patience": "medium",
+      "charge_needed_kwh": 25,
+      "notes": "Targets previously-faulted charger"
+    },
+    {
+      "id": "drv_06",
+      "vehicle": "suv",
+      "vehicle_name": "VW ID.4",
+      "arrival_time": 150,
+      "target_charger": "chg_04",
+      "patience": "high",
+      "charge_needed_kwh": 18,
+      "notes": "May encounter connector jam"
+    },
+    {
+      "id": "drv_07",
+      "vehicle": "sedan",
+      "vehicle_name": "Porsche Taycan",
+      "arrival_time": 180,
+      "target_charger": "chg_01",
+      "patience": "very_low",
+      "charge_needed_kwh": 35,
+      "notes": "Very impatient - will leave quickly if queue"
+    },
+    {
+      "id": "drv_08",
+      "vehicle": "crossover",
+      "vehicle_name": "Kia EV6",
+      "arrival_time": 210,
+      "target_charger": null,
+      "patience": "medium",
+      "charge_needed_kwh": 28,
+      "notes": "Will pick any available charger"
+    },
+    {
+      "id": "drv_09",
+      "vehicle": "sedan",
+      "vehicle_name": "Mercedes EQS",
+      "arrival_time": 240,
+      "target_charger": null,
+      "patience": "low",
+      "charge_needed_kwh": 32,
+      "notes": "Will pick any available charger"
+    },
+    {
+      "id": "drv_10",
+      "vehicle": "suv",
+      "vehicle_name": "BMW iX",
+      "arrival_time": 270,
+      "target_charger": null,
+      "patience": "medium",
+      "charge_needed_kwh": 30,
+      "notes": "Final wave driver"
+    }
+  ],
+  "scripted_events": [
+    {
+      "time": 30,
+      "type": "charger_fault",
+      "charger_id": "chg_02",
+      "fault_type": "communication_error",
+      "notes": "First fault - triggers tutorial"
+    },
+    {
+      "time": 120,
+      "type": "transformer_warning",
+      "temp_threshold": 75,
+      "notes": "If load is high"
+    },
+    {
+      "time": 150,
+      "type": "charger_fault",
+      "charger_id": "chg_02",
+      "fault_type": "communication_error",
+      "notes": "Repeat fault - soft reboot may fail"
+    },
+    {
+      "time": 180,
+      "type": "phase_overload_check",
+      "phase": "A",
+      "notes": "Two DC chargers on phase A"
+    },
+    {
+      "time": 210,
+      "type": "billing_dispute",
+      "notes": "First ticket arrives"
+    }
+  ]
+}
+

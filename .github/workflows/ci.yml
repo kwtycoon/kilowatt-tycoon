@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  validate-manifest:
+    name: Validate Asset Manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate asset manifest
+        run: python tools/validate_manifest.py
+
+  check-asset-build:
+    name: Check Asset Build is Valid
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Inkscape (for SVG→PNG conversion)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y inkscape
+
+      - name: Run asset build
+        run: python tools/build_assets.py --skip-existing
+
+      - name: Check for uncommitted changes
+        run: |
+          git diff --exit-code || (
+            echo "❌ Generated asset files are out of date!"
+            echo ""
+            echo "The following files have uncommitted changes after build:"
+            git diff --name-only
+            echo ""
+            echo "Please run 'python3 tools/build_assets.py' locally and commit changes."
+            exit 1
+          )
+
+
+  rust-checks:
+    name: Rust Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libudev-dev \
+            libasound2-dev \
+            libxkbcommon-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libwayland-dev
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: native
+          cache-targets: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features --no-deps -- -D warnings
+
+      - name: Check compilation
+        run: cargo check --all-targets --all-features
+
+      - name: Run tests
+        run: cargo test --all-features
+
+
+  wasm-check:
+    name: WASM Compilation Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wasm
+          cache-targets: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      
+      - name: Check WASM compilation
+        run: cargo check --target wasm32-unknown-unknown

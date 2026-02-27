@@ -1,0 +1,10 @@
+# Dependencies for AI asset generation (tools/generate_assets_ai.py)
+#
+# For Vertex AI:
+google-cloud-aiplatform>=1.38.0
+#
+# For Google AI Studio (Gemini):
+google-generativeai>=0.8.0
+#
+# Common dependencies:
+Pillow>=10.0.0

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <radialGradient id="oil_center" cx="40%" cy="40%" r="60%">
+      <stop offset="0%" style="stop-color:#1a1a2e;stop-opacity:0.5"/>
+      <stop offset="50%" style="stop-color:#16213e;stop-opacity:0.35"/>
+      <stop offset="100%" style="stop-color:#0f0f0f;stop-opacity:0.2"/>
+    </radialGradient>
+    <radialGradient id="oil_sheen" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" style="stop-color:#4a69bd;stop-opacity:0.2"/>
+      <stop offset="30%" style="stop-color:#6a89cc;stop-opacity:0.15"/>
+      <stop offset="60%" style="stop-color:#82589F;stop-opacity:0.1"/>
+      <stop offset="100%" style="stop-color:transparent;stop-opacity:0"/>
+    </radialGradient>
+  </defs>
+  <ellipse cx="16" cy="16" rx="13" ry="11" fill="url(#oil_center)"/>
+  <ellipse cx="12" cy="14" rx="9" ry="7" fill="url(#oil_center)"/>
+  <ellipse cx="14" cy="14" rx="10" ry="8" fill="url(#oil_sheen)"/>
+  <ellipse cx="14" cy="15" rx="4" ry="3" fill="#000000" opacity="0.25"/>
+  <ellipse cx="24" cy="20" rx="5" ry="3" fill="#000000" opacity="0.15" transform="rotate(30 24 20)"/>
+  <ellipse cx="8" cy="22" rx="4" ry="2" fill="#000000" opacity="0.12" transform="rotate(-20 8 22)"/>
+</svg>

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <radialGradient id="ev_bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#81C784;stop-opacity:1"/>
+      <stop offset="80%" style="stop-color:#4CAF50;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#388E3C;stop-opacity:1"/>
+    </radialGradient>
+    <filter id="paint_wear" x="-10%" y="-10%" width="120%" height="120%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="2" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+  <circle cx="24" cy="24" r="21" fill="#388E3C" filter="url(#shadow)"/>
+  <circle cx="24" cy="24" r="20" fill="url(#ev_bg)"/>
+  <circle cx="24" cy="24" r="17" fill="none" stroke="#81C784" stroke-width="1" opacity="0.4"/>
+  <path d="M28 10 L19 24 L25 24 L19 38 L33 20 L27 20 Z" fill="#FFFFFF" filter="url(#shadow)"/>
+  <path d="M27 12 L21 22 L25 22" fill="none" stroke="#FFFFFF" stroke-width="1" opacity="0.5"/>
+  <ellipse cx="30" cy="32" rx="3" ry="2" fill="#3A3F4B" opacity="0.15"/>
+  <ellipse cx="16" cy="18" rx="2" ry="1.5" fill="#3A3F4B" opacity="0.1"/>
+</svg>

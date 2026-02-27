@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="28" height="70" viewBox="0 0 28 70">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="body_motorcycle" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#09090B;stop-opacity:1"/>
+      <stop offset="20%" style="stop-color:#18181B;stop-opacity:1"/>
+      <stop offset="80%" style="stop-color:#18181B;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#09090B;stop-opacity:1"/>
+    </linearGradient>
+    <linearGradient id="glass_motorcycle" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#2563EB;stop-opacity:0.6"/>
+      <stop offset="100%" style="stop-color:#1E3A5F;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+  <path d="M4 12
+            Q2 6 14 4
+            Q26 6 24 12
+            L26 22
+            Q27 26 27 32
+            L27 52
+            Q27 58 26 62
+            L24 66
+            Q22 68 14 68
+            Q6 68 4 66
+            L2 62
+            Q1 58 1 52
+            L1 32
+            Q1 26 2 22
+            L4 12 Z" fill="#000000" opacity="0.25" transform="translate(2, 3)"/>
+  <path d="M4 12
+            Q2 6 14 4
+            Q26 6 24 12
+            L26 22
+            Q27 26 27 32
+            L27 52
+            Q27 58 26 62
+            L24 66
+            Q22 68 14 68
+            Q6 68 4 66
+            L2 62
+            Q1 58 1 52
+            L1 32
+            Q1 26 2 22
+            L4 12 Z" fill="url(#body_motorcycle)"/>
+  <path d="M4 12
+            Q2 6 14 4
+            Q26 6 24 12
+            L26 22
+            Q27 26 27 32
+            L27 52
+            Q27 58 26 62
+            L24 66
+            Q22 68 14 68
+            Q6 68 4 66
+            L2 62
+            Q1 58 1 52
+            L1 32
+            Q1 26 2 22
+            L4 12 Z" fill="none" stroke="#111827" stroke-width="2"/>
+  <rect x="8" y="8" width="12" height="8" rx="4" fill="#18181B" opacity="0.3"/>
+  <line x1="12" y1="16" x2="16" y2="16" stroke="#09090B" stroke-width="1.5" opacity="0.5"/>
+  <path d="M14 20 
+        L14 20 
+        L18 26 
+        L10 26 Z" 
+        fill="url(#glass_motorcycle)"/>
+  <path d="M14 20 
+        L14 20 
+        L18 26 
+        L10 26 Z" 
+        fill="none" stroke="#111827" stroke-width="1"/>
+  <rect x="16" y="22" width="0" height="2" rx="1" fill="#FFFFFF" opacity="0.2"/>
+  <rect x="9" y="28" width="10" height="20" rx="3" fill="#09090B" opacity="0.2"/>
+  <rect x="9" y="28" width="10" height="20" rx="3" fill="none" stroke="#111827" stroke-width="1" opacity="0.5"/>
+  <rect x="2" y="16" width="24" height="3" rx="1" fill="#4B5563"/>
+  <circle cx="3" cy="18" r="2.5" fill="#6B7280"/>
+  <circle cx="25" cy="18" r="2.5" fill="#6B7280"/>
+  <ellipse cx="14" cy="30" rx="8" ry="7" fill="#18181B"/>
+  <ellipse cx="14" cy="29" rx="6" ry="4" fill="#3F3F46" opacity="0.3"/>
+  <ellipse cx="14" cy="42" rx="7" ry="6" fill="#1F2937"/>
+  <ellipse cx="14" cy="42" rx="6" ry="5" fill="#374151"/>
+  <rect x="22" y="52" width="3" height="10" rx="1" fill="#6B7280"/>
+  <ellipse cx="23" cy="62" rx="2" ry="1" fill="#4B5563"/>
+  <line x1="13" y1="52" x2="15" y2="52" stroke="#09090B" stroke-width="1.5" opacity="0.5"/>
+  <ellipse cx="12" cy="10" rx="4" ry="2" fill="#F3F4F6"/>
+  <ellipse cx="16" cy="10" rx="4" ry="2" fill="#F3F4F6"/>
+  <ellipse cx="12" cy="10" rx="3" ry="1" fill="#FEF3C7"/>
+  <ellipse cx="16" cy="10" rx="3" ry="1" fill="#FEF3C7"/>
+  <rect x="8" y="62" width="10" height="4" rx="2" fill="#DC2626"/>
+  <rect x="10" y="62" width="10" height="4" rx="2" fill="#DC2626"/>
+  <rect x="9" y="63" width="8" height="2" rx="1" fill="#FCA5A5" opacity="0.5"/>
+  <rect x="11" y="63" width="8" height="2" rx="1" fill="#FCA5A5" opacity="0.5"/>
+  <rect x="11" y="6" width="6" height="12" rx="1" fill="#22C55E" opacity="0.9"/>
+  <rect x="11" y="56" width="6" height="6" rx="1" fill="#22C55E" opacity="0.9"/>
+  <path d="M12 6 Q14 4 16 6" stroke="#FFFFFF" stroke-width="1" fill="none" opacity="0.3"/>
+  <rect x="2" y="56" width="4" height="6" rx="1" fill="#10B981"/>
+  <rect x="3" y="57" width="2" height="4" rx="0.5" fill="#34D399"/>
+</svg>

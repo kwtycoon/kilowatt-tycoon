@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="icon_shine" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFFFFF;stop-opacity:0.3"/>
+      <stop offset="50%" style="stop-color:#FFFFFF;stop-opacity:0"/>
+    </linearGradient>
+  </defs>
+  <path d="M24 42 
+            C12 42 10 30 12 22
+            C14 14 18 12 24 14
+            C30 12 34 14 36 22
+            C38 30 36 42 24 42 Z" fill="#FFFFFF"/>
+  <circle cx="38" cy="24" r="5" fill="#1F2937"/>
+  <path d="M24 14 Q27 6 32 8 Q28 12 24 14" fill="#FFFFFF"/>
+</svg>

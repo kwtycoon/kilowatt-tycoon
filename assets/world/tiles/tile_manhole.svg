@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="64" height="64" fill="#3A3F4B"/>
+  <circle cx="32" cy="32" r="20" fill="#52525B" filter="url(#shadow)"/>
+  <circle cx="32" cy="32" r="18" fill="#71717A"/>
+  <circle cx="32" cy="32" r="14" fill="none" stroke="#52525B" stroke-width="0.5"/>
+  <circle cx="32" cy="32" r="10" fill="none" stroke="#52525B" stroke-width="0.5"/>
+  <circle cx="32" cy="32" r="6" fill="none" stroke="#52525B" stroke-width="0.5"/>
+  <text x="32" y="34" font-family="Arial" font-size="6" font-weight="bold" fill="#52525B" text-anchor="middle" opacity="0.5">SEWER</text>
+</svg>

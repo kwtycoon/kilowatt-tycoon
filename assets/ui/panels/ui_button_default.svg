@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="24" viewBox="0 0 48 24">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="btn_grad_default" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#374151;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#3D4555;stop-opacity:1"/>
+    </linearGradient>
+    <filter id="btn_shadow_default" x="-5%" y="-5%" width="110%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="1" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect x="2" y="2" width="44" height="20" rx="6" fill="#000000" opacity="0.2" transform="translate(0, 2)"/>
+  <rect x="2" y="2" width="44" height="20" rx="6" fill="url(#btn_grad_default)"/>
+  <rect x="2" y="2" width="44" height="20" rx="6" fill="none" stroke="#374151" stroke-width="1"/>
+  <rect x="6" y="3" width="36" height="1" rx="0.5" fill="#FFFFFF" opacity="0.15"/>
+  <rect x="8" y="6" width="32" height="12" rx="3" fill="#FFFFFF" opacity="0.03"/>
+  <rect x="4" y="19" width="40" height="1" rx="0.5" fill="#000000" opacity="0.15"/>
+</svg>

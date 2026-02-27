@@ -1,0 +1,22 @@
+{
+  "level_num": 3,
+  "file_base": "03_central_fleet_plaza",
+  "name": "Central Fleet Plaza",
+  "archetype": "fleet_depot",
+  "grid_size": [30, 20],
+  "grid_capacity_kva": 3000.0,
+  "popularity": 75,
+  "rent_cost": 35000,
+  "challenge_level": 5,
+  "description": "Large commercial fleet charging facility. 3000 kVA (3 MW!) utility connection. Shift-change demand spikes require careful power management. The ultimate challenge. Transformer purchase required.",
+  "visual_description": "Massive industrial fleet charging facility. Entry top-left, exit top-right. Wide road access lane at top and a concrete service road at the bottom two rows. Four long parallel rows of heavy-vehicle charging bays (rows 2-15) each separated by worn asphalt drive aisles. Dumpster area bottom-left corner. Loading zones marked in rows 16-17. Left road access strip (cols 0-3) and right utility strip (cols 26-29) for transformer and battery placement.",
+  "zones": [
+    {"type": "road",         "rects": [[0, 0, 29, 0], [0, 1, 29, 1], [2, 17, 27, 19]]},
+    {"type": "entry",        "points": [[0, 0]]},
+    {"type": "exit",         "points": [[29, 0]]},
+    {"type": "driveable",    "rects": [[4, 2, 25, 16]]},
+    {"type": "parking",      "rects": [[4, 2, 25, 3], [4, 5, 25, 7], [4, 9, 25, 11], [4, 13, 25, 15]]},
+    {"type": "charger_area", "rects": [[4, 2, 7, 3], [4, 5, 7, 7], [4, 9, 7, 11], [4, 13, 7, 15]]},
+    {"type": "buildable",    "rects": [[26, 2, 29, 16], [0, 2, 3, 16]]}
+  ]
+}

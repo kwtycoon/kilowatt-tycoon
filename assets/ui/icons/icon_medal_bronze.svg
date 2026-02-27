@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="bronze_grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#E8A060"/>
+      <stop offset="50%" style="stop-color:#CD7F32"/>
+      <stop offset="100%" style="stop-color:#A05A20"/>
+    </linearGradient>
+    <linearGradient id="ribbon_bronze" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#D97706"/>
+      <stop offset="100%" style="stop-color:#92400E"/>
+    </linearGradient>
+  </defs>
+  <!-- Ribbon -->
+  <polygon points="18,4 24,16 30,4" fill="url(#ribbon_bronze)"/>
+  <!-- Medal circle -->
+  <circle cx="24" cy="28" r="14" fill="url(#bronze_grad)" stroke="#8B5A2B" stroke-width="2"/>
+  <!-- Inner circle -->
+  <circle cx="24" cy="28" r="10" fill="none" stroke="#A05A20" stroke-width="1.5"/>
+  <!-- Number 3 -->
+  <text x="24" y="33" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#5D3A1A">3</text>
+</svg>

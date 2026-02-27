@@ -1,0 +1,2674 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "Single source of truth for all game assets. Code and mappings are generated from this manifest.",
+  "version": "1.0.0",
+  "tiles": {
+    "enum_name": "TileContent",
+    "asset_dir": "world/tiles",
+    "dimensions": {
+      "width": 64,
+      "height": 64
+    },
+    "entries": [
+      {
+        "id": 0,
+        "name": "Grass",
+        "rust_variant": "Grass",
+        "filename": "tile_grass.png",
+        "category": "base",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": true
+        },
+        "colors": [
+          "grass",
+          "grass_light",
+          "grass_dark"
+        ],
+        "ai_prompt": "flat grass surface with subtle color variation, muted green tones #5D7F4A, very light texture, no individual blades visible, uniform coverage"
+      },
+      {
+        "id": 1,
+        "name": "Road",
+        "rust_variant": "Road",
+        "filename": "tile_street_road.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "asphalt",
+          "asphalt_dark"
+        ],
+        "ai_prompt": "dark asphalt road surface #3A3F4B, clean and smooth, minimal texture, flat surface for street traffic"
+      },
+      {
+        "id": 2,
+        "name": "Entry",
+        "rust_variant": "Entry",
+        "filename": "tile_driveway_apron.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false,
+          "is_entry": true
+        },
+        "colors": [
+          "asphalt"
+        ],
+        "ai_prompt": "driveway entry apron, asphalt surface #3A3F4B transitioning from street to lot, clean surface, flat"
+      },
+      {
+        "id": 4,
+        "name": "Lot",
+        "rust_variant": "Lot",
+        "filename": "tile_asphalt_clean.png",
+        "category": "parking",
+        "properties": {
+          "locked": false,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "asphalt"
+        ],
+        "ai_prompt": "clean asphalt parking lot surface #3A3F4B, smooth and uniform, minimal wear, flat"
+      },
+      {
+        "id": 5,
+        "name": "ParkingBayNorth",
+        "rust_variant": "ParkingBayNorth",
+        "filename": "tile_parking_bay_north.png",
+        "category": "parking",
+        "properties": {
+          "locked": false,
+          "driveable": true,
+          "buildable": false,
+          "is_parking": true
+        },
+        "colors": [
+          "asphalt",
+          "road_line_white"
+        ],
+        "ai_prompt": "parking space with white painted lines #FFFFFF on asphalt #3A3F4B, bay opening facing north (top of tile), L-shaped corner markings"
+      },
+      {
+        "id": 6,
+        "name": "ParkingBaySouth",
+        "rust_variant": "ParkingBaySouth",
+        "filename": "tile_parking_bay.png",
+        "category": "parking",
+        "properties": {
+          "locked": false,
+          "driveable": true,
+          "buildable": false,
+          "is_parking": true
+        },
+        "colors": [
+          "asphalt",
+          "road_line_white"
+        ],
+        "ai_prompt": "parking space with white painted lines #FFFFFF on asphalt #3A3F4B, bay opening facing south (bottom of tile), L-shaped corner markings"
+      },
+      {
+        "id": 7,
+        "name": "Concrete",
+        "rust_variant": "Concrete",
+        "filename": "tile_concrete.png",
+        "category": "base",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "concrete_light",
+          "concrete_dark"
+        ],
+        "ai_prompt": "light concrete surface #E0DCD6, smooth finish, very subtle texture variation, clean and uniform"
+      },
+      {
+        "id": 8,
+        "name": "GarageFloor",
+        "rust_variant": "GarageFloor",
+        "filename": "tile_garage_floor.png",
+        "category": "mall",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "garage_floor",
+          "garage_floor_light",
+          "garage_floor_dark"
+        ],
+        "ai_prompt": "indoor garage floor #3D4451, polished concrete with slight sheen, darker than outdoor concrete, flat surface"
+      },
+      {
+        "id": 9,
+        "name": "GaragePillar",
+        "rust_variant": "GaragePillar",
+        "filename": "tile_garage_pillar.png",
+        "category": "mall",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "garage_pillar",
+          "concrete"
+        ],
+        "ai_prompt": "concrete structural pillar #E0DCD6 centered in tile, square or rounded column, supporting garage ceiling, solid and thick"
+      },
+      {
+        "id": 10,
+        "name": "MallFacade",
+        "rust_variant": "MallFacade",
+        "filename": "tile_mall_facade.png",
+        "category": "mall",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "concrete_light"
+        ],
+        "ai_prompt": "mall building facade wall, light colored material #E0DCD6, architectural detail suggesting commercial building entrance area"
+      },
+      {
+        "id": 11,
+        "name": "StoreWall",
+        "rust_variant": "StoreWall",
+        "filename": "tile_store_wall.png",
+        "category": "gas_station",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "quickmart_blue",
+          "quickmart_blue_light"
+        ],
+        "ai_prompt": "gas station convenience store exterior wall, blue color #1E4D8C (QuickMart brand), flat surface, retail building material"
+      },
+      {
+        "id": 12,
+        "name": "StoreEntrance",
+        "rust_variant": "StoreEntrance",
+        "filename": "tile_store_entrance.png",
+        "category": "gas_station",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "quickmart_blue",
+          "storefront_glass"
+        ],
+        "ai_prompt": "gas station store entrance with glass door, blue frame #1E4D8C, welcoming entryway, centered door opening"
+      },
+      {
+        "id": 13,
+        "name": "Storefront",
+        "rust_variant": "Storefront",
+        "filename": "tile_storefront.png",
+        "category": "gas_station",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "storefront_glass",
+          "quickmart_blue",
+          "storefront_frame"
+        ],
+        "ai_prompt": "gas station store front window, large glass panel #B8D4E8 with blue frame #1E4D8C, display window"
+      },
+      {
+        "id": 14,
+        "name": "PumpIsland",
+        "rust_variant": "PumpIsland",
+        "filename": "tile_pump_island.png",
+        "category": "gas_station",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "concrete_light"
+        ],
+        "ai_prompt": "gas pump island base, concrete pad #E0DCD6 slightly raised, rectangular island for fuel dispensers"
+      },
+      {
+        "id": 15,
+        "name": "Canopy",
+        "rust_variant": "Canopy",
+        "filename": "tile_canopy_floor.png",
+        "category": "gas_station",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "asphalt",
+          "asphalt_light"
+        ],
+        "ai_prompt": "ground surface under gas station canopy, asphalt #3A3F4B with subtle lighting from overhead canopy, protected area"
+      },
+      {
+        "id": 16,
+        "name": "FuelCap",
+        "rust_variant": "FuelCap",
+        "filename": "tile_fuel_cap_covered.png",
+        "category": "gas_station",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "metal_gray"
+        ],
+        "ai_prompt": "underground fuel tank access cap, concrete #E0DCD6 with metal cover in center, circular access panel, ground level"
+      },
+      {
+        "id": 17,
+        "name": "CanopyShadow",
+        "rust_variant": "CanopyShadow",
+        "filename": "tile_canopy_shadow.png",
+        "category": "gas_station",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "asphalt",
+          "asphalt_dark",
+          "shadow"
+        ],
+        "ai_prompt": "asphalt #3A3F4B with soft shadow overlay from gas station canopy above, darker than regular asphalt, subtle gradient"
+      },
+      {
+        "id": 18,
+        "name": "BrickSidewalk",
+        "rust_variant": "BrickSidewalk",
+        "filename": "tile_brick_sidewalk.png",
+        "category": "streetside",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "brick",
+          "brick_light",
+          "brick_dark"
+        ],
+        "ai_prompt": "red brick paver sidewalk #8B5A3C, uniform brick pattern, pedestrian walkway, urban setting"
+      },
+      {
+        "id": 19,
+        "name": "BikeLane",
+        "rust_variant": "BikeLane",
+        "filename": "tile_bike_lane.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "bike_lane_green",
+          "asphalt"
+        ],
+        "ai_prompt": "bike lane painted green #10B981 on asphalt #3A3F4B, dedicated cycling path marking, flat surface"
+      },
+      {
+        "id": 20,
+        "name": "StreetRoad",
+        "rust_variant": "StreetRoad",
+        "filename": "tile_street_road.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "asphalt",
+          "asphalt_dark"
+        ],
+        "ai_prompt": "urban street road surface, dark asphalt #3A3F4B, clean and flat, city street pavement"
+      },
+      {
+        "id": 21,
+        "name": "Crosswalk",
+        "rust_variant": "Crosswalk",
+        "filename": "tile_crosswalk.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "road_line_white",
+          "asphalt"
+        ],
+        "ai_prompt": "pedestrian crosswalk stripes, thick white painted lines #FFFFFF on dark asphalt #3A3F4B, zebra crossing pattern"
+      },
+      {
+        "id": 22,
+        "name": "ReservedSpot",
+        "rust_variant": "ReservedSpot",
+        "filename": "tile_reserved_spot.png",
+        "category": "parking",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "concrete_light"
+        ],
+        "ai_prompt": "reserved parking space on concrete #E0DCD6, special designation markings, workplace parking area"
+      },
+      {
+        "id": 23,
+        "name": "OfficeBackdrop",
+        "rust_variant": "OfficeBackdrop",
+        "filename": "tile_office_backdrop.png",
+        "category": "streetside",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "storefront_glass",
+          "storefront_frame",
+          "metal_gray"
+        ],
+        "ai_prompt": "modern office building backdrop, glass and steel materials, corporate building exterior, architectural facade"
+      },
+      {
+        "id": 24,
+        "name": "PorteCochere",
+        "rust_variant": "PorteCochere",
+        "filename": "tile_porte_cochere.png",
+        "category": "hotel",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "hotel_beige",
+          "hotel_beige_light",
+          "concrete_light"
+        ],
+        "ai_prompt": "hotel porte-cochere covered driveway, beige material #D4C5B0, elegant hotel entrance canopy area, upscale surface"
+      },
+      {
+        "id": 25,
+        "name": "ValetLane",
+        "rust_variant": "ValetLane",
+        "filename": "tile_valet_lane.png",
+        "category": "hotel",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "valet_purple",
+          "asphalt"
+        ],
+        "ai_prompt": "valet parking lane painted purple #8B5CF6 on asphalt #3A3F4B, luxury hotel service area marking"
+      },
+      {
+        "id": 26,
+        "name": "HotelEntrance",
+        "rust_variant": "HotelEntrance",
+        "filename": "tile_hotel_entrance.png",
+        "category": "hotel",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "hotel_beige",
+          "hotel_beige_light",
+          "storefront_glass"
+        ],
+        "ai_prompt": "hotel main entrance with elegant beige materials #D4C5B0, upscale entryway, welcoming hotel front"
+      },
+      {
+        "id": 27,
+        "name": "FountainBase",
+        "rust_variant": "FountainBase",
+        "filename": "tile_fountain_base.png",
+        "category": "hotel",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete_light",
+          "hotel_beige"
+        ],
+        "ai_prompt": "decorative fountain base, light stone or concrete #E0DCD6, circular or ornamental foundation, upscale landscaping element"
+      },
+      {
+        "id": 28,
+        "name": "GardenBed",
+        "rust_variant": "GardenBed",
+        "filename": "tile_garden_bed.png",
+        "category": "hotel",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "garden_soil",
+          "planter_green",
+          "planter_green_light"
+        ],
+        "ai_prompt": "landscaped garden bed with dark soil #5D4E37 and green plants #16A34A, decorative planting area, maintained landscaping"
+      },
+      {
+        "id": 29,
+        "name": "Cobblestone",
+        "rust_variant": "Cobblestone",
+        "filename": "tile_cobblestone.png",
+        "category": "transit",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "cobblestone",
+          "cobblestone_light",
+          "cobblestone_dark"
+        ],
+        "ai_prompt": "cobblestone pavement #9BA3AF, rounded stone pattern, maritime pier surface, rustic pavers"
+      },
+      {
+        "id": 30,
+        "name": "LoadingZone",
+        "rust_variant": "LoadingZone",
+        "filename": "tile_loading_zone.png",
+        "category": "transit",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "loading_yellow",
+          "concrete"
+        ],
+        "ai_prompt": "loading zone painted yellow #F59E0B on concrete #E0DCD6, commercial vehicle area marking, transit depot surface"
+      },
+      {
+        "id": 31,
+        "name": "AsphaltWorn",
+        "rust_variant": "AsphaltWorn",
+        "filename": "tile_asphalt_worn.png",
+        "category": "parking",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "asphalt",
+          "asphalt_dark",
+          "asphalt_tire"
+        ],
+        "ai_prompt": "weathered asphalt #3A3F4B with subtle wear patterns, aged parking lot surface, slight deterioration, darker patches"
+      },
+      {
+        "id": 32,
+        "name": "AsphaltSkid",
+        "rust_variant": "AsphaltSkid",
+        "filename": "tile_asphalt_skid.png",
+        "category": "parking",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "asphalt",
+          "asphalt_skid",
+          "asphalt_tire"
+        ],
+        "ai_prompt": "asphalt #3A3F4B with dark tire skid marks #252830, rubber marks on pavement, evidence of braking"
+      },
+      {
+        "id": 33,
+        "name": "Planter",
+        "rust_variant": "Planter",
+        "filename": "tile_planter.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "planter_green",
+          "concrete",
+          "metal_gray"
+        ],
+        "ai_prompt": "raised planter box with green plants #16A34A, concrete or metal container #71717A, decorative landscaping element centered in tile"
+      },
+      {
+        "id": 34,
+        "name": "CurbAsphaltGrass",
+        "rust_variant": "CurbAsphaltGrass",
+        "filename": "tile_curb_asphalt_grass.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "asphalt",
+          "grass",
+          "curb"
+        ],
+        "ai_prompt": "curb transition from asphalt #3A3F4B to grass #5D7F4A, light colored curb edge #E8E4DC, boundary between parking and lawn"
+      },
+      {
+        "id": 35,
+        "name": "CurbAsphaltConcrete",
+        "rust_variant": "CurbAsphaltConcrete",
+        "filename": "tile_curb_asphalt_concrete.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "asphalt",
+          "concrete",
+          "curb"
+        ],
+        "ai_prompt": "curb transition from asphalt #3A3F4B to concrete #E0DCD6, light colored curb edge #E8E4DC, boundary between surfaces"
+      },
+      {
+        "id": 36,
+        "name": "ChargerPad",
+        "rust_variant": "ChargerPad",
+        "filename": "tile_charger_pad.png",
+        "category": "infrastructure",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "asphalt",
+          "asphalt_light"
+        ],
+        "ai_prompt": "EV charger mounting pad, asphalt surface #3A3F4B with subtle marking, prepared foundation for charger installation"
+      },
+      {
+        "id": 37,
+        "name": "TransformerPad",
+        "rust_variant": "TransformerPad",
+        "filename": "tile_concrete.png",
+        "category": "infrastructure",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "concrete_dark"
+        ],
+        "ai_prompt": "electrical transformer mounting pad, reinforced concrete #E0DCD6, utility equipment foundation"
+      },
+      {
+        "id": 38,
+        "name": "SolarPad",
+        "rust_variant": "SolarPad",
+        "filename": "tile_grass.png",
+        "category": "infrastructure",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "grass",
+          "grass_dark"
+        ],
+        "ai_prompt": "solar panel array mounting pad on grass #5D7F4A, prepared ground area for solar installation"
+      },
+      {
+        "id": 39,
+        "name": "BatteryPad",
+        "rust_variant": "BatteryPad",
+        "filename": "tile_concrete.png",
+        "category": "infrastructure",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "concrete_dark"
+        ],
+        "ai_prompt": "battery storage mounting pad, reinforced concrete #E0DCD6, prepared foundation for energy storage"
+      },
+      {
+        "id": 40,
+        "name": "Empty",
+        "rust_variant": "Empty",
+        "filename": "tile_grass.png",
+        "category": "base",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": true
+        },
+        "colors": [
+          "grass",
+          "grass_light"
+        ],
+        "ai_prompt": "empty grass lot #5D7F4A, undeveloped ground, natural grass surface, open space"
+      },
+      {
+        "id": 41,
+        "name": "Bollard",
+        "rust_variant": "Bollard",
+        "filename": "tile_bollard.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "metal_gray",
+          "concrete"
+        ],
+        "ai_prompt": "metal bollard post #71717A on concrete #E0DCD6, cylindrical protective barrier centered in tile, short and sturdy"
+      },
+      {
+        "id": 42,
+        "name": "WheelStop",
+        "rust_variant": "WheelStop",
+        "filename": "tile_asphalt_lines.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "asphalt",
+          "road_line_yellow"
+        ],
+        "ai_prompt": "concrete wheel stop on asphalt #3A3F4B with yellow paint stripe #F5C542, parking space bumper, horizontal barrier"
+      },
+      {
+        "id": 43,
+        "name": "StreetTree",
+        "rust_variant": "StreetTree",
+        "filename": "tile_tree_grate.png",
+        "category": "streetside",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "metal_gray",
+          "metal_gray_dark"
+        ],
+        "ai_prompt": "street tree grate on concrete #E0DCD6, metal grate #71717A around tree opening, urban tree planter"
+      },
+      {
+        "id": 44,
+        "name": "LightPole",
+        "rust_variant": "LightPole",
+        "filename": "tile_light_pole.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "metal_gray",
+          "concrete"
+        ],
+        "ai_prompt": "street light pole base on concrete #E0DCD6, metal pole #71717A centered in tile, parking lot lighting fixture"
+      },
+      {
+        "id": 45,
+        "name": "CanopyColumn",
+        "rust_variant": "CanopyColumn",
+        "filename": "tile_canopy_column.png",
+        "category": "gas_station",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "metal_gray",
+          "asphalt",
+          "canopy_red"
+        ],
+        "ai_prompt": "gas station canopy support column on asphalt #3A3F4B, metal or concrete pillar #71717A, structural support centered in tile"
+      },
+      {
+        "id": 46,
+        "name": "GasStationSign",
+        "rust_variant": "GasStationSign",
+        "filename": "tile_gas_station_sign.png",
+        "category": "gas_station",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "grass",
+          "metal_gray"
+        ],
+        "ai_prompt": "gas station price sign base on grass #5D7F4A, sign post foundation, ground-level sign support"
+      },
+      {
+        "id": 47,
+        "name": "DumpsterPad",
+        "rust_variant": "DumpsterPad",
+        "filename": "tile_concrete.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "concrete_dark"
+        ],
+        "ai_prompt": "dumpster pad area, concrete surface #E0DCD6, waste container placement zone, utilitarian ground surface"
+      },
+      {
+        "id": 48,
+        "name": "DumpsterOccupied",
+        "rust_variant": "DumpsterOccupied",
+        "filename": "tile_dumpster_occupied.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "metal_gray",
+          "metal_gray_dark"
+        ],
+        "ai_prompt": "concrete pad #E0DCD6 with dumpster present, metal waste container #71717A, occupied dumpster location"
+      },
+      {
+        "id": 49,
+        "name": "TransformerOccupied",
+        "rust_variant": "TransformerOccupied",
+        "filename": "tile_concrete.png",
+        "category": "infrastructure",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "metal_gray"
+        ],
+        "ai_prompt": "concrete pad #E0DCD6 with electrical transformer installed, utility equipment in place, occupied infrastructure space"
+      },
+      {
+        "id": 50,
+        "name": "SolarOccupied",
+        "rust_variant": "SolarOccupied",
+        "filename": "tile_grass.png",
+        "category": "infrastructure",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "grass",
+          "metal_gray_dark"
+        ],
+        "ai_prompt": "grass #5D7F4A with solar panel array installed, solar equipment in place, occupied solar installation"
+      },
+      {
+        "id": 51,
+        "name": "BatteryOccupied",
+        "rust_variant": "BatteryOccupied",
+        "filename": "tile_concrete.png",
+        "category": "infrastructure",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "metal_gray"
+        ],
+        "ai_prompt": "concrete pad #E0DCD6 with battery storage unit installed, energy storage equipment in place, occupied battery location"
+      },
+      {
+        "id": 52,
+        "name": "AmenityWifiRestrooms",
+        "rust_variant": "AmenityWifiRestrooms",
+        "filename": "tile_concrete.png",
+        "category": "amenities",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "concrete_light",
+          "metal_gray"
+        ],
+        "ai_prompt": "amenity facility on concrete #E0DCD6, small building with WiFi and restroom facilities, service structure"
+      },
+      {
+        "id": 53,
+        "name": "AmenityLoungeSnacks",
+        "rust_variant": "AmenityLoungeSnacks",
+        "filename": "tile_concrete.png",
+        "category": "amenities",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "concrete_light",
+          "metal_gray"
+        ],
+        "ai_prompt": "lounge amenity building on concrete #E0DCD6, small structure with snack service, customer comfort facility"
+      },
+      {
+        "id": 54,
+        "name": "AmenityRestaurant",
+        "rust_variant": "AmenityRestaurant",
+        "filename": "tile_concrete.png",
+        "category": "amenities",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "concrete_light",
+          "storefront_glass"
+        ],
+        "ai_prompt": "restaurant amenity building on concrete #E0DCD6, dining facility structure, food service building"
+      },
+      {
+        "id": 55,
+        "name": "AmenityOccupied",
+        "rust_variant": "AmenityOccupied",
+        "filename": "tile_concrete.png",
+        "category": "amenities",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [
+          "concrete",
+          "metal_gray"
+        ],
+        "ai_prompt": "concrete pad #E0DCD6 with amenity building installed, facility structure in place, occupied amenity location"
+      },
+      {
+        "id": 56,
+        "name": "RoadYellowLine",
+        "rust_variant": "Road",
+        "filename": "tile_asphalt_lines.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "asphalt",
+          "road_line_yellow"
+        ],
+        "ai_prompt": "asphalt road #3A3F4B with yellow center line stripe #F5C542, painted road marking, lane divider",
+        "special_case": "Maps to Road enum variant"
+      },
+      {
+        "id": 57,
+        "name": "AirVacuum",
+        "rust_variant": "AirVacuum",
+        "filename": "tile_air_vacuum.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "air vacuum machine for tire inflation, gas station utility device"
+      },
+      {
+        "id": 58,
+        "name": "Bench",
+        "rust_variant": "Bench",
+        "filename": "tile_bench.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "wooden bench seating, outdoor furniture for waiting areas"
+      },
+      {
+        "id": 59,
+        "name": "CartReturn",
+        "rust_variant": "CartReturn",
+        "filename": "tile_cart_return.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "shopping cart return station, metal cart corral for parking lots"
+      },
+      {
+        "id": 60,
+        "name": "ExitSign",
+        "rust_variant": "ExitSign",
+        "filename": "tile_exit_sign.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "exit sign for buildings, illuminated safety signage"
+      },
+      {
+        "id": 61,
+        "name": "FireHydrant",
+        "rust_variant": "FireHydrant",
+        "filename": "tile_fire_hydrant.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "red fire hydrant, emergency water supply fixture"
+      },
+      {
+        "id": 62,
+        "name": "GasPumpDisabled",
+        "rust_variant": "GasPumpDisabled",
+        "filename": "tile_gas_pump_disabled.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "disabled gas pump with bag over nozzle, out-of-service fuel dispenser"
+      },
+      {
+        "id": 63,
+        "name": "MallDirectory",
+        "rust_variant": "MallDirectory",
+        "filename": "tile_mall_directory.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "mall directory kiosk, wayfinding information display"
+      },
+      {
+        "id": 64,
+        "name": "NewspaperBox",
+        "rust_variant": "NewspaperBox",
+        "filename": "tile_newspaper_box.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "newspaper vending box, street corner news dispenser"
+      },
+      {
+        "id": 65,
+        "name": "OutdoorHeater",
+        "rust_variant": "OutdoorHeater",
+        "filename": "tile_outdoor_heater.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "outdoor patio heater, standing heat lamp for outdoor areas"
+      },
+      {
+        "id": 66,
+        "name": "ParkingMeter",
+        "rust_variant": "ParkingMeter",
+        "filename": "tile_parking_meter.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "parking meter post, coin-operated parking payment terminal"
+      },
+      {
+        "id": 67,
+        "name": "PlanterUrn",
+        "rust_variant": "PlanterUrn",
+        "filename": "tile_planter_urn.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "decorative planter urn, ornamental plant container"
+      },
+      {
+        "id": 68,
+        "name": "QuickmartFacade",
+        "rust_variant": "QuickmartFacade",
+        "filename": "tile_quickmart_facade.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "convenience store facade, gas station quickmart building front"
+      },
+      {
+        "id": 69,
+        "name": "ReservedSign",
+        "rust_variant": "ReservedSign",
+        "filename": "tile_reserved_sign.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "reserved parking sign post, designated parking spot marker"
+      },
+      {
+        "id": 70,
+        "name": "RopeBarrier",
+        "rust_variant": "RopeBarrier",
+        "filename": "tile_rope_barrier.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "velvet rope barrier stanchion, queue management post"
+      },
+      {
+        "id": 71,
+        "name": "SpeedBump",
+        "rust_variant": "SpeedBump",
+        "filename": "tile_speed_bump.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "yellow speed bump, traffic calming device"
+      },
+      {
+        "id": 72,
+        "name": "StreetLamp",
+        "rust_variant": "StreetLamp",
+        "filename": "tile_street_lamp.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "decorative street lamp post, vintage street lighting fixture"
+      },
+      {
+        "id": 73,
+        "name": "TrashCan",
+        "rust_variant": "TrashCan",
+        "filename": "tile_trash_can.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "public trash receptacle, outdoor waste bin"
+      },
+      {
+        "id": 74,
+        "name": "UtilityCabinet",
+        "rust_variant": "UtilityCabinet",
+        "filename": "tile_utility_cabinet.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "utility cabinet box, electrical or telecom equipment enclosure"
+      },
+      {
+        "id": 75,
+        "name": "ValetStand",
+        "rust_variant": "ValetStand",
+        "filename": "tile_valet_stand.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "valet parking podium, attendant service station"
+      },
+      {
+        "id": 76,
+        "name": "BusStop",
+        "rust_variant": "BusStop",
+        "filename": "tile_bus_stop.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "bus stop shelter and sign, public transit waiting area"
+      },
+      {
+        "id": 77,
+        "name": "ElevatorLobby",
+        "rust_variant": "ElevatorLobby",
+        "filename": "tile_elevator_lobby.png",
+        "category": "workplace",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "elevator lobby tile, building interior entrance area"
+      },
+      {
+        "id": 78,
+        "name": "ExecutiveSpot",
+        "rust_variant": "ExecutiveSpot",
+        "filename": "tile_executive_spot.png",
+        "category": "workplace",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "executive reserved parking spot with special markings"
+      },
+      {
+        "id": 79,
+        "name": "FireLane",
+        "rust_variant": "FireLane",
+        "filename": "tile_fire_lane.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "fire lane with red curb markings, emergency vehicle access"
+      },
+      {
+        "id": 80,
+        "name": "GarageCeiling",
+        "rust_variant": "GarageCeiling",
+        "filename": "tile_garage_ceiling.png",
+        "category": "mall",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "garage ceiling tile, indoor parking structure overhead"
+      },
+      {
+        "id": 81,
+        "name": "GarageLevel1",
+        "rust_variant": "GarageLevel1",
+        "filename": "tile_garage_level1.png",
+        "category": "mall",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "garage level 1 signage floor tile, parking structure level marker"
+      },
+      {
+        "id": 82,
+        "name": "GarageRamp",
+        "rust_variant": "GarageRamp",
+        "filename": "tile_garage_ramp.png",
+        "category": "mall",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "garage ramp with directional arrows, sloped parking structure transition"
+      },
+      {
+        "id": 83,
+        "name": "Gutter",
+        "rust_variant": "Gutter",
+        "filename": "tile_gutter.png",
+        "category": "streetside",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "street gutter drain, roadside water drainage"
+      },
+      {
+        "id": 84,
+        "name": "Manhole",
+        "rust_variant": "Manhole",
+        "filename": "tile_manhole.png",
+        "category": "streetside",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "manhole cover on street, utility access point"
+      },
+      {
+        "id": 85,
+        "name": "MeterZone",
+        "rust_variant": "MeterZone",
+        "filename": "tile_meter_zone.png",
+        "category": "streetside",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "metered parking zone marking on street"
+      },
+      {
+        "id": 86,
+        "name": "PathwayStone",
+        "rust_variant": "PathwayStone",
+        "filename": "tile_pathway_stone.png",
+        "category": "destination",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "stone pathway tile, decorative walkway pavement"
+      },
+      {
+        "id": 87,
+        "name": "PoolDeck",
+        "rust_variant": "PoolDeck",
+        "filename": "tile_pool_deck.png",
+        "category": "destination",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "pool deck tile, wet-surface area around water features"
+      },
+      {
+        "id": 88,
+        "name": "StreetCorner",
+        "rust_variant": "StreetCorner",
+        "filename": "tile_street_corner.png",
+        "category": "streetside",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "street corner with curb radius, intersection edge tile"
+      },
+      {
+        "id": 89,
+        "name": "StreetTreeTile",
+        "rust_variant": "StreetTree",
+        "filename": "tile_street_tree.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "street tree with grate and foliage, urban landscaping"
+      },
+      {
+        "id": 90,
+        "name": "UtilityTrench",
+        "rust_variant": "UtilityTrench",
+        "filename": "tile_utility_trench.png",
+        "category": "infrastructure",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "utility trench with grating, underground service access"
+      },
+      {
+        "id": 91,
+        "name": "WheelStopTile",
+        "rust_variant": "WheelStop",
+        "filename": "tile_wheel_stop.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "concrete wheel stop bumper in parking space"
+      }
+    ],
+    "fixed_tiles": [
+      {
+        "id": 92,
+        "filename": "fuel_cover.png"
+      },
+      {
+        "id": 98,
+        "filename": "garbage_bin_bot_right.png"
+      },
+      {
+        "id": 99,
+        "filename": "garbage_bin_bot_left.png"
+      },
+      {
+        "id": 100,
+        "filename": "garbage_bin_top_right.png"
+      },
+      {
+        "id": 101,
+        "filename": "garbage_bin_top_left.png"
+      },
+      {
+        "id": 102,
+        "filename": "qce_r0c0.png"
+      },
+      {
+        "id": 103,
+        "filename": "qce_r0c1.png"
+      },
+      {
+        "id": 104,
+        "filename": "qce_r0c2.png"
+      },
+      {
+        "id": 105,
+        "filename": "qce_r0c3.png"
+      },
+      {
+        "id": 106,
+        "filename": "qce_r1c0.png"
+      },
+      {
+        "id": 107,
+        "filename": "qce_r1c1.png"
+      },
+      {
+        "id": 108,
+        "filename": "qce_r1c2.png"
+      },
+      {
+        "id": 109,
+        "filename": "qce_r1c3.png"
+      },
+      {
+        "id": 110,
+        "filename": "qce_r2c0.png"
+      },
+      {
+        "id": 111,
+        "filename": "qce_r2c1.png"
+      },
+      {
+        "id": 112,
+        "filename": "qce_r2c2.png"
+      },
+      {
+        "id": 113,
+        "filename": "qce_r2c3.png"
+      },
+      {
+        "id": 114,
+        "filename": "qceg_r0c0.png"
+      },
+      {
+        "id": 115,
+        "filename": "qceg_r0c1.png"
+      },
+      {
+        "id": 116,
+        "filename": "qceg_r0c2.png"
+      },
+      {
+        "id": 117,
+        "filename": "qceg_r0c3.png"
+      },
+      {
+        "id": 118,
+        "filename": "qceg_r0c4.png"
+      },
+      {
+        "id": 119,
+        "filename": "qceg_r0c5.png"
+      },
+      {
+        "id": 120,
+        "filename": "qceg_r0c6.png"
+      },
+      {
+        "id": 121,
+        "filename": "qceg_r0c7.png"
+      },
+      {
+        "id": 122,
+        "filename": "qceg_r1c0.png"
+      },
+      {
+        "id": 123,
+        "filename": "qceg_r1c1.png"
+      },
+      {
+        "id": 124,
+        "filename": "qceg_r1c2.png"
+      },
+      {
+        "id": 125,
+        "filename": "qceg_r1c3.png"
+      },
+      {
+        "id": 126,
+        "filename": "qceg_r1c4.png"
+      },
+      {
+        "id": 127,
+        "filename": "qceg_r1c5.png"
+      },
+      {
+        "id": 128,
+        "filename": "qceg_r1c6.png"
+      },
+      {
+        "id": 129,
+        "filename": "qceg_r1c7.png"
+      },
+      {
+        "id": 130,
+        "filename": "qceg_r2c0.png"
+      },
+      {
+        "id": 131,
+        "filename": "qceg_r2c1.png"
+      },
+      {
+        "id": 132,
+        "filename": "qceg_r2c2.png"
+      },
+      {
+        "id": 133,
+        "filename": "qceg_r2c3.png"
+      },
+      {
+        "id": 134,
+        "filename": "qceg_r2c4.png"
+      },
+      {
+        "id": 135,
+        "filename": "qceg_r2c5.png"
+      },
+      {
+        "id": 136,
+        "filename": "qceg_r2c6.png"
+      },
+      {
+        "id": 137,
+        "filename": "qceg_r2c7.png"
+      },
+      {
+        "id": 138,
+        "filename": "qceg_r3c0.png"
+      },
+      {
+        "id": 139,
+        "filename": "qceg_r3c1.png"
+      },
+      {
+        "id": 140,
+        "filename": "qceg_r3c2.png"
+      },
+      {
+        "id": 141,
+        "filename": "qceg_r3c3.png"
+      },
+      {
+        "id": 142,
+        "filename": "qceg_r3c4.png"
+      },
+      {
+        "id": 143,
+        "filename": "qceg_r3c5.png"
+      },
+      {
+        "id": 144,
+        "filename": "qceg_r3c6.png"
+      },
+      {
+        "id": 145,
+        "filename": "qceg_r3c7.png"
+      }
+    ]
+  },
+  "vehicles": {
+    "enum_name": "VehicleType",
+    "asset_dir": "vehicles",
+    "default_variant": "Sedan",
+    "entries": [
+      {
+        "name": "Compact",
+        "rust_variant": "Compact",
+        "filename": "vehicle_compact.png",
+        "dimensions": {
+          "width": 35,
+          "height": 60
+        },
+        "footprint_tiles": 1,
+        "compatible_chargers": [
+          "DcFast",
+          "AcLevel2"
+        ],
+        "preferred_charger": "DcFast",
+        "ai_prompt": "top-down compact electric car #3B82F6 blue body, short bubble-shaped silhouette, glass windshield and roof visible, white racing stripe down center, no visible wheels, EV charge port on left side, rounded front and rear"
+      },
+      {
+        "name": "Sedan",
+        "rust_variant": "Sedan",
+        "filename": "vehicle_sedan.png",
+        "dimensions": {
+          "width": 40,
+          "height": 75
+        },
+        "footprint_tiles": 1,
+        "compatible_chargers": [
+          "DcFast",
+          "AcLevel2"
+        ],
+        "preferred_charger": "DcFast",
+        "ai_prompt": "top-down electric sedan car #E5E7EB silver/white body, long tapered elegant silhouette, glass roof and windshield visible, no visible wheels, sleek modern lines, EV charge port on left side, sophisticated appearance"
+      },
+      {
+        "name": "Suv",
+        "rust_variant": "Suv",
+        "filename": "vehicle_suv.png",
+        "dimensions": {
+          "width": 45,
+          "height": 85
+        },
+        "footprint_tiles": 1,
+        "compatible_chargers": [
+          "DcFast",
+          "AcLevel2"
+        ],
+        "preferred_charger": "DcFast",
+        "ai_prompt": "top-down electric SUV #374151 dark gray body, tall boxy silhouette with squared fenders, glass roof visible, yellow accent stripe, no visible wheels, rugged appearance, EV charge port on left side"
+      },
+      {
+        "name": "Crossover",
+        "rust_variant": "Crossover",
+        "filename": "vehicle_crossover.png",
+        "dimensions": {
+          "width": 42,
+          "height": 78
+        },
+        "footprint_tiles": 1,
+        "compatible_chargers": [
+          "DcFast",
+          "AcLevel2"
+        ],
+        "preferred_charger": "DcFast",
+        "ai_prompt": "top-down electric crossover #EF4444 red body, medium rounded silhouette between sedan and SUV, glass roof visible, white racing stripe, no visible wheels, sporty appearance, EV charge port on left side"
+      },
+      {
+        "name": "Pickup",
+        "rust_variant": "Pickup",
+        "filename": "vehicle_pickup.png",
+        "dimensions": {
+          "width": 48,
+          "height": 95
+        },
+        "footprint_tiles": 1,
+        "compatible_chargers": [
+          "DcFast",
+          "AcLevel2"
+        ],
+        "preferred_charger": "DcFast",
+        "ai_prompt": "top-down electric pickup truck #1F2937 black body, long silhouette with visible cab and cargo bed separation, glass cab roof visible, no visible wheels, rugged work vehicle appearance, EV charge port on left side"
+      },
+      {
+        "name": "Bus",
+        "rust_variant": "Bus",
+        "filename": "vehicle_bus.png",
+        "dimensions": {
+          "width": 55,
+          "height": 110
+        },
+        "footprint_tiles": 2,
+        "compatible_chargers": [
+          "DcFast"
+        ],
+        "preferred_charger": "DcFast",
+        "ai_prompt": "top-down electric transit bus #047857 green body, long rectangular silhouette with flat roof, multiple side windows visible, yellow route stripe accent, no visible wheels, urban public transportation appearance"
+      },
+      {
+        "name": "Semi",
+        "rust_variant": "Semi",
+        "filename": "vehicle_semi.png",
+        "dimensions": {
+          "width": 58,
+          "height": 140
+        },
+        "footprint_tiles": 3,
+        "compatible_chargers": [
+          "DcFast"
+        ],
+        "preferred_charger": "DcFast",
+        "ai_prompt": "top-down electric semi truck #1E3A8A commercial blue, very long silhouette with distinct cab (front 35%) and trailer (back 65%) separation, glass cab roof visible, exhaust stacks on cab, no visible wheels, heavy commercial vehicle"
+      },
+      {
+        "name": "Tractor",
+        "rust_variant": "Tractor",
+        "filename": "vehicle_tractor.png",
+        "dimensions": {
+          "width": 50,
+          "height": 80
+        },
+        "footprint_tiles": 1,
+        "compatible_chargers": [
+          "DcFast"
+        ],
+        "preferred_charger": "DcFast",
+        "ai_prompt": "top-down electric agricultural tractor #15803D John Deere green body, compact industrial silhouette with exposed engine grille, yellow accent stripe, rear hitch attachment visible, no visible wheels, farm equipment appearance"
+      },
+      {
+        "name": "Scooter",
+        "rust_variant": "Scooter",
+        "filename": "vehicle_scooter.png",
+        "dimensions": {
+          "width": 22,
+          "height": 45
+        },
+        "footprint_tiles": 1,
+        "compatible_chargers": [
+          "AcLevel2"
+        ],
+        "preferred_charger": "AcLevel2",
+        "ai_prompt": "top-down electric scooter #F97316 orange body, very small narrow silhouette, Vespa-style rounded front, seat visible from above, handlebars at front, no visible wheels, urban mobility vehicle"
+      },
+      {
+        "name": "Motorcycle",
+        "rust_variant": "Motorcycle",
+        "filename": "vehicle_motorcycle.png",
+        "dimensions": {
+          "width": 26,
+          "height": 65
+        },
+        "footprint_tiles": 1,
+        "compatible_chargers": [
+          "AcLevel2"
+        ],
+        "preferred_charger": "AcLevel2",
+        "ai_prompt": "top-down electric motorcycle #18181B black body, narrow sleek silhouette, fuel tank and seat visible from above, handlebars at front, green #22C55E EV accent stripe, no visible wheels, sporty electric bike appearance"
+      }
+    ]
+  },
+  "vfx": {
+    "enum_name": "VfxType",
+    "asset_dir": "vfx",
+    "entries": [
+      {
+        "name": "Selection",
+        "rust_variant": "Selection",
+        "filename": "vfx_selection.png",
+        "dimensions": {
+          "width": 256,
+          "height": 64
+        },
+        "used": true,
+        "preload": true,
+        "ai_prompt": "4-frame horizontal animation strip 256x64, selection highlight with corner brackets and dashed border, blue glow #2196F3, pulsing animation sequence from dim to bright"
+      },
+      {
+        "name": "PlacementCursor",
+        "rust_variant": "PlacementCursor",
+        "filename": "vfx_placement_cursor.png",
+        "dimensions": {
+          "width": 64,
+          "height": 64
+        },
+        "used": true,
+        "preload": true,
+        "ai_prompt": "single-frame placement cursor 64x64, corner brackets in blue #2196F3, dashed border, subtle background glow, build mode indicator overlay"
+      },
+      {
+        "name": "LightPulseGreen",
+        "rust_variant": "LightPulseGreen",
+        "filename": "vfx_light_pulse_green.png",
+        "dimensions": {
+          "width": 64,
+          "height": 16
+        },
+        "used": false,
+        "preload": false,
+        "ai_prompt": "4-frame horizontal animation strip 64x16, green status light #4CAF50 with radial glow, pulsing from dim to bright, charger available indicator"
+      },
+      {
+        "name": "LightPulseBlue",
+        "rust_variant": "LightPulseBlue",
+        "filename": "vfx_light_pulse_blue.png",
+        "dimensions": {
+          "width": 64,
+          "height": 16
+        },
+        "used": false,
+        "preload": false,
+        "ai_prompt": "4-frame horizontal animation strip 64x16, blue status light #2196F3 with radial glow, pulsing from dim to bright, charging in progress indicator"
+      },
+      {
+        "name": "LightPulseYellow",
+        "rust_variant": "LightPulseYellow",
+        "filename": "vfx_light_pulse_yellow.png",
+        "dimensions": {
+          "width": 64,
+          "height": 16
+        },
+        "used": false,
+        "preload": false,
+        "ai_prompt": "4-frame horizontal animation strip 64x16, yellow status light #FFC107 with radial glow, pulsing from dim to bright, warning status indicator"
+      },
+      {
+        "name": "LightPulseRed",
+        "rust_variant": "LightPulseRed",
+        "filename": "vfx_light_pulse_red.png",
+        "dimensions": {
+          "width": 64,
+          "height": 16
+        },
+        "used": false,
+        "preload": false,
+        "ai_prompt": "4-frame horizontal animation strip 64x16, red status light #F44336 with radial glow, pulsing from dim to bright, fault or error indicator"
+      },
+      {
+        "name": "UrgentPulse",
+        "rust_variant": "UrgentPulse",
+        "filename": "vfx_urgent_pulse.png",
+        "dimensions": {
+          "width": 192,
+          "height": 48
+        },
+        "used": true,
+        "preload": false,
+        "ai_prompt": "4-frame horizontal animation strip 192x48, urgent red pulse #F44336 with expanding concentric rings, exclamation mark visible, alert attention-grabbing effect"
+      },
+      {
+        "name": "FloatingMoney",
+        "rust_variant": "FloatingMoney",
+        "filename": "vfx_float_money.png",
+        "dimensions": {
+          "width": 144,
+          "height": 32
+        },
+        "used": true,
+        "preload": true,
+        "ai_prompt": "3-frame horizontal animation strip 144x32, floating money indicator with +$ text, green background gradient #4CAF50, rising and fading animation with sparkles"
+      },
+      {
+        "name": "FloatingRepLoss",
+        "rust_variant": "FloatingRepLoss",
+        "filename": "vfx_float_rep_loss.png",
+        "dimensions": {
+          "width": 144,
+          "height": 32
+        },
+        "used": false,
+        "preload": false,
+        "ai_prompt": "3-frame horizontal animation strip 144x32, floating reputation loss indicator with -\u2605 text, red background gradient #F44336, shaking then rising animation with crack effect"
+      },
+      {
+        "name": "FloatingWrench",
+        "rust_variant": "FloatingWrench",
+        "filename": "vfx_float_wrench.png",
+        "dimensions": {
+          "width": 144,
+          "height": 32
+        },
+        "used": true,
+        "preload": false,
+        "ai_prompt": "3-frame horizontal animation strip 144x32, floating wrench tool indicator, blue background gradient #2196F3, rising and fading animation with sparkles, repair complete effect"
+      },
+      {
+        "name": "LightTrail",
+        "rust_variant": "LightTrail",
+        "filename": "vfx_light_trail.png",
+        "dimensions": {
+          "width": 64,
+          "height": 64
+        },
+        "used": false,
+        "preload": false,
+        "ai_prompt": "light trail animation effect for moving vehicles"
+      }
+    ]
+  },
+  "chargers": {
+    "enum_name": "ChargerSprite",
+    "asset_dir": "chargers",
+    "entries": [
+      {
+        "id": 0,
+        "name": "L2_Base",
+        "filename": "l2/charger_l2_base.png"
+      },
+      {
+        "id": 1,
+        "name": "L2_Available",
+        "filename": "l2/charger_l2_available.png"
+      },
+      {
+        "id": 2,
+        "name": "L2_Charging",
+        "filename": "l2/charger_l2_charging.png"
+      },
+      {
+        "id": 3,
+        "name": "L2_Warning",
+        "filename": "l2/charger_l2_warning.png"
+      },
+      {
+        "id": 4,
+        "name": "L2_Offline",
+        "filename": "l2/charger_l2_offline.png"
+      },
+      {
+        "id": 5,
+        "name": "L2_CableConnected",
+        "filename": "l2/charger_l2_cable_connected.png"
+      },
+      {
+        "id": 6,
+        "name": "L2_CableStuck",
+        "filename": "l2/charger_l2_cable_stuck.png"
+      },
+      {
+        "id": 7,
+        "name": "DCFC50_Base",
+        "filename": "dcfc50/charger_dcfc50_base.png"
+      },
+      {
+        "id": 8,
+        "name": "DCFC50_Available",
+        "filename": "dcfc50/charger_dcfc50_available.png"
+      },
+      {
+        "id": 9,
+        "name": "DCFC50_Charging",
+        "filename": "dcfc50/charger_dcfc50_charging.png"
+      },
+      {
+        "id": 10,
+        "name": "DCFC50_Warning",
+        "filename": "dcfc50/charger_dcfc50_warning.png"
+      },
+      {
+        "id": 11,
+        "name": "DCFC50_Offline",
+        "filename": "dcfc50/charger_dcfc50_offline.png"
+      },
+      {
+        "id": 12,
+        "name": "DCFC50_CableConnected",
+        "filename": "dcfc50/charger_dcfc50_cable_connected.png"
+      },
+      {
+        "id": 13,
+        "name": "DCFC50_CableStuck",
+        "filename": "dcfc50/charger_dcfc50_cable_stuck.png"
+      },
+      {
+        "id": 14,
+        "name": "DCFC150_Base",
+        "filename": "dcfc150/charger_dcfc150_base.png"
+      },
+      {
+        "id": 15,
+        "name": "DCFC150_Available",
+        "filename": "dcfc150/charger_dcfc150_available.png"
+      },
+      {
+        "id": 16,
+        "name": "DCFC150_Charging",
+        "filename": "dcfc150/charger_dcfc150_charging.png"
+      },
+      {
+        "id": 17,
+        "name": "DCFC150_Warning",
+        "filename": "dcfc150/charger_dcfc150_warning.png"
+      },
+      {
+        "id": 18,
+        "name": "DCFC150_Offline",
+        "filename": "dcfc150/charger_dcfc150_offline.png"
+      },
+      {
+        "id": 19,
+        "name": "DCFC150_CableConnected",
+        "filename": "dcfc150/charger_dcfc150_cable_connected.png"
+      },
+      {
+        "id": 20,
+        "name": "DCFC150_CableStuck",
+        "filename": "dcfc150/charger_dcfc150_cable_stuck.png"
+      },
+      {
+        "id": 21,
+        "name": "DCFC350_Base",
+        "filename": "dcfc350/charger_dcfc350_base.png"
+      },
+      {
+        "id": 22,
+        "name": "DCFC350_Available",
+        "filename": "dcfc350/charger_dcfc350_available.png"
+      },
+      {
+        "id": 23,
+        "name": "DCFC350_Charging",
+        "filename": "dcfc350/charger_dcfc350_charging.png"
+      },
+      {
+        "id": 24,
+        "name": "DCFC350_Warning",
+        "filename": "dcfc350/charger_dcfc350_warning.png"
+      },
+      {
+        "id": 25,
+        "name": "DCFC350_Offline",
+        "filename": "dcfc350/charger_dcfc350_offline.png"
+      },
+      {
+        "id": 26,
+        "name": "DCFC350_CableConnected",
+        "filename": "dcfc350/charger_dcfc350_cable_connected.png"
+      },
+      {
+        "id": 27,
+        "name": "DCFC350_CableStuck",
+        "filename": "dcfc350/charger_dcfc350_cable_stuck.png"
+      },
+      {
+        "id": 28,
+        "name": "DCFC_Base",
+        "filename": "dcfc/charger_dcfc_base.png"
+      },
+      {
+        "id": 29,
+        "name": "DCFC_Available",
+        "filename": "dcfc/charger_dcfc_available.png"
+      },
+      {
+        "id": 30,
+        "name": "DCFC_Charging",
+        "filename": "dcfc/charger_dcfc_charging.png"
+      },
+      {
+        "id": 31,
+        "name": "DCFC_Warning",
+        "filename": "dcfc/charger_dcfc_warning.png"
+      },
+      {
+        "id": 32,
+        "name": "DCFC_Offline",
+        "filename": "dcfc/charger_dcfc_offline.png"
+      },
+      {
+        "id": 33,
+        "name": "DCFC_CableConnected",
+        "filename": "dcfc/charger_dcfc_cable_connected.png"
+      },
+      {
+        "id": 34,
+        "name": "DCFC_CableStuck",
+        "filename": "dcfc/charger_dcfc_cable_stuck.png"
+      },
+      {
+        "id": 35,
+        "name": "DCFC100_Base",
+        "filename": "dcfc100/charger_dcfc100_base.png"
+      },
+      {
+        "id": 36,
+        "name": "DCFC100_Available",
+        "filename": "dcfc100/charger_dcfc100_available.png"
+      },
+      {
+        "id": 37,
+        "name": "DCFC100_Charging",
+        "filename": "dcfc100/charger_dcfc100_charging.png"
+      },
+      {
+        "id": 38,
+        "name": "DCFC100_Warning",
+        "filename": "dcfc100/charger_dcfc100_warning.png"
+      },
+      {
+        "id": 39,
+        "name": "DCFC100_Offline",
+        "filename": "dcfc100/charger_dcfc100_offline.png"
+      },
+      {
+        "id": 40,
+        "name": "DCFC100_CableConnected",
+        "filename": "dcfc100/charger_dcfc100_cable_connected.png"
+      },
+      {
+        "id": 41,
+        "name": "DCFC100_CableStuck",
+        "filename": "dcfc100/charger_dcfc100_cable_stuck.png"
+      },
+      {
+        "id": 42,
+        "name": "DCFC100_Screen",
+        "filename": "dcfc100/charger_dcfc100_screen.png"
+      }
+    ]
+  },
+  "characters": {
+    "enum_name": "CharacterSprite",
+    "asset_dir": "characters",
+    "entries": [
+      {
+        "id": 0,
+        "name": "DriverNeutral",
+        "filename": "character_driver_neutral.png"
+      },
+      {
+        "id": 1,
+        "name": "DriverHappy",
+        "filename": "character_driver_happy.png"
+      },
+      {
+        "id": 2,
+        "name": "DriverImpatient",
+        "filename": "character_driver_impatient.png"
+      },
+      {
+        "id": 3,
+        "name": "DriverAngry",
+        "filename": "character_driver_angry.png"
+      },
+      {
+        "id": 4,
+        "name": "TechnicianIdle",
+        "filename": "character_technician_idle.png"
+      },
+      {
+        "id": 5,
+        "name": "TechnicianWorking",
+        "filename": "character_technician_working.png"
+      },
+      {
+        "id": 6,
+        "name": "RobberWalking",
+        "filename": "character_robber_walking.png"
+      },
+      {
+        "id": 7,
+        "name": "RobberStealing",
+        "filename": "character_robber_stealing.png"
+      },
+      {
+        "id": 8,
+        "name": "RobberWalkingPink",
+        "filename": "character_robber_walking_pink.png"
+      },
+      {
+        "id": 9,
+        "name": "RobberStealingPink",
+        "filename": "character_robber_stealing_pink.png"
+      },
+      {
+        "id": 10,
+        "name": "StolenCable",
+        "filename": "stolen_cable.png"
+      }
+    ]
+  },
+  "props": {
+    "enum_name": "PropType",
+    "asset_dir": "props",
+    "entries": [
+      {
+        "id": 0,
+        "name": "Transformer",
+        "filename": "prop_transformer.png"
+      },
+      {
+        "id": 1,
+        "name": "TransformerHot",
+        "filename": "prop_transformer_hot.png"
+      },
+      {
+        "id": 2,
+        "name": "TransformerCritical",
+        "filename": "prop_transformer_critical.png"
+      },
+      {
+        "id": 3,
+        "name": "SolarArrayGround",
+        "filename": "prop_solar_array_ground.png"
+      },
+      {
+        "id": 4,
+        "name": "BatteryContainer",
+        "filename": "prop_battery_container.png"
+      },
+      {
+        "id": 5,
+        "name": "ChargerBollard",
+        "filename": "prop_charger_bollard.png"
+      },
+      {
+        "id": 6,
+        "name": "ChargerBollardLit",
+        "filename": "prop_charger_bollard_lit.png"
+      },
+      {
+        "id": 7,
+        "name": "AmenityWifiRestrooms",
+        "filename": "prop_amenity_wifi_restrooms.png"
+      },
+      {
+        "id": 8,
+        "name": "AmenityLoungeSnacks",
+        "filename": "prop_amenity_lounge_snacks.png"
+      },
+      {
+        "id": 9,
+        "name": "AmenityRestaurantPremium",
+        "filename": "prop_amenity_restaurant_premium.png"
+      },
+      {
+        "id": 10,
+        "name": "SecuritySystem",
+        "filename": "prop_security_system.png"
+      },
+      {
+        "id": 11,
+        "name": "SecurityPole",
+        "filename": "prop_security_pole.png"
+      },
+      {
+        "id": 12,
+        "name": "SecurityCameraHead",
+        "filename": "prop_security_camera_head.png"
+      }
+    ]
+  },
+  "icons": {
+    "enum_name": "IconType",
+    "asset_dir": "ui/icons",
+    "entries": [
+      {
+        "id": 0,
+        "name": "Cash",
+        "filename": "icon_cash.png"
+      },
+      {
+        "id": 1,
+        "name": "RevenueTarget",
+        "filename": "icon_revenue_target.png"
+      },
+      {
+        "id": 2,
+        "name": "Time",
+        "filename": "icon_time.png"
+      },
+      {
+        "id": 3,
+        "name": "Reputation",
+        "filename": "icon_reputation.png"
+      },
+      {
+        "id": 4,
+        "name": "Ticket",
+        "filename": "icon_ticket.png"
+      },
+      {
+        "id": 5,
+        "name": "Technician",
+        "filename": "icon_technician.png"
+      },
+      {
+        "id": 6,
+        "name": "Power",
+        "filename": "icon_power.png"
+      },
+      {
+        "id": 7,
+        "name": "Pause",
+        "filename": "icon_pause.png"
+      },
+      {
+        "id": 8,
+        "name": "Speed1X",
+        "filename": "icon_speed_1x.png"
+      },
+      {
+        "id": 9,
+        "name": "Speed10X",
+        "filename": "icon_speed_10x.png"
+      },
+      {
+        "id": 10,
+        "name": "Speed30X",
+        "filename": "icon_speed_30x.png"
+      },
+      {
+        "id": 11,
+        "name": "PhaseA",
+        "filename": "icon_phase_a.png"
+      },
+      {
+        "id": 12,
+        "name": "PhaseB",
+        "filename": "icon_phase_b.png"
+      },
+      {
+        "id": 13,
+        "name": "PhaseC",
+        "filename": "icon_phase_c.png"
+      },
+      {
+        "id": 14,
+        "name": "TransformerTemp",
+        "filename": "icon_transformer_temp.png"
+      },
+      {
+        "id": 15,
+        "name": "VoltageWarning",
+        "filename": "icon_voltage_warning.png"
+      },
+      {
+        "id": 16,
+        "name": "BreakerTrip",
+        "filename": "icon_breaker_trip.png"
+      },
+      {
+        "id": 17,
+        "name": "ActionSoftReboot",
+        "filename": "icon_action_soft_reboot.png"
+      },
+      {
+        "id": 18,
+        "name": "ActionHardReboot",
+        "filename": "icon_action_hard_reboot.png"
+      },
+      {
+        "id": 19,
+        "name": "ActionRelease",
+        "filename": "icon_action_release.png"
+      },
+      {
+        "id": 20,
+        "name": "ActionRefund",
+        "filename": "icon_action_refund.png"
+      },
+      {
+        "id": 21,
+        "name": "ActionDispatch",
+        "filename": "icon_action_dispatch.png"
+      },
+      {
+        "id": 22,
+        "name": "ActionDisable",
+        "filename": "icon_action_disable.png"
+      },
+      {
+        "id": 23,
+        "name": "ActionEnable",
+        "filename": "icon_action_enable.png"
+      },
+      {
+        "id": 24,
+        "name": "ActionAcknowledge",
+        "filename": "icon_action_acknowledge.png"
+      },
+      {
+        "id": 25,
+        "name": "ActionApologize",
+        "filename": "icon_action_apologize.png"
+      },
+      {
+        "id": 26,
+        "name": "Warning",
+        "filename": "icon_warning.png"
+      },
+      {
+        "id": 27,
+        "name": "Fault",
+        "filename": "icon_fault.png"
+      },
+      {
+        "id": 28,
+        "name": "Success",
+        "filename": "icon_success.png"
+      },
+      {
+        "id": 29,
+        "name": "Info",
+        "filename": "icon_info.png"
+      },
+      {
+        "id": 30,
+        "name": "SlaTimer",
+        "filename": "icon_sla_timer.png"
+      },
+      {
+        "id": 31,
+        "name": "WeatherSunny",
+        "filename": "icon_weather_sunny.png"
+      },
+      {
+        "id": 32,
+        "name": "WeatherCloudy",
+        "filename": "icon_weather_cloudy.png"
+      },
+      {
+        "id": 33,
+        "name": "WeatherRainy",
+        "filename": "icon_weather_rainy.png"
+      },
+      {
+        "id": 34,
+        "name": "WeatherHeatwave",
+        "filename": "icon_weather_heatwave.png"
+      },
+      {
+        "id": 35,
+        "name": "WeatherCold",
+        "filename": "icon_weather_cold.png"
+      },
+      {
+        "id": 36,
+        "name": "ArrowLeft",
+        "filename": "icon_arrow_left.png"
+      },
+      {
+        "id": 37,
+        "name": "ArrowRight",
+        "filename": "icon_arrow_right.png"
+      },
+      {
+        "id": 38,
+        "name": "Plus",
+        "filename": "icon_plus.png"
+      },
+      {
+        "id": 39,
+        "name": "Minus",
+        "filename": "icon_minus.png"
+      },
+      {
+        "id": 40,
+        "name": "StarFilled",
+        "filename": "icon_star_filled.png"
+      },
+      {
+        "id": 41,
+        "name": "StarEmpty",
+        "filename": "icon_star_empty.png"
+      },
+      {
+        "id": 42,
+        "name": "Dashboard",
+        "filename": "icon_dashboard.png"
+      },
+      {
+        "id": 43,
+        "name": "Briefcase",
+        "filename": "icon_briefcase.png"
+      },
+      {
+        "id": 44,
+        "name": "Plug",
+        "filename": "icon_plug.png"
+      },
+      {
+        "id": 45,
+        "name": "Infrastructure",
+        "filename": "icon_infrastructure.png"
+      },
+      {
+        "id": 46,
+        "name": "Coffee",
+        "filename": "icon_coffee.png"
+      },
+      {
+        "id": 47,
+        "name": "Upgrade",
+        "filename": "icon_upgrade.png"
+      },
+      {
+        "id": 48,
+        "name": "Bolt",
+        "filename": "icon_bolt.png"
+      },
+      {
+        "id": 49,
+        "name": "PlatformWindows",
+        "filename": "icon_platform_windows.png"
+      },
+      {
+        "id": 50,
+        "name": "PlatformMacos",
+        "filename": "icon_platform_macos.png"
+      },
+      {
+        "id": 51,
+        "name": "PlatformLinux",
+        "filename": "icon_platform_linux.png"
+      },
+      {
+        "id": 52,
+        "name": "MoodNeutral",
+        "filename": "icon_mood_neutral.png"
+      },
+      {
+        "id": 53,
+        "name": "MoodHappy",
+        "filename": "icon_mood_happy.png"
+      },
+      {
+        "id": 54,
+        "name": "MoodImpatient",
+        "filename": "icon_mood_impatient.png"
+      },
+      {
+        "id": 55,
+        "name": "MoodAngry",
+        "filename": "icon_mood_angry.png"
+      },
+      {
+        "id": 56,
+        "name": "MedalGold",
+        "filename": "icon_medal_gold.png"
+      },
+      {
+        "id": 57,
+        "name": "MedalSilver",
+        "filename": "icon_medal_silver.png"
+      },
+      {
+        "id": 58,
+        "name": "MedalBronze",
+        "filename": "icon_medal_bronze.png"
+      },
+      {
+        "id": 59,
+        "name": "AmenityWifiRestrooms",
+        "filename": "icon_amenity_wifi_restrooms.png"
+      },
+      {
+        "id": 60,
+        "name": "AmenityLoungeSnacks",
+        "filename": "icon_amenity_lounge_snacks.png"
+      },
+      {
+        "id": 61,
+        "name": "AmenityRestaurantPremium",
+        "filename": "icon_amenity_restaurant_premium.png"
+      },
+      {
+        "id": 62,
+        "name": "ActionAntiTheft",
+        "filename": "icon_action_anti_theft.png"
+      },
+      {
+        "id": 63,
+        "name": "ShieldIndicator",
+        "filename": "icon_shield_indicator.png"
+      },
+      {
+        "id": 64,
+        "name": "Ruler",
+        "filename": "icon_ruler.png"
+      },
+      {
+        "id": 65,
+        "name": "SoundOn",
+        "filename": "icon_sound_on.png"
+      },
+      {
+        "id": 66,
+        "name": "SoundOff",
+        "filename": "icon_sound_off.png"
+      }
+    ]
+  }
+}

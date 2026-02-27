@@ -1,0 +1,41 @@
+# Rust
+/target/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.rlib
+*.rmeta
+*.d
+dist/
+*.hash
+
+# Debug
+*.pdb
+.cursor
+
+# Python
+__pycache__
+
+# Tiled
+*.tiled-session
+
+# Generated files (regenerated from manifest/tools)
+assets/asset_preview.html
+tools/generated_tile_mapping.py
+
+# OCPP data stream output
+ocpp_datastream/
+
+# AI playground
+spec/levels/reimagined/
+.env
