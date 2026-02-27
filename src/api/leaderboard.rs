@@ -79,8 +79,8 @@ pub async fn fetch_leaderboard(
         .send()
         .await
         .map_err(|e| {
-            warn!("Network error fetching leaderboard: {}", e);
-            LeaderboardError::Network(e.to_string())
+            warn!("Network error fetching leaderboard from {}: {:?}", url, e);
+            LeaderboardError::Network(format!("{:?}", e))
         })?;
 
     let status = response.status();

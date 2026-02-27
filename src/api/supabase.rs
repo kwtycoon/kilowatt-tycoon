@@ -2,6 +2,16 @@
 
 use bevy::prelude::*;
 
+/// Strip invisible/non-ASCII characters that can slip in via copy-paste into
+/// GitHub secrets and are invalid in URLs and HTTP header values.
+fn sanitize_credential(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_ascii() && !c.is_ascii_control())
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
 /// Supabase configuration resource
 #[derive(Resource, Clone, Debug)]
 pub struct SupabaseConfig {
@@ -25,11 +35,21 @@ impl SupabaseConfig {
     /// Returns `None` when neither source provides credentials.
     pub fn from_env() -> Option<Self> {
         let url = option_env!("SUPABASE_URL")
-            .map(String::from)
-            .or_else(|| std::env::var("SUPABASE_URL").ok());
+            .map(sanitize_credential)
+            .or_else(|| {
+                std::env::var("SUPABASE_URL")
+                    .ok()
+                    .map(|s| sanitize_credential(&s))
+            })
+            .filter(|s| !s.is_empty());
         let anon_key = option_env!("SUPABASE_ANON_KEY")
-            .map(String::from)
-            .or_else(|| std::env::var("SUPABASE_ANON_KEY").ok());
+            .map(sanitize_credential)
+            .or_else(|| {
+                std::env::var("SUPABASE_ANON_KEY")
+                    .ok()
+                    .map(|s| sanitize_credential(&s))
+            })
+            .filter(|s| !s.is_empty());
 
         match (url, anon_key) {
             (Some(url), Some(anon_key)) => Some(Self { url, anon_key }),
