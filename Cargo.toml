@@ -6,11 +6,13 @@ description = "A 2D top-down simulation/tycoon game where the player operates an
 license = "MIT"
 
 [features]
-default = ["ocpp"]
+default = ["ocpp", "openadr"]
 # Use dynamic linking for faster native compilation (not supported for WASM)
 native = ["bevy/dynamic_linking"]
 # OCPP 1.6J WebSocket streaming (disabled by default)
 ocpp = ["dep:rust-ocpp", "dep:tokio-tungstenite", "dep:futures-util"]
+# OpenADR 3.0 DER message feed
+openadr = ["dep:openleadr-wire"]
 
 [dependencies]
 bevy = { version = "0.17", default-features = false, features = [
@@ -56,6 +58,7 @@ image = { version = "0.25", default-features = false, features = ["gif"] }
 thiserror = "2"
 chrono = { version = "0.4", features = ["serde"] }
 rust-ocpp = { version = "2.0.1", default-features = false, features = ["v1_6"], optional = true }
+openleadr-wire = { version = "0.1", default-features = false, optional = true }
 
 # Native-only dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

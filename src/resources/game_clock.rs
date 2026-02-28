@@ -74,6 +74,9 @@ pub struct GameClock {
     /// active charging sessions complete naturally and vehicles drive off the map.
     /// Transition to `DayEnd` happens once all drivers have exited.
     pub day_ending: bool,
+    /// Real-time timestamp (`total_real_time`) when `day_ending` was set to true.
+    /// Used to cap the wind-down duration so the game doesn't stall on slow hardware.
+    pub day_ending_since: f32,
 }
 
 impl Default for GameClock {
@@ -88,6 +91,7 @@ impl Default for GameClock {
             month: 1,
             year: 1,
             day_ending: false,
+            day_ending_since: 0.0,
         }
     }
 }
@@ -208,6 +212,7 @@ impl GameClock {
         self.real_time = 0.0;
         self.speed = GameSpeed::Fast;
         self.day_ending = false;
+        self.day_ending_since = 0.0;
     }
 
     /// Full reset (for new game)
@@ -221,5 +226,6 @@ impl GameClock {
         self.month = 1;
         self.year = 1;
         self.day_ending = false;
+        self.day_ending_since = 0.0;
     }
 }

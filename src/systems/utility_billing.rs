@@ -63,6 +63,20 @@ pub fn utility_billing_system(
             game_state.add_energy_cost(energy_cost);
         }
 
+        // Solar export revenue: credit for power sold back to the grid
+        let export_kw = site_state.grid_import.export_kw;
+        if export_kw > 0.0 {
+            let export_kwh = export_kw * (delta_game_seconds / 3600.0);
+            let export_rate = site_state
+                .site_energy_config
+                .current_export_rate(game_clock.game_time);
+
+            site_state.utility_meter.add_export(export_kwh, export_rate);
+
+            let export_revenue = export_kwh * export_rate;
+            game_state.add_solar_export_revenue(export_revenue);
+        }
+
         // Update demand charge based on current peak
         // Apply character perk multiplier if UtilityInsider is active
         let demand_perk_multiplier = match profile.active_perk() {

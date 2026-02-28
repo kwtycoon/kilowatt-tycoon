@@ -5,6 +5,44 @@ use bevy::prelude::*;
 
 use super::{AmenityType, MultiSiteManager, SiteGrid};
 
+/// Policy controlling when excess solar generation is exported to the grid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SolarExportPolicy {
+    /// No export; excess solar is curtailed (wasted).
+    #[default]
+    Never,
+    /// Export only surplus after self-consumption and BESS charging.
+    ExcessOnly,
+    /// Prioritize grid export over BESS charging (skips storing excess solar in battery).
+    MaxExport,
+}
+
+impl SolarExportPolicy {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            SolarExportPolicy::Never => "Never",
+            SolarExportPolicy::ExcessOnly => "Excess Only",
+            SolarExportPolicy::MaxExport => "Max Export",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            SolarExportPolicy::Never => SolarExportPolicy::ExcessOnly,
+            SolarExportPolicy::ExcessOnly => SolarExportPolicy::MaxExport,
+            SolarExportPolicy::MaxExport => SolarExportPolicy::Never,
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            SolarExportPolicy::Never => SolarExportPolicy::MaxExport,
+            SolarExportPolicy::ExcessOnly => SolarExportPolicy::Never,
+            SolarExportPolicy::MaxExport => SolarExportPolicy::ExcessOnly,
+        }
+    }
+}
+
 /// Service strategy - the player's control panel for balancing price, quality, and customer satisfaction
 #[derive(Resource, Debug, Clone)]
 pub struct ServiceStrategy {
@@ -33,6 +71,10 @@ pub struct ServiceStrategy {
     /// Multiple amenities stack - patience multipliers compound multiplicatively,
     /// OPEX costs sum additively.
     pub amenity_counts: [u32; 3],
+
+    // === Solar Export ===
+    /// Controls when excess solar generation is sold back to the grid.
+    pub solar_export_policy: SolarExportPolicy,
 }
 
 impl Default for ServiceStrategy {
@@ -44,6 +86,7 @@ impl Default for ServiceStrategy {
             target_power_density: 1.0,    // 100% of rated power
             maintenance_investment: 10.0, // $10/hour
             amenity_counts: [0; 3],
+            solar_export_policy: SolarExportPolicy::Never,
         }
     }
 }

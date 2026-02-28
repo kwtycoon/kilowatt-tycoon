@@ -54,6 +54,9 @@ pub struct BessDischargeThresholdLabel;
 pub struct BessChargeThresholdLabel;
 
 #[derive(Component)]
+pub struct SolarExportPolicyLabel;
+
+#[derive(Component)]
 pub struct SummaryCashLabel;
 
 #[derive(Component)]
@@ -282,6 +285,23 @@ fn spawn_power_strategy_panel(parent: &mut ChildSpawnerCommands, image_assets: &
                 TextFont { font_size: 10.0, ..default() },
                 TextColor(colors::TEXT_SECONDARY),
             ));
+
+            spawn_separator(panel);
+
+            // Solar Export section
+            panel.spawn((
+                Text::new("Solar Export:"),
+                TextFont { font_size: 12.0, ..default() },
+                TextColor(colors::TEXT_SECONDARY),
+            ));
+
+            spawn_slider_control(panel, "Grid Sellback:", "Never", StrategyControl::SolarExportPolicy, SolarExportPolicyLabel, image_assets);
+
+            panel.spawn((
+                Text::new("Never: excess solar is curtailed. Excess Only: export surplus after self-consumption and battery charging. Max Export: prioritize grid export over battery storage."),
+                TextFont { font_size: 10.0, ..default() },
+                TextColor(colors::TEXT_SECONDARY),
+            ));
         });
 }
 
@@ -438,6 +458,22 @@ pub fn update_strategy_panel_values(
             Without<AmenityLevelLabel>,
             Without<HourlyOpexLabel>,
             Without<BessDischargeThresholdLabel>,
+            Without<SolarExportPolicyLabel>,
+        ),
+    >,
+    mut solar_export: Query<
+        &mut Text,
+        (
+            With<SolarExportPolicyLabel>,
+            Without<EnergyPriceLabel>,
+            Without<IdleFeeLabel>,
+            Without<VideoAdPriceLabel>,
+            Without<PowerDensityLabel>,
+            Without<MaintenanceLabel>,
+            Without<AmenityLevelLabel>,
+            Without<HourlyOpexLabel>,
+            Without<BessDischargeThresholdLabel>,
+            Without<BessChargeThresholdLabel>,
         ),
     >,
 ) {
@@ -486,6 +522,13 @@ pub fn update_strategy_panel_values(
     }
     for mut text in &mut bess_charge {
         **text = format!("{:.0}%", site_state.bess_state.charge_threshold * 100.0);
+    }
+    for mut text in &mut solar_export {
+        **text = site_state
+            .service_strategy
+            .solar_export_policy
+            .display_name()
+            .to_string();
     }
 }
 
@@ -564,6 +607,16 @@ pub fn handle_strategy_panel_buttons(
                 site_state.bess_state.charge_threshold =
                     (site_state.bess_state.charge_threshold + delta).clamp(0.20, 0.50);
             }
+            StrategyControl::SolarExportPolicy => {
+                if !has_power_management {
+                    continue;
+                }
+                site_state.service_strategy.solar_export_policy = if is_minus.is_some() {
+                    site_state.service_strategy.solar_export_policy.prev()
+                } else {
+                    site_state.service_strategy.solar_export_policy.next()
+                };
+            }
         }
     }
 }
@@ -618,6 +671,14 @@ pub fn update_slider_fill_widths(
                 // Range: 0.20 - 0.50
                 let normalized = (site_state.bess_state.charge_threshold - 0.20) / (0.50 - 0.20);
                 (normalized * 100.0).clamp(0.0, 100.0)
+            }
+            StrategyControl::SolarExportPolicy => {
+                use crate::resources::SolarExportPolicy;
+                match site_state.service_strategy.solar_export_policy {
+                    SolarExportPolicy::Never => 0.0,
+                    SolarExportPolicy::ExcessOnly => 50.0,
+                    SolarExportPolicy::MaxExport => 100.0,
+                }
             }
         };
 
@@ -876,6 +937,7 @@ pub fn update_power_control_visual_state(
             Without<SliderLabelText>,
             Without<BessDischargeThresholdLabel>,
             Without<BessChargeThresholdLabel>,
+            Without<SolarExportPolicyLabel>,
         ),
     >,
     mut discharge_threshold_value: Query<
@@ -885,6 +947,7 @@ pub fn update_power_control_visual_state(
             Without<SliderLabelText>,
             Without<PowerDensityLabel>,
             Without<BessChargeThresholdLabel>,
+            Without<SolarExportPolicyLabel>,
         ),
     >,
     mut charge_threshold_value: Query<
@@ -894,6 +957,17 @@ pub fn update_power_control_visual_state(
             Without<SliderLabelText>,
             Without<PowerDensityLabel>,
             Without<BessDischargeThresholdLabel>,
+            Without<SolarExportPolicyLabel>,
+        ),
+    >,
+    mut solar_export_value: Query<
+        &mut TextColor,
+        (
+            With<SolarExportPolicyLabel>,
+            Without<SliderLabelText>,
+            Without<PowerDensityLabel>,
+            Without<BessDischargeThresholdLabel>,
+            Without<BessChargeThresholdLabel>,
         ),
     >,
 ) {
@@ -901,13 +975,13 @@ pub fn update_power_control_visual_state(
         .active_site()
         .is_some_and(|site| site.site_upgrades.has_power_management());
 
-    // Helper to check if a control is a power control
     let is_power_control = |control: &StrategyControl| {
         matches!(
             control,
             StrategyControl::PowerDensity
                 | StrategyControl::BessDischargeThreshold
                 | StrategyControl::BessChargeThreshold
+                | StrategyControl::SolarExportPolicy
         )
     };
 
@@ -928,7 +1002,6 @@ pub fn update_power_control_visual_state(
             *bg = if has_upgrade {
                 BackgroundColor(colors::SLIDER_FILL)
             } else {
-                // Dimmed version of slider fill
                 BackgroundColor(Color::srgba(0.3, 0.5, 0.3, 0.5))
             };
         }
@@ -940,7 +1013,6 @@ pub fn update_power_control_visual_state(
             *bg = if has_upgrade {
                 BackgroundColor(colors::SLIDER_TRACK)
             } else {
-                // Dimmed version of slider track
                 BackgroundColor(Color::srgba(0.15, 0.18, 0.15, 0.5))
             };
         }
@@ -971,6 +1043,9 @@ pub fn update_power_control_visual_state(
         *text_color = value_color;
     }
     for mut text_color in &mut charge_threshold_value {
+        *text_color = value_color;
+    }
+    for mut text_color in &mut solar_export_value {
         *text_color = value_color;
     }
 }

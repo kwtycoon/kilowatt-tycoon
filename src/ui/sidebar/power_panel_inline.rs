@@ -56,6 +56,9 @@ pub struct BatteryBar;
 pub struct BatteryBarFill;
 
 #[derive(Component)]
+pub struct PowerSolarExportLabel;
+
+#[derive(Component)]
 pub struct PowerOffPeakRateLabel;
 
 #[derive(Component)]
@@ -224,6 +227,8 @@ pub fn spawn_power_panel(parent: &mut ChildSpawnerCommands, image_assets: &Image
                     PowerSolarLabel,
                 ));
             });
+
+        spawn_labeled_row(panel, "Solar Export:", "—", PowerSolarExportLabel);
 
         // Battery bar with SOC and rate indicator
         panel.spawn((
@@ -525,6 +530,18 @@ pub fn update_power_panel_resources(
             Without<PowerBatteryLabel>,
             Without<PowerOffPeakRateLabel>,
             Without<PowerOnPeakRateLabel>,
+            Without<PowerSolarExportLabel>,
+        ),
+    >,
+    mut solar_export: Query<
+        &mut Text,
+        (
+            With<PowerSolarExportLabel>,
+            Without<PowerSolarLabel>,
+            Without<PowerBatteryLabel>,
+            Without<PowerOffPeakRateLabel>,
+            Without<PowerOnPeakRateLabel>,
+            Without<PowerDemandChargeLabel>,
         ),
     >,
 ) {
@@ -582,6 +599,26 @@ pub fn update_power_panel_resources(
             "${:.2}/kW",
             site_state.site_energy_config.demand_rate_per_kw
         );
+    }
+
+    // Solar export display
+    for mut text in &mut solar_export {
+        use crate::resources::SolarExportPolicy;
+        let export_kw = site_state.grid_import.export_kw;
+        let policy = site_state.service_strategy.solar_export_policy;
+        if policy == SolarExportPolicy::Never || site_state.grid.total_solar_kw <= 0.0 {
+            **text = "\u{2014}".to_string(); // em-dash
+        } else if export_kw > 0.1 {
+            let revenue = site_state.utility_meter.total_export_revenue;
+            **text = format!("{export_kw:.0} kW (${revenue:.2})");
+        } else {
+            let revenue = site_state.utility_meter.total_export_revenue;
+            if revenue > 0.0 {
+                **text = format!("0 kW (${revenue:.2})");
+            } else {
+                **text = "0 kW".to_string();
+            }
+        }
     }
 }
 

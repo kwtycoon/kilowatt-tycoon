@@ -37,6 +37,10 @@ pub struct SiteEnergyConfig {
     pub on_peak_start: f32,
     /// End of on-peak period as fraction of day (0.0-1.0)
     pub on_peak_end: f32,
+    /// Off-peak solar export buyback rate ($/kWh) -- wholesale price
+    pub off_peak_export_rate: f32,
+    /// On-peak solar export buyback rate ($/kWh) -- higher demand period
+    pub on_peak_export_rate: f32,
 }
 
 impl Default for SiteEnergyConfig {
@@ -49,6 +53,8 @@ impl Default for SiteEnergyConfig {
             demand_rate_per_kw: 15.0,
             on_peak_start: 0.375, // 9am in a 24h day
             on_peak_end: 0.875,   // 9pm in a 24h day
+            off_peak_export_rate: 0.04,
+            on_peak_export_rate: 0.08,
         }
     }
 }
@@ -70,6 +76,14 @@ impl SiteEnergyConfig {
         match self.current_tou_period(game_time) {
             TouPeriod::OffPeak => self.off_peak_rate,
             TouPeriod::OnPeak => self.on_peak_rate,
+        }
+    }
+
+    /// Get the current solar export buyback rate based on TOU period
+    pub fn current_export_rate(&self, game_time: f32) -> f32 {
+        match self.current_tou_period(game_time) {
+            TouPeriod::OffPeak => self.off_peak_export_rate,
+            TouPeriod::OnPeak => self.on_peak_export_rate,
         }
     }
 
@@ -129,6 +143,10 @@ pub struct UtilityMeter {
     pub demand_charge: f32,
     /// Demand charge already applied to game state opex
     pub demand_charge_applied: f32,
+    /// Total energy exported to the grid (kWh)
+    pub total_exported_kwh: f32,
+    /// Accumulated revenue from solar export this session
+    pub total_export_revenue: f32,
 }
 
 impl Default for UtilityMeter {
@@ -143,6 +161,8 @@ impl Default for UtilityMeter {
             total_energy_cost: 0.0,
             demand_charge: 0.0,
             demand_charge_applied: 0.0,
+            total_exported_kwh: 0.0,
+            total_export_revenue: 0.0,
         }
     }
 }
@@ -192,6 +212,12 @@ impl UtilityMeter {
     pub fn update_demand_charge(&mut self, demand_rate_per_kw: f32, multiplier: f32) {
         self.demand_charge =
             self.peak_demand_kw * demand_rate_per_kw * multiplier / DAYS_PER_BILLING_PERIOD;
+    }
+
+    /// Add exported energy and revenue
+    pub fn add_export(&mut self, kwh: f32, rate: f32) {
+        self.total_exported_kwh += kwh;
+        self.total_export_revenue += kwh * rate;
     }
 
     /// Get total imported energy (kWh)
@@ -403,6 +429,8 @@ pub struct GridImport {
     pub solar_kw: f32,
     /// BESS contribution (kW, positive = discharge reducing import)
     pub bess_kw: f32,
+    /// Power being exported to the grid (kW) - excess solar sold back
+    pub export_kw: f32,
 }
 
 impl GridImport {
@@ -410,12 +438,20 @@ impl GridImport {
     /// Note: Solar and BESS inject real power (kW), which reduces grid import
     /// but the power factor of the remaining load still applies.
     pub fn calculate(&mut self) {
-        // Real power import = gross load - solar - BESS discharge
+        // Net real power = gross load - solar - BESS discharge
         // (BESS charging adds to grid import, so bess_kw negative = charging)
-        self.current_kw = (self.gross_load_kw - self.solar_kw - self.bess_kw).max(0.0);
+        let net_kw = self.gross_load_kw - self.solar_kw - self.bess_kw;
+
+        if net_kw >= 0.0 {
+            self.current_kw = net_kw;
+            self.export_kw = 0.0;
+        } else {
+            // Surplus generation: export the excess
+            self.current_kw = 0.0;
+            self.export_kw = -net_kw;
+        }
 
         // Apparent power import scales proportionally with real power reduction
-        // This is a simplification: in reality, PF correction equipment affects this
         if self.gross_load_kw > 0.0 {
             let reduction_factor = self.current_kw / self.gross_load_kw;
             self.current_kva = self.gross_load_kva * reduction_factor;

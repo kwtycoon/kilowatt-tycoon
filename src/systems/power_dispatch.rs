@@ -9,7 +9,8 @@ use bevy::prelude::*;
 use crate::components::BelongsToSite;
 use crate::components::charger::Charger;
 use crate::resources::{
-    EnvironmentState, GameClock, GameState, MultiSiteManager, SiteConfig, TouPeriod,
+    EnvironmentState, GameClock, GameState, MultiSiteManager, SiteConfig, SolarExportPolicy,
+    TouPeriod,
 };
 
 /// Power dispatch system - allocates power to chargers within site constraints
@@ -124,9 +125,10 @@ pub fn power_dispatch_system(
         // Smart dispatch priorities:
         // 1. Prevent new demand peaks (highest priority - reduces demand charges)
         // 2. Peak shave when approaching threshold
-        // 3. Store excess solar generation
+        // 3. Store excess solar generation (skipped when MaxExport policy is active)
         // 4. Charge during off-peak low-load periods
         let mut bess_contribution_kw = 0.0_f32;
+        let export_policy = site_state.service_strategy.solar_export_policy;
 
         if site_state.bess_state.capacity_kwh > 0.0 {
             // Net load after solar (using kVA for infrastructure threshold comparison)
@@ -173,11 +175,12 @@ pub fn power_dispatch_system(
                 bess_contribution_kw = needed_discharge_kva.min(available_discharge);
             }
             // PRIORITY 3: Store excess solar generation
-            else if solar_kw > gross_charger_load_kw
+            // Skipped when MaxExport is active -- that solar is exported to the grid instead
+            else if export_policy != SolarExportPolicy::MaxExport
+                && solar_kw > gross_charger_load_kw
                 && site_state.bess_state.soc_percent() < 95.0
                 && available_charge > 0.0
             {
-                // Excess solar available - store it in battery
                 let excess_solar = solar_kw - gross_charger_load_kw;
                 bess_contribution_kw = -excess_solar.min(available_charge); // Negative = charging
             }
@@ -262,6 +265,11 @@ pub fn power_dispatch_system(
         site_state.grid_import.solar_kw = solar_kw;
         site_state.grid_import.bess_kw = bess_contribution_kw;
         site_state.grid_import.calculate();
+
+        // Suppress export when policy is Never (curtail excess solar)
+        if export_policy == SolarExportPolicy::Never {
+            site_state.grid_import.export_kw = 0.0;
+        }
 
         // Track solar generation
         if delta_game_seconds > 0.0 {

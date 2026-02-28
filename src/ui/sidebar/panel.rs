@@ -83,6 +83,7 @@ pub enum StrategyControl {
     Maintenance,
     BessDischargeThreshold,
     BessChargeThreshold,
+    SolarExportPolicy,
 }
 
 /// Marker for minus buttons

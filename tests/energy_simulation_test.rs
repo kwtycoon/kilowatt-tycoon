@@ -12,7 +12,7 @@
 
 use kilowatt_tycoon::components::charger::{Charger, ChargerTier};
 use kilowatt_tycoon::resources::{
-    BessState, GridImport, SiteEnergyConfig, SolarState, TouPeriod, UtilityMeter,
+    BessState, GridImport, SiteEnergyConfig, SolarExportPolicy, SolarState, TouPeriod, UtilityMeter,
 };
 
 // ============ SiteEnergyConfig Tests ============
@@ -432,7 +432,7 @@ fn test_grid_import_with_bess_charging() {
 }
 
 #[test]
-fn test_grid_import_clamps_to_zero() {
+fn test_grid_import_excess_solar_exports() {
     let mut grid = GridImport::default();
 
     grid.gross_load_kw = 50.0;
@@ -441,8 +441,38 @@ fn test_grid_import_clamps_to_zero() {
 
     grid.calculate();
 
-    // Should clamp to zero (no export modeled)
+    // Import should be zero, excess exported
     assert_eq!(grid.current_kw, 0.0);
+    assert!((grid.export_kw - 50.0).abs() < 0.01);
+}
+
+#[test]
+fn test_grid_import_no_export_when_load_exceeds_solar() {
+    let mut grid = GridImport::default();
+
+    grid.gross_load_kw = 200.0;
+    grid.solar_kw = 50.0;
+    grid.bess_kw = 0.0;
+
+    grid.calculate();
+
+    assert_eq!(grid.export_kw, 0.0);
+    assert!((grid.current_kw - 150.0).abs() < 0.01);
+}
+
+#[test]
+fn test_grid_import_export_with_bess_discharge() {
+    let mut grid = GridImport::default();
+
+    grid.gross_load_kw = 30.0;
+    grid.solar_kw = 80.0;
+    grid.bess_kw = 10.0; // Discharging adds more surplus
+
+    grid.calculate();
+
+    // Net = 30 - 80 - 10 = -60
+    assert_eq!(grid.current_kw, 0.0);
+    assert!((grid.export_kw - 60.0).abs() < 0.01);
 }
 
 // ============ ChargerTier Tests ============
@@ -526,4 +556,72 @@ fn test_charger_fault_probability_zero_delta() {
 
     // Zero delta should give zero probability
     assert_eq!(charger.fault_probability(0.0), 0.0);
+}
+
+// ============ Solar Export Policy Tests ============
+
+#[test]
+fn test_solar_export_policy_defaults_to_never() {
+    assert_eq!(SolarExportPolicy::default(), SolarExportPolicy::Never);
+}
+
+#[test]
+fn test_solar_export_policy_cycle() {
+    let policy = SolarExportPolicy::Never;
+    assert_eq!(policy.next(), SolarExportPolicy::ExcessOnly);
+    assert_eq!(policy.next().next(), SolarExportPolicy::MaxExport);
+    assert_eq!(policy.next().next().next(), SolarExportPolicy::Never);
+
+    // Reverse cycle
+    assert_eq!(policy.prev(), SolarExportPolicy::MaxExport);
+    assert_eq!(policy.prev().prev(), SolarExportPolicy::ExcessOnly);
+    assert_eq!(policy.prev().prev().prev(), SolarExportPolicy::Never);
+}
+
+#[test]
+fn test_solar_export_policy_display_names() {
+    assert_eq!(SolarExportPolicy::Never.display_name(), "Never");
+    assert_eq!(SolarExportPolicy::ExcessOnly.display_name(), "Excess Only");
+    assert_eq!(SolarExportPolicy::MaxExport.display_name(), "Max Export");
+}
+
+// ============ Export Rate Tests ============
+
+#[test]
+fn test_export_rate_defaults() {
+    let config = SiteEnergyConfig::default();
+
+    assert!(config.off_peak_export_rate > 0.0);
+    assert!(config.on_peak_export_rate > config.off_peak_export_rate);
+    // Export rates should be lower than retail import rates
+    assert!(config.off_peak_export_rate < config.off_peak_rate);
+    assert!(config.on_peak_export_rate < config.on_peak_rate);
+}
+
+#[test]
+fn test_current_export_rate() {
+    let config = SiteEnergyConfig::default();
+
+    // Off-peak export rate at midnight
+    let rate = config.current_export_rate(0.0);
+    assert_eq!(rate, config.off_peak_export_rate);
+
+    // On-peak export rate at midday
+    let rate = config.current_export_rate(config.day_length_game_seconds * 0.5);
+    assert_eq!(rate, config.on_peak_export_rate);
+}
+
+// ============ Utility Meter Export Tests ============
+
+#[test]
+fn test_utility_meter_export_tracking() {
+    let mut meter = UtilityMeter::default();
+
+    meter.add_export(10.0, 0.04); // 10 kWh at off-peak export rate
+    assert!((meter.total_exported_kwh - 10.0).abs() < 0.01);
+    assert!((meter.total_export_revenue - 0.40).abs() < 0.01);
+
+    meter.add_export(5.0, 0.08); // 5 kWh at on-peak export rate
+    assert!((meter.total_exported_kwh - 15.0).abs() < 0.01);
+    assert!((meter.total_export_revenue - 0.80).abs() < 0.01);
 }

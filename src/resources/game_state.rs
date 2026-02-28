@@ -46,6 +46,7 @@ pub struct DailyRecord {
     pub charging_revenue: f32, // Revenue from charging sessions (kWh * price)
     pub ad_revenue: f32,       // Revenue from video advertisements
     pub carbon_credits: f32,   // Carbon credit revenue
+    pub solar_export_revenue: f32, // Revenue from selling solar back to the grid
 
     // Expenses
     pub energy_cost: f32,      // TOU energy costs
@@ -69,7 +70,7 @@ impl DailyRecord {
     }
 
     pub fn net_profit(&self) -> f32 {
-        self.total_revenue() + self.carbon_credits
+        self.total_revenue() + self.carbon_credits + self.solar_export_revenue
             - self.energy_cost
             - self.demand_charge
             - self.opex
@@ -86,6 +87,7 @@ pub struct CurrentDayTracker {
     pub charging_revenue: f32, // Revenue from charging sessions
     pub ad_revenue: f32,       // Revenue from video advertisements
     pub carbon_credits: f32,
+    pub solar_export_revenue: f32, // Revenue from selling solar back to the grid
     pub energy_cost: f32,
     pub demand_charge: f32,
     pub opex: f32,
@@ -254,6 +256,12 @@ impl GameState {
         self.net_revenue += amount;
         self.cash += amount;
         self.daily_history.current_day.carbon_credits += amount;
+    }
+
+    pub fn add_solar_export_revenue(&mut self, amount: f32) {
+        self.net_revenue += amount;
+        self.cash += amount;
+        self.daily_history.current_day.solar_export_revenue += amount;
     }
 
     pub fn change_reputation(&mut self, delta: i32) {

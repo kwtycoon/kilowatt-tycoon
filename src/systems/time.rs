@@ -24,11 +24,17 @@ pub fn time_system(time: Res<Time>, mut game_clock: ResMut<GameClock>, game_stat
             game_clock.day, game_clock.game_time
         );
         game_clock.day_ending = true;
+        game_clock.day_ending_since = game_clock.total_real_time;
         // Snap the clock to 23:59 so the HUD shows 11:59 PM during wind-down.
         // (tick() will no longer advance game_time while day_ending is true.)
         game_clock.game_time = 86340.0; // 23h 59m 0s
     }
 }
+
+/// Maximum real-time seconds the wind-down phase can last before force-transitioning
+/// to DayEnd. Prevents the game from stalling on slow hardware (e.g. software-rendered
+/// WASM in CI) while vehicles animate their way off the map.
+const MAX_WIND_DOWN_SECS: f32 = 30.0;
 
 /// Manages the end-of-day wind-down phase.
 ///
@@ -36,6 +42,7 @@ pub fn time_system(time: Res<Time>, mut game_clock: ResMut<GameClock>, game_stat
 /// 1. Ends all active charging sessions immediately, crediting partial revenue.
 /// 2. Kicks non-charging drivers (queued, waiting, frustrated, arrived) so they depart.
 /// 3. Monitors remaining drivers — once all have exited (or none remain), transitions to `DayEnd`.
+/// 4. Force-transitions after [`MAX_WIND_DOWN_SECS`] real seconds even if drivers remain.
 pub fn day_ending_system(
     game_clock: Res<GameClock>,
     mut next_state: ResMut<NextState<AppState>>,
@@ -51,6 +58,9 @@ pub fn day_ending_system(
     if !game_clock.day_ending {
         return;
     }
+
+    let wind_down_elapsed = game_clock.total_real_time - game_clock.day_ending_since;
+    let force_end = wind_down_elapsed >= MAX_WIND_DOWN_SECS;
 
     let mut any_remaining = false;
 
@@ -151,6 +161,12 @@ pub fn day_ending_system(
         info!(
             "Day {} wind-down complete — all drivers have left, transitioning to DayEnd",
             game_clock.day
+        );
+        next_state.set(AppState::DayEnd);
+    } else if force_end {
+        warn!(
+            "Day {} wind-down force-ended after {:.0}s — transitioning to DayEnd with drivers still on map",
+            game_clock.day, wind_down_elapsed
         );
         next_state.set(AppState::DayEnd);
     }

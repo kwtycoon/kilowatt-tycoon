@@ -53,6 +53,8 @@ pub mod hooks;
 pub mod observers;
 #[cfg(feature = "ocpp")]
 pub mod ocpp;
+#[cfg(feature = "openadr")]
+pub mod openadr;
 pub mod resources;
 pub mod states;
 pub mod systems;
@@ -73,6 +75,8 @@ use hooks::HooksPlugin;
 use observers::ObserversPlugin;
 #[cfg(feature = "ocpp")]
 use ocpp::OcppPlugin;
+#[cfg(feature = "openadr")]
+use openadr::OpenAdrPlugin;
 use resources::ResourcesPlugin;
 use states::StatesPlugin;
 use systems::SystemsPlugin;
@@ -103,6 +107,8 @@ impl Plugin for ChargeOpsPlugin {
             ApiPlugin,
             #[cfg(feature = "ocpp")]
             OcppPlugin,
+            #[cfg(feature = "openadr")]
+            OpenAdrPlugin,
             NorthstarPlugin::<CardinalNeighborhood>::default(),
             TiledPlugin::default(),
         ));
