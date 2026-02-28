@@ -15,6 +15,22 @@ use super::types::ChargePointStatus;
 /// Maximum messages buffered before oldest are dropped.
 const MAX_QUEUE_SIZE: usize = 2_000;
 
+// ─────────────────────────────────────────────────────
+//  OCPP event log entry (kwwhat-compatible CSV shape)
+// ─────────────────────────────────────────────────────
+
+/// A single OCPP log entry in the shape kwwhat expects:
+/// `timestamp, charge_point_id, action, msg`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct OcppLogEntry {
+    pub timestamp: String,
+    #[serde(rename = "id")]
+    pub charge_point_id: String,
+    /// OCPP action name for Call messages; empty string for CallResult messages.
+    pub action: String,
+    pub msg: String,
+}
+
 /// Interval between MeterValues in game-seconds (60 = once per minute of sim-time).
 pub const METER_VALUES_INTERVAL_GAME_SECS: f32 = 60.0;
 
@@ -57,6 +73,14 @@ pub struct OcppMessageQueue {
 
     /// Whether disk logging is enabled.
     pub disk_logging_enabled: bool,
+
+    /// In-memory event log for analytics (kwwhat-compatible).
+    /// Accumulates all OCPP messages (Call + CallResult) in CSV-ready format.
+    pub event_log: Vec<OcppLogEntry>,
+
+    /// Whether the in-memory event log is enabled.
+    /// Defaults to `true` so the log always accumulates when the `ocpp` feature is compiled in.
+    pub event_log_enabled: bool,
 }
 
 impl Default for OcppMessageQueue {
@@ -79,15 +103,17 @@ impl Default for OcppMessageQueue {
             last_heartbeat_game_time: 0.0,
             disk_buffer: VecDeque::new(),
             disk_logging_enabled: false,
+            event_log: Vec::new(),
+            event_log_enabled: true,
         }
     }
 }
 
 impl OcppMessageQueue {
-    /// Returns `true` if any output sink (WebSocket streaming or disk logging) is active.
+    /// Returns `true` if any output sink is active (WebSocket, disk, or event log).
     /// Message generation systems should skip work when this returns `false`.
     pub fn is_active(&self) -> bool {
-        self.enabled || self.disk_logging_enabled
+        self.enabled || self.disk_logging_enabled || self.event_log_enabled
     }
 
     /// Convert a `total_game_time` value to a `DateTime<Utc>` timestamp.
@@ -124,6 +150,29 @@ impl OcppMessageQueue {
     /// Drain all pending disk messages (used by the disk writer system).
     pub fn drain_disk_buffer(&mut self) -> Vec<(String, String)> {
         self.disk_buffer.drain(..).collect()
+    }
+
+    /// Push a message onto the outbound queue and the in-memory event log.
+    ///
+    /// This is the preferred entry point for message generation systems.
+    /// It records the full CSV-ready metadata (timestamp, action) needed by
+    /// analytics consumers while also feeding the WebSocket and disk paths.
+    pub fn push_with_log(
+        &mut self,
+        charger_id: String,
+        timestamp_iso: String,
+        action: &str,
+        json: String,
+    ) {
+        if self.event_log_enabled {
+            self.event_log.push(OcppLogEntry {
+                timestamp: timestamp_iso,
+                charge_point_id: charger_id.clone(),
+                action: action.to_string(),
+                msg: json.clone(),
+            });
+        }
+        self.push(charger_id, json);
     }
 
     /// Get or create the per-charger state for an entity.

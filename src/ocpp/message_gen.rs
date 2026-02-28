@@ -12,7 +12,10 @@ use bevy::prelude::*;
 
 use crate::components::charger::Charger;
 use crate::components::driver::Driver;
+use crate::components::site::BelongsToSite;
 use crate::resources::GameClock;
+
+use super::ports_registry::{PortEntry, PortsRegistry};
 
 use super::queue::{
     HEARTBEAT_INTERVAL_GAME_SECS, METER_VALUES_INTERVAL_GAME_SECS, OcppMessageQueue,
@@ -23,18 +26,20 @@ use super::types::*;
 //  1. BootNotification system
 // ─────────────────────────────────────────────────────
 
-/// Send `BootNotification` + initial `StatusNotification` for every charger
-/// that hasn't been booted yet.
+/// Send `BootNotification` (+ synthetic CallResult) and an initial
+/// `StatusNotification` for every charger that hasn't been booted yet.
+/// Also registers the charger in the [`PortsRegistry`] for analytics.
 pub fn ocpp_boot_system(
-    chargers: Query<(Entity, &Charger)>,
+    chargers: Query<(Entity, &Charger, Option<&BelongsToSite>)>,
     mut queue: ResMut<OcppMessageQueue>,
+    mut ports: ResMut<PortsRegistry>,
     game_clock: Res<GameClock>,
 ) {
     if !queue.is_active() {
         return;
     }
 
-    for (entity, charger) in chargers.iter() {
+    for (entity, charger, site_tag) in chargers.iter() {
         let state = queue.get_or_create(entity);
         if state.boot_sent {
             continue;
@@ -46,6 +51,24 @@ pub fn ocpp_boot_system(
 
         let charger_id = charger.id.clone();
         let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
+        let ts_iso = timestamp.to_rfc3339();
+
+        // Register in PortsRegistry for analytics consumers
+        let location_id = site_tag
+            .map(|s| format!("site-{}", s.site_id.0))
+            .unwrap_or_else(|| "site-0".to_string());
+        let connector_type = match charger.charger_type {
+            crate::components::charger::ChargerType::DcFast => "CCS1",
+            crate::components::charger::ChargerType::AcLevel2 => "J1772",
+        };
+        ports.entries.push(PortEntry {
+            charge_point_id: charger_id.clone(),
+            location_id,
+            port_id: "1".to_string(),
+            connector_id: "1".to_string(),
+            connector_type: connector_type.to_string(),
+            commissioned_ts: Some(ts_iso.clone()),
+        });
 
         // Determine model from charger type
         let model = match charger.charger_type {
@@ -53,7 +76,8 @@ pub fn ocpp_boot_system(
             crate::components::charger::ChargerType::AcLevel2 => "AC-L2-7kW",
         };
 
-        // BootNotification
+        // BootNotification Call
+        let uid = new_unique_id();
         let boot = BootNotificationRequest {
             charge_point_model: model.to_string(),
             charge_point_vendor: "KilowattTycoon".to_string(),
@@ -61,9 +85,24 @@ pub fn ocpp_boot_system(
             firmware_version: Some("1.0.0".to_string()),
             ..Default::default()
         };
-        queue.push(
+        queue.push_with_log(
             charger_id.clone(),
-            serialize_call(&new_unique_id(), "BootNotification", &boot),
+            ts_iso.clone(),
+            "BootNotification",
+            serialize_call(&uid, "BootNotification", &boot),
+        );
+
+        // BootNotification CallResult (synthetic)
+        let boot_resp = BootNotificationResponse {
+            status: RegistrationStatus::Accepted,
+            current_time: timestamp,
+            interval: 300,
+        };
+        queue.push_with_log(
+            charger_id.clone(),
+            ts_iso.clone(),
+            "",
+            serialize_callresult(&uid, &boot_resp),
         );
 
         // Initial StatusNotification
@@ -82,8 +121,10 @@ pub fn ocpp_boot_system(
             vendor_id: None,
             vendor_error_code: None,
         };
-        queue.push(
+        queue.push_with_log(
             charger_id,
+            ts_iso,
+            "StatusNotification",
             serialize_call(&new_unique_id(), "StatusNotification", &status_notif),
         );
 
@@ -135,6 +176,7 @@ pub fn ocpp_status_system(
 
         let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
 
+        let ts_iso = timestamp.to_rfc3339();
         let notif = StatusNotificationRequest {
             connector_id: 1,
             error_code,
@@ -144,8 +186,10 @@ pub fn ocpp_status_system(
             vendor_id: None,
             vendor_error_code: None,
         };
-        queue.push(
+        queue.push_with_log(
             charger_id,
+            ts_iso,
+            "StatusNotification",
             serialize_call(&new_unique_id(), "StatusNotification", &notif),
         );
     }
@@ -200,8 +244,11 @@ pub fn ocpp_start_transaction_system(
         let meter_start_wh = (charger.total_energy_delivered_kwh * 1000.0) as i32;
         let transaction_id = queue.next_transaction_id();
         let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
+        let ts_iso = timestamp.to_rfc3339();
         let charger_id = charger.id.clone();
 
+        // StartTransaction Call
+        let uid = new_unique_id();
         let start_tx = StartTransactionRequest {
             connector_id: 1,
             id_tag: id_tag.clone(),
@@ -209,9 +256,26 @@ pub fn ocpp_start_transaction_system(
             timestamp,
             reservation_id: None,
         };
-        queue.push(
+        queue.push_with_log(
+            charger_id.clone(),
+            ts_iso.clone(),
+            "StartTransaction",
+            serialize_call(&uid, "StartTransaction", &start_tx),
+        );
+
+        // StartTransaction CallResult (synthetic -- provides transactionId)
+        let start_resp = StartTransactionResponse {
+            transaction_id,
+            id_tag_info: IdTagInfo {
+                status: AuthorizationStatus::Accepted,
+                ..Default::default()
+            },
+        };
+        queue.push_with_log(
             charger_id,
-            serialize_call(&new_unique_id(), "StartTransaction", &start_tx),
+            ts_iso,
+            "",
+            serialize_callresult(&uid, &start_resp),
         );
 
         // Record transaction state
@@ -274,6 +338,7 @@ pub fn ocpp_stop_transaction_system(
 
     for (entity, charger_id, txn_id, meter_stop_wh, reason) in to_stop {
         let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
+        let ts_iso = timestamp.to_rfc3339();
 
         // Final meter reading
         let final_meter = MeterValue {
@@ -297,8 +362,10 @@ pub fn ocpp_stop_transaction_system(
             reason,
             transaction_data: Some(vec![final_meter]),
         };
-        queue.push(
+        queue.push_with_log(
             charger_id.clone(),
+            ts_iso,
+            "StopTransaction",
             serialize_call(&new_unique_id(), "StopTransaction", &stop_tx),
         );
 
@@ -363,6 +430,7 @@ pub fn ocpp_meter_values_system(
 
     for (entity, charger_id, txn_id, energy_wh, power_w, soc) in to_send {
         let timestamp = queue.game_time_to_utc(now);
+        let ts_iso = timestamp.to_rfc3339();
 
         let mut sampled = vec![
             SampledValue {
@@ -405,8 +473,10 @@ pub fn ocpp_meter_values_system(
                 sampled_value: sampled,
             }],
         };
-        queue.push(
+        queue.push_with_log(
             charger_id,
+            ts_iso,
+            "MeterValues",
             serialize_call(&new_unique_id(), "MeterValues", &meter),
         );
 
@@ -439,6 +509,8 @@ pub fn ocpp_heartbeat_system(
 
     queue.last_heartbeat_game_time = now;
 
+    let timestamp = queue.game_time_to_utc(now);
+    let ts_iso = timestamp.to_rfc3339();
     let heartbeat = HeartbeatRequest {};
 
     for (entity, charger) in chargers.iter() {
@@ -446,9 +518,25 @@ pub fn ocpp_heartbeat_system(
         if !state.boot_sent {
             continue;
         }
-        queue.push(
+
+        // Heartbeat Call
+        let uid = new_unique_id();
+        queue.push_with_log(
             charger.id.clone(),
-            serialize_call(&new_unique_id(), "Heartbeat", &heartbeat),
+            ts_iso.clone(),
+            "Heartbeat",
+            serialize_call(&uid, "Heartbeat", &heartbeat),
+        );
+
+        // Heartbeat CallResult (synthetic -- needed for offline detection)
+        let hb_resp = HeartbeatResponse {
+            current_time: timestamp,
+        };
+        queue.push_with_log(
+            charger.id.clone(),
+            ts_iso.clone(),
+            "",
+            serialize_callresult(&uid, &hb_resp),
         );
     }
 }

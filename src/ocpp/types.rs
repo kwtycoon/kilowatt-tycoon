@@ -10,18 +10,23 @@ use crate::components::charger::{ChargerState, FaultType};
 
 // ─── Re-exports: OCPP 1.6 message payloads ──────────────────────
 
-pub use rust_ocpp::v1_6::messages::boot_notification::BootNotificationRequest;
-pub use rust_ocpp::v1_6::messages::heart_beat::HeartbeatRequest;
+pub use rust_ocpp::v1_6::messages::boot_notification::{
+    BootNotificationRequest, BootNotificationResponse,
+};
+pub use rust_ocpp::v1_6::messages::heart_beat::{HeartbeatRequest, HeartbeatResponse};
 pub use rust_ocpp::v1_6::messages::meter_values::MeterValuesRequest;
-pub use rust_ocpp::v1_6::messages::start_transaction::StartTransactionRequest;
+pub use rust_ocpp::v1_6::messages::start_transaction::{
+    StartTransactionRequest, StartTransactionResponse,
+};
 pub use rust_ocpp::v1_6::messages::status_notification::StatusNotificationRequest;
 pub use rust_ocpp::v1_6::messages::stop_transaction::StopTransactionRequest;
 
 // ─── Re-exports: OCPP 1.6 enums & shared types ──────────────────
 
 pub use rust_ocpp::v1_6::types::{
-    ChargePointErrorCode, ChargePointStatus, Location, Measurand, MeterValue, ReadingContext,
-    Reason, SampledValue, UnitOfMeasure, ValueFormat,
+    AuthorizationStatus, ChargePointErrorCode, ChargePointStatus, IdTagInfo, Location, Measurand,
+    MeterValue, ReadingContext, Reason, RegistrationStatus, SampledValue, UnitOfMeasure,
+    ValueFormat,
 };
 
 // ─── OCPP 1.6J Call envelope ─────────────────────────────────────
@@ -29,10 +34,19 @@ pub use rust_ocpp::v1_6::types::{
 /// OCPP message-type ID for a Call (request from Charge Point to CSMS).
 const CALL: u8 = 2;
 
+/// OCPP message-type ID for a CallResult (response from CSMS to Charge Point).
+const CALLRESULT: u8 = 3;
+
 /// Serialize an OCPP 1.6J Call: `[2, "uniqueId", "Action", {payload}]`
 pub fn serialize_call(unique_id: &str, action: &str, payload: &impl Serialize) -> String {
     let payload_value = serde_json::to_value(payload).unwrap_or_default();
     serde_json::to_string(&(CALL, unique_id, action, payload_value)).unwrap_or_default()
+}
+
+/// Serialize an OCPP 1.6J CallResult: `[3, "uniqueId", {payload}]`
+pub fn serialize_callresult(unique_id: &str, payload: &impl Serialize) -> String {
+    let payload_value = serde_json::to_value(payload).unwrap_or_default();
+    serde_json::to_string(&(CALLRESULT, unique_id, payload_value)).unwrap_or_default()
 }
 
 /// Generate a short unique ID for OCPP message correlation.

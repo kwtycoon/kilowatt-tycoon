@@ -37,7 +37,10 @@
 pub mod connection;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod disk_writer;
+#[cfg(target_arch = "wasm32")]
+pub mod feed;
 pub mod message_gen;
+pub mod ports_registry;
 pub mod queue;
 pub mod types;
 
@@ -55,7 +58,8 @@ impl Plugin for OcppPlugin {
     fn build(&self, app: &mut App) {
         // Resources
         app.init_resource::<OcppMessageQueue>()
-            .init_resource::<OcppConnectionManager>();
+            .init_resource::<OcppConnectionManager>()
+            .init_resource::<ports_registry::PortsRegistry>();
 
         // Native-only: disk writer resource + startup + flush system
         #[cfg(not(target_arch = "wasm32"))]
@@ -84,6 +88,16 @@ impl Plugin for OcppPlugin {
 
         // Connection send system — always runs (flushes queued messages even during pause)
         app.add_systems(Update, ocpp_send_system);
+
+        // WASM-only: live feed bridge to JS overlay
+        #[cfg(target_arch = "wasm32")]
+        {
+            app.init_resource::<feed::OcppFeedState>();
+            app.add_systems(
+                PostUpdate,
+                feed::ocpp_feed_system.run_if(in_state(AppState::Playing)),
+            );
+        }
 
         // Status logging — periodic summary
         app.add_systems(

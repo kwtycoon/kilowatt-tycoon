@@ -378,9 +378,9 @@ pub fn start_asset_loading(
     info!(
         "Starting to load {} assets ({} images, {} JSON, {} TMX)",
         loading.tracked_assets.len(),
-        loading.tracked_assets.len() - 14, // 2 JSON + 12 TMX
+        loading.tracked_assets.len() - 5, // 2 JSON + 3 TMX
         2,
-        12
+        3
     );
     commands.insert_resource(loading);
 }
