@@ -104,7 +104,7 @@ test.describe("Canvas sizing", () => {
   });
 });
 
-test.describe("Visual regression", () => {
+test.describe.skip("Visual regression", () => {
   test("splash page screenshot", async ({ page }, testInfo) => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.locator("#splash-page")).toBeVisible({

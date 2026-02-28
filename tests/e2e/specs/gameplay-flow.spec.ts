@@ -108,12 +108,17 @@ async function tapCanvas(page: Page, x: number, y: number): Promise<void> {
   await page.waitForTimeout(400);
 }
 
-/** Take a named debug screenshot, bucketed by viewport width. */
+/** Take a named debug screenshot, bucketed by viewport width. Best-effort; never fails the test. */
 async function snap(page: Page, name: string): Promise<void> {
-  const w = page.viewportSize()?.width ?? 0;
-  await page.screenshot({
-    path: `test-results/gameplay-flow/${w}/${name}.png`,
-  });
+  try {
+    const w = page.viewportSize()?.width ?? 0;
+    await page.screenshot({
+      path: `test-results/gameplay-flow/${w}/${name}.png`,
+      timeout: 30_000,
+    });
+  } catch {
+    // Debug screenshots are non-essential; swallow timeout/render errors.
+  }
 }
 
 /**
