@@ -87,6 +87,9 @@ pub struct DriverSchedule {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DriverData {
     pub id: String,
+    /// Optional vehicle EVCC MAC; auto-generated if absent.
+    #[serde(default)]
+    pub evcc_id: Option<String>,
     #[serde(default)]
     pub vehicle: VehicleType,
     #[serde(default)]

@@ -515,6 +515,7 @@ pub fn ambient_to_customer_system(
 
         let driver = Driver {
             id: driver_id.clone(),
+            evcc_id: crate::resources::generate_evcc_mac(&mut rng),
             vehicle_name: format!("{:?}", ambient.vehicle_type),
             vehicle_type: ambient.vehicle_type,
             patience_level: PatienceLevel::Medium,

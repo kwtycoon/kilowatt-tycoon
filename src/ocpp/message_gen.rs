@@ -300,36 +300,58 @@ pub fn ocpp_start_transaction_system(
         let driver_info = drivers
             .iter()
             .find(|(_, d)| d.assigned_charger == Some(entity))
-            .map(|(de, d)| (de, d.id.clone()));
+            .map(|(de, d)| (de, d.evcc_id.clone()));
 
         let (driver_entity, id_tag) = match driver_info {
-            Some((de, id)) => (Some(de), id),
-            None => (None, "UNKNOWN".to_string()),
+            Some((de, evcc)) => (Some(de), format!("VID:{evcc}")),
+            None => (None, "VID:000000000000".to_string()),
         };
 
         let meter_start_wh = (charger.total_energy_delivered_kwh * 1000.0) as i32;
         let transaction_id = queue.next_transaction_id();
         let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
-        let ts_iso = timestamp.to_rfc3339();
         let charger_id = charger.id.clone();
 
-        // StartTransaction Call
+        // Emit the full OCPP 1.6 connector lifecycle with proper timestamp offsets.
+        // kwwhat relies on this sequence: Preparing → StartTransaction → Charging
+        let ts_prep = (timestamp - chrono::Duration::seconds(2)).to_rfc3339();
+        let ts_tx = (timestamp - chrono::Duration::seconds(1)).to_rfc3339();
+        let ts_charging = timestamp.to_rfc3339();
+
+        // 1. StatusNotification(Preparing) -- marks the start of a charge attempt
+        let preparing = StatusNotificationRequest {
+            connector_id: 1,
+            error_code: ChargePointErrorCode::NoError,
+            status: ChargePointStatus::Preparing,
+            timestamp: Some(timestamp - chrono::Duration::seconds(2)),
+            info: None,
+            vendor_id: None,
+            vendor_error_code: None,
+        };
+        queue.push_with_log(
+            charger_id.clone(),
+            ts_prep,
+            "StatusNotification",
+            serialize_call(&new_unique_id(), "StatusNotification", &preparing),
+        );
+
+        // 2. StartTransaction Call
         let uid = new_unique_id();
         let start_tx = StartTransactionRequest {
             connector_id: 1,
             id_tag: id_tag.clone(),
             meter_start: meter_start_wh,
-            timestamp,
+            timestamp: timestamp - chrono::Duration::seconds(1),
             reservation_id: None,
         };
         queue.push_with_log(
             charger_id.clone(),
-            ts_iso.clone(),
+            ts_tx.clone(),
             "StartTransaction",
             serialize_call(&uid, "StartTransaction", &start_tx),
         );
 
-        // StartTransaction CallResult (synthetic -- provides transactionId)
+        // 3. StartTransaction CallResult (synthetic -- provides transactionId)
         let start_resp = StartTransactionResponse {
             transaction_id,
             id_tag_info: IdTagInfo {
@@ -338,18 +360,38 @@ pub fn ocpp_start_transaction_system(
             },
         };
         queue.push_with_log(
-            charger_id,
-            ts_iso,
+            charger_id.clone(),
+            ts_tx,
             "",
             serialize_callresult(&uid, &start_resp),
         );
 
-        // Record transaction state
+        // 4. StatusNotification(Charging) -- suppresses duplicate from status_system
+        let charging = StatusNotificationRequest {
+            connector_id: 1,
+            error_code: ChargePointErrorCode::NoError,
+            status: ChargePointStatus::Charging,
+            timestamp: Some(timestamp),
+            info: None,
+            vendor_id: None,
+            vendor_error_code: None,
+        };
+        queue.push_with_log(
+            charger_id,
+            ts_charging,
+            "StatusNotification",
+            serialize_call(&new_unique_id(), "StatusNotification", &charging),
+        );
+
+        // Record transaction state + update last_status to Charging so
+        // ocpp_status_system doesn't emit a duplicate Charging notification.
         let state = queue.get_or_create(entity);
         state.transaction_id = Some(transaction_id);
         state.meter_start_wh = meter_start_wh;
         state.active_driver = driver_entity;
+        state.active_id_tag = Some(id_tag.clone());
         state.last_meter_game_time = game_clock.total_game_time;
+        state.last_status = Some(ChargePointStatus::Charging);
 
         info!(
             "OCPP StartTransaction: charger={}, txn={}, driver={}",
@@ -374,7 +416,7 @@ pub fn ocpp_stop_transaction_system(
     }
 
     // Collect entities that need StopTransaction to avoid borrow conflicts
-    let to_stop: Vec<(Entity, String, i32, i32, Option<Reason>)> = chargers
+    let to_stop: Vec<(Entity, String, i32, i32, Option<Reason>, Option<String>)> = chargers
         .iter()
         .filter_map(|(entity, charger)| {
             let state = queue.charger_state.get(&entity)?;
@@ -398,11 +440,12 @@ pub fn ocpp_stop_transaction_system(
                 txn_id,
                 meter_stop_wh,
                 reason,
+                state.active_id_tag.clone(),
             ))
         })
         .collect();
 
-    for (entity, charger_id, txn_id, meter_stop_wh, reason) in to_stop {
+    for (entity, charger_id, txn_id, meter_stop_wh, reason, id_tag) in to_stop {
         let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
         let ts_iso = timestamp.to_rfc3339();
 
@@ -421,7 +464,7 @@ pub fn ocpp_stop_transaction_system(
         };
 
         let stop_tx = StopTransactionRequest {
-            id_tag: None,
+            id_tag,
             meter_stop: meter_stop_wh,
             timestamp,
             transaction_id: txn_id,
@@ -443,6 +486,7 @@ pub fn ocpp_stop_transaction_system(
             );
             state.transaction_id = None;
             state.active_driver = None;
+            state.active_id_tag = None;
         }
     }
 }

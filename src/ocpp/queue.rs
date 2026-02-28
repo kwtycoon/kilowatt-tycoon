@@ -206,6 +206,9 @@ pub struct OcppChargerState {
     /// Driver entity associated with the active transaction (for SoC lookups).
     pub active_driver: Option<Entity>,
 
+    /// The `VID:<mac>` idTag for the active transaction (carried to StopTransaction).
+    pub active_id_tag: Option<String>,
+
     /// The charger's string ID (cached for message generation).
     pub charger_id: String,
 }
@@ -219,6 +222,7 @@ impl Default for OcppChargerState {
             last_meter_game_time: 0.0,
             boot_sent: false,
             active_driver: None,
+            active_id_tag: None,
             charger_id: String::new(),
         }
     }

@@ -1,0 +1,6 @@
+kwwhat:
+  target: duckdb
+  outputs:
+    duckdb:
+      type: duckdb
+      path: ":memory:"

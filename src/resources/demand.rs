@@ -123,12 +123,19 @@ pub fn time_of_day_multiplier(hour: u32) -> f32 {
     }
 }
 
+/// Generate a 12-character lowercase hex string resembling a MAC address (e.g. `0a324bef89cd`).
+pub fn generate_evcc_mac(rng: &mut impl Rng) -> String {
+    let bytes: [u8; 6] = rng.random();
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// Generate a procedural driver with randomized attributes
 pub fn generate_procedural_driver(rng: &mut impl Rng, id_counter: u32) -> DriverData {
     let vehicle = random_vehicle_type(rng);
 
     DriverData {
         id: format!("proc_{id_counter}"),
+        evcc_id: Some(generate_evcc_mac(rng)),
         vehicle,
         vehicle_name: random_vehicle_name(rng, vehicle),
         arrival_time: 0.0, // Spawn immediately

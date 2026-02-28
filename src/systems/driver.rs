@@ -13,7 +13,7 @@ use crate::events::{
 };
 use crate::resources::{
     BuildState, EnvironmentState, GameClock, GameState, SiteGrid, TechStatus, TechnicianState,
-    TutorialState, TutorialStep, generate_procedural_driver,
+    TutorialState, TutorialStep, generate_evcc_mac, generate_procedural_driver,
 };
 use crate::systems::charger::check_connector_jam;
 use crate::systems::sprite::spawn_floating_money;
@@ -184,8 +184,14 @@ pub fn driver_spawn_system(
                         length_tiles: driver_data.vehicle.footprint_length_tiles(),
                     };
 
+                    let evcc_id = driver_data
+                        .evcc_id
+                        .clone()
+                        .unwrap_or_else(|| generate_evcc_mac(&mut rand::rng()));
+
                     let driver = Driver {
                         id: driver_data.id.clone(),
+                        evcc_id,
                         vehicle_name: driver_data.vehicle_name.clone(),
                         vehicle_type: driver_data.vehicle,
                         patience_level: driver_data.patience,
@@ -253,8 +259,14 @@ pub fn driver_spawn_system(
                     length_tiles: driver_data.vehicle.footprint_length_tiles(),
                 };
 
+                let evcc_id = driver_data
+                    .evcc_id
+                    .clone()
+                    .unwrap_or_else(|| generate_evcc_mac(&mut rand::rng()));
+
                 let driver = Driver {
                     id: driver_data.id.clone(),
+                    evcc_id,
                     vehicle_name: driver_data.vehicle_name.clone(),
                     vehicle_type: driver_data.vehicle,
                     patience_level: driver_data.patience,
@@ -415,8 +427,14 @@ pub fn driver_spawn_system(
                         length_tiles: driver_data.vehicle.footprint_length_tiles(),
                     };
 
+                    let evcc_id = driver_data
+                        .evcc_id
+                        .clone()
+                        .unwrap_or_else(|| generate_evcc_mac(&mut rand::rng()));
+
                     let driver = Driver {
                         id: driver_data.id.clone(),
+                        evcc_id,
                         vehicle_name: driver_data.vehicle_name.clone(),
                         vehicle_type: driver_data.vehicle,
                         patience_level: driver_data.patience,
@@ -482,8 +500,14 @@ pub fn driver_spawn_system(
                     length_tiles: driver_data.vehicle.footprint_length_tiles(),
                 };
 
+                let evcc_id = driver_data
+                    .evcc_id
+                    .clone()
+                    .unwrap_or_else(|| generate_evcc_mac(&mut rand::rng()));
+
                 let driver = Driver {
                     id: driver_data.id.clone(),
+                    evcc_id,
                     vehicle_name: driver_data.vehicle_name.clone(),
                     vehicle_type: driver_data.vehicle,
                     patience_level: driver_data.patience,

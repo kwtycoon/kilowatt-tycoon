@@ -147,6 +147,8 @@ impl DriverMood {
 #[derive(Component, Debug, Clone)]
 pub struct Driver {
     pub id: String,
+    /// Vehicle EVCC identifier (12-char hex MAC), used as OCPP idTag via `VID:<evcc_id>`.
+    pub evcc_id: String,
     pub vehicle_name: String,
     pub vehicle_type: VehicleType,
     pub patience_level: PatienceLevel,
@@ -164,6 +166,7 @@ impl Default for Driver {
     fn default() -> Self {
         Self {
             id: String::new(),
+            evcc_id: String::new(),
             vehicle_name: String::new(),
             vehicle_type: VehicleType::Sedan,
             patience_level: PatienceLevel::Medium,

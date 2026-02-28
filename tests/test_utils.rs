@@ -102,6 +102,7 @@ pub fn create_faulted_charger(id: &str, fault: FaultType) -> Charger {
 pub fn create_test_driver(id: &str) -> Driver {
     Driver {
         id: id.to_string(),
+        evcc_id: format!("{:012x}", id.len() as u64),
         vehicle_name: format!("Vehicle-{id}"),
         vehicle_type: VehicleType::Sedan,
         patience_level: PatienceLevel::Medium,

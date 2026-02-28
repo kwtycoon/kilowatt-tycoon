@@ -2,15 +2,37 @@
 // Tabbed overlay showing OCPP and OpenADR message feeds side by side.
 // Reads window.__kwtycoon_ocpp_feed, window.__kwtycoon_ocpp_ports,
 // and window.__kwtycoon_openadr_feed set by Bevy feed systems.
-// Toggle visibility with F6.
+// Toggle visibility via the "nerds" side tab or F6.
 
 (function () {
   "use strict";
 
   var MAX_MESSAGES = 200;
+  var MAX_BUFFER_BYTES = 16 * 1024 * 1024; // 16 MB circular buffer
   var visible = false;
   var container = null;
+  var sideTab = null;
   var activeTab = "ocpp";
+
+  // Circular buffers for export/analysis (shared 16 MB cap each)
+  var buffers = {
+    ocpp: { messages: [], bytes: 0 },
+    openadr: { messages: [], bytes: 0 },
+  };
+
+  function bufferPush(buf, entry) {
+    var len = (entry.msg || "").length + (entry.timestamp || "").length + 100;
+    buf.messages.push(entry);
+    buf.bytes += len;
+    while (buf.bytes > MAX_BUFFER_BYTES && buf.messages.length > 0) {
+      var evicted = buf.messages.shift();
+      buf.bytes -= (evicted.msg || "").length + (evicted.timestamp || "").length + 100;
+    }
+  }
+
+  var analysisRunning = false;
+  var analyzeBtn = null;
+  var resultsPanel = null;
 
   // Per-tab state
   var tabs = {
@@ -169,14 +191,42 @@
   // ─── Overlay construction ───
 
   function createOverlay() {
+    // Side tab — always visible, 60% down the right edge
+    sideTab = document.createElement("div");
+    sideTab.id = "nerd-curtain-tab";
+    sideTab.style.cssText =
+      "position:fixed;right:0;bottom:80px;" +
+      "writing-mode:vertical-rl;text-orientation:mixed;" +
+      "padding:10px 5px;background:rgba(10,10,20,0.85);" +
+      "border:1px solid #334155;border-right:none;border-radius:8px 0 0 8px;" +
+      "color:#4ade80;font-family:'SF Mono','Fira Code',monospace;" +
+      "font-size:12px;font-weight:bold;cursor:pointer;z-index:51;" +
+      "letter-spacing:2px;pointer-events:auto;user-select:none;" +
+      "transition:background 0.2s,border-color 0.2s;";
+    sideTab.textContent = "\uD83E\uDD13 nerds";
+    sideTab.addEventListener("click", function () { toggle(); });
+    sideTab.addEventListener("mouseenter", function () {
+      sideTab.style.background = "rgba(10,10,20,0.95)";
+      sideTab.style.borderColor = "#4ade80";
+    });
+    sideTab.addEventListener("mouseleave", function () {
+      if (!visible) {
+        sideTab.style.background = "rgba(10,10,20,0.85)";
+        sideTab.style.borderColor = "#334155";
+      }
+    });
+    document.body.appendChild(sideTab);
+
     container = document.createElement("div");
     container.id = "protocol-feed";
     container.style.cssText =
       "position:fixed;bottom:12px;right:12px;width:500px;height:360px;" +
       "z-index:50;background:rgba(10,10,20,0.92);border:1px solid #334155;" +
       "border-radius:8px;font-family:'SF Mono','Fira Code',monospace;" +
-      "font-size:11px;color:#e0e0e0;display:none;flex-direction:column;" +
-      "box-shadow:0 4px 24px rgba(0,0,0,0.5);pointer-events:auto;";
+      "font-size:11px;color:#e0e0e0;display:flex;flex-direction:column;" +
+      "box-shadow:0 4px 24px rgba(0,0,0,0.5);pointer-events:auto;" +
+      "transition:transform 0.3s ease,opacity 0.3s ease;" +
+      "transform:translateX(calc(100% + 24px));opacity:0;";
 
     // Header
     var header = document.createElement("div");
@@ -184,8 +234,7 @@
       "padding:6px 10px;border-bottom:1px solid #334155;display:flex;" +
       "justify-content:space-between;align-items:center;flex-shrink:0;";
     header.innerHTML =
-      '<span style="color:#4ade80;font-weight:bold;">Protocol Feed</span>' +
-      '<span style="color:#6b7280;font-size:10px;">F6 to toggle</span>';
+      '<span style="color:#4ade80;font-weight:bold;">Protocol Feed</span>';
 
     // Tab bar
     var tabBar = document.createElement("div");
@@ -218,12 +267,42 @@
     tabs.ocpp.badge.textContent = "0 ports";
     ocppTab.appendChild(tabs.ocpp.badge);
 
+    analyzeBtn = document.createElement("button");
+    analyzeBtn.textContent = "kwwhat!";
+    analyzeBtn.disabled = true;
+    analyzeBtn.style.cssText =
+      "background:linear-gradient(90deg,#4ade80,#22d3ee);color:#0a0a14;border:none;padding:2px 10px;" +
+      "border-radius:4px;font-family:inherit;font-size:9px;font-weight:bold;cursor:pointer;" +
+      "margin-left:6px;opacity:0.5;letter-spacing:0.5px;transition:transform 0.1s;";
+    analyzeBtn.addEventListener("mouseenter", function () { if (!analyzeBtn.disabled) analyzeBtn.style.transform = "scale(1.1)"; });
+    analyzeBtn.addEventListener("mouseleave", function () { analyzeBtn.style.transform = "scale(1)"; });
+    analyzeBtn.addEventListener("click", runAnalysis);
+    ocppTab.appendChild(analyzeBtn);
+
+    var exportBtn = document.createElement("button");
+    exportBtn.textContent = "\u2913";
+    exportBtn.title = "Export OCPP data (CSV)";
+    exportBtn.style.cssText =
+      "background:#1e293b;color:#94a3b8;border:1px solid #334155;padding:1px 6px;" +
+      "border-radius:4px;font-size:11px;cursor:pointer;margin-left:4px;";
+    exportBtn.addEventListener("click", function () { exportFeed("ocpp"); });
+    ocppTab.appendChild(exportBtn);
+
     tabs.openadr.badge = document.createElement("span");
     tabs.openadr.badge.style.cssText =
       "background:#1e293b;color:#94a3b8;padding:1px 6px;border-radius:4px;" +
       "font-size:9px;margin-left:6px;";
     tabs.openadr.badge.textContent = "DER";
     openadrTab.appendChild(tabs.openadr.badge);
+
+    var exportAdrBtn = document.createElement("button");
+    exportAdrBtn.textContent = "\u2913";
+    exportAdrBtn.title = "Export OpenADR data (CSV)";
+    exportAdrBtn.style.cssText =
+      "background:#1e293b;color:#94a3b8;border:1px solid #334155;padding:1px 6px;" +
+      "border-radius:4px;font-size:11px;cursor:pointer;margin-left:4px;";
+    exportAdrBtn.addEventListener("click", function () { exportFeed("openadr"); });
+    openadrTab.appendChild(exportAdrBtn);
 
     // Message bodies
     function makeBody() {
@@ -351,7 +430,7 @@
 
   function poll() {
     // Lazily create the overlay DOM on the first poll tick so messages
-    // are captured from the very start. The overlay stays hidden until F6.
+    // are captured from the very start.
     if (!container) createOverlay();
 
     // OCPP feed
@@ -359,11 +438,16 @@
     if (ocppFeed && Array.isArray(ocppFeed) && ocppFeed.length > 0) {
       for (var i = 0; i < ocppFeed.length; i++) {
         addOcppMessage(ocppFeed[i]);
+        bufferPush(buffers.ocpp, ocppFeed[i]);
       }
       window.__kwtycoon_ocpp_feed = null;
 
       if (visible && activeTab === "ocpp") {
         tabs.ocpp.body.scrollTop = tabs.ocpp.body.scrollHeight;
+      }
+      if (analyzeBtn) {
+        analyzeBtn.disabled = false;
+        analyzeBtn.style.opacity = "1";
       }
     }
 
@@ -379,6 +463,7 @@
     if (adrFeed && Array.isArray(adrFeed) && adrFeed.length > 0) {
       for (var j = 0; j < adrFeed.length; j++) {
         addOpenAdrMessage(adrFeed[j]);
+        bufferPush(buffers.openadr, adrFeed[j]);
       }
       window.__kwtycoon_openadr_feed = null;
 
@@ -393,11 +478,16 @@
   function toggle() {
     visible = !visible;
     if (container) {
-      container.style.display = visible ? "flex" : "none";
+      container.style.transform = visible ? "translateX(0)" : "translateX(calc(100% + 24px))";
+      container.style.opacity = visible ? "1" : "0";
       if (visible) {
         var activeBody = tabs[activeTab].body;
         activeBody.scrollTop = activeBody.scrollHeight;
       }
+    }
+    if (sideTab) {
+      sideTab.style.borderColor = visible ? "#4ade80" : "#334155";
+      sideTab.style.background = visible ? "rgba(10,10,20,0.95)" : "rgba(10,10,20,0.85)";
     }
   }
 
@@ -407,6 +497,159 @@
       toggle();
     }
   });
+
+  // ─── kwwhat Analysis (delegates to kwwhat_analyze.js) ───
+
+  function showResults(view) {
+    if (!resultsPanel) {
+      resultsPanel = document.createElement("div");
+      resultsPanel.style.cssText =
+        "position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(10,10,20,0.97);" +
+        "border-radius:8px;display:flex;flex-direction:column;overflow:hidden;z-index:10;";
+      container.appendChild(resultsPanel);
+    }
+    resultsPanel.innerHTML = "";
+    resultsPanel.style.display = "flex";
+
+    var hdr = document.createElement("div");
+    hdr.style.cssText =
+      "padding:8px 12px;border-bottom:1px solid #334155;display:flex;" +
+      "justify-content:space-between;align-items:center;flex-shrink:0;";
+    hdr.innerHTML = '<span style="color:#4ade80;font-weight:bold;font-size:12px;">kwwhat Analysis</span>';
+
+    var closeBtn = document.createElement("button");
+    closeBtn.textContent = "Back to Feed";
+    closeBtn.style.cssText =
+      "background:none;border:1px solid #334155;color:#94a3b8;padding:2px 8px;" +
+      "border-radius:4px;font-family:inherit;font-size:10px;cursor:pointer;";
+    closeBtn.addEventListener("click", function () {
+      resultsPanel.style.display = "none";
+    });
+    hdr.appendChild(closeBtn);
+
+    var body = document.createElement("div");
+    body.style.cssText = "flex:1;overflow-y:auto;padding:8px 12px;";
+    body.innerHTML = view;
+
+    resultsPanel.appendChild(hdr);
+    resultsPanel.appendChild(body);
+  }
+
+  function metricRow(label, value) {
+    return (
+      '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1e293b;">' +
+      '<span style="color:#94a3b8;font-size:11px;">' + label + "</span>" +
+      '<span style="color:#c084fc;font-weight:bold;font-size:12px;">' + value + "</span>" +
+      "</div>"
+    );
+  }
+
+  function renderMetrics(m) {
+    var html = "";
+    html += metricRow("Charge Attempt Success", m.attemptSuccessRate + " (" + m.attemptSuccess + "/" + m.attemptTotal + ")");
+    html += metricRow("Visit Success", m.visitSuccessRate + " (" + m.visitSuccess + "/" + m.visitTotal + ")");
+    for (var i = 0; i < m.downtime.length; i++) {
+      var d = m.downtime[i];
+      html += metricRow(d.type + " Downtime", d.minutes + " min (" + d.incidents + ")");
+    }
+    html += metricRow("Transactions", String(m.transactions));
+    html += metricRow("Status Changes", String(m.statusChanges));
+    html += '<div style="color:#6b7280;font-size:9px;margin-top:8px;text-align:center;">' +
+      m.messagesAnalyzed + " messages analyzed &middot; " + m.portsCount + " ports</div>";
+    showResults(html);
+  }
+
+  async function runAnalysis() {
+    if (analysisRunning || buffers.ocpp.messages.length === 0) return;
+    if (typeof window.kwwhatAnalyze !== "function") {
+      showResults('<div style="color:#f87171;padding:20px 0;text-align:center;">kwwhat_analyze.js not loaded</div>');
+      return;
+    }
+
+    analysisRunning = true;
+    analyzeBtn.textContent = "kwwhat-ing...";
+    analyzeBtn.disabled = true;
+    analyzeBtn.style.opacity = "0.6";
+
+    showResults(
+      '<div style="color:#94a3b8;padding:20px 0;text-align:center;">' +
+      '<div style="margin-bottom:8px;">Loading DuckDB-WASM...</div>' +
+      '<div style="font-size:10px;color:#6b7280;">First load fetches ~10MB from CDN</div></div>'
+    );
+
+    var result = await window.kwwhatAnalyze(buffers.ocpp.messages, window.__kwtycoon_ocpp_ports || []);
+
+    if (result.ok) {
+      renderMetrics(result.metrics);
+    } else {
+      showResults(
+        '<div style="color:#f87171;padding:12px 0;">' +
+        '<div style="font-weight:bold;margin-bottom:4px;">Analysis failed</div>' +
+        '<div style="font-size:10px;word-break:break-all;">' + result.error + "</div></div>"
+      );
+    }
+
+    analysisRunning = false;
+    if (analyzeBtn) {
+      analyzeBtn.textContent = "kwwhat!";
+      analyzeBtn.disabled = buffers.ocpp.messages.length === 0;
+      analyzeBtn.style.opacity = buffers.ocpp.messages.length === 0 ? "0.5" : "1";
+    }
+  }
+
+  // ─── Data export ───
+
+  function downloadFile(filename, content, mime) {
+    var blob = new Blob([content], { type: mime || "text/plain" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function arrayToCsv(headers, rows, fieldGetter) {
+    var lines = [headers.join(",")];
+    for (var i = 0; i < rows.length; i++) {
+      var vals = fieldGetter(rows[i]);
+      for (var j = 0; j < vals.length; j++) {
+        var v = vals[j] || "";
+        if (v.indexOf(",") !== -1 || v.indexOf('"') !== -1 || v.indexOf("\n") !== -1) {
+          vals[j] = '"' + v.replace(/"/g, '""') + '"';
+        }
+      }
+      lines.push(vals.join(","));
+    }
+    return lines.join("\n");
+  }
+
+  function exportFeed(tabId) {
+    var buf = buffers[tabId];
+    if (!buf || buf.messages.length === 0) return;
+
+    if (tabId === "ocpp") {
+      downloadFile("ocpp_messages.csv", arrayToCsv(
+        ["timestamp", "id", "action", "msg"],
+        buf.messages,
+        function (m) { return [m.timestamp, m.id, m.action, m.msg]; }
+      ), "text/csv");
+
+      var ports = window.__kwtycoon_ocpp_ports || [];
+      if (ports.length > 0) {
+        downloadFile("ocpp_ports.csv", arrayToCsv(
+          ["charge_point_id", "location_id", "port_id", "connector_id", "connector_type", "commissioned_ts", "decommissioned_ts"],
+          ports,
+          function (p) { return [p.charge_point_id, p.location_id, p.port_id, p.connector_id, p.connector_type, p.commissioned_ts || "", ""]; }
+        ), "text/csv");
+      }
+    } else if (tabId === "openadr") {
+      downloadFile("openadr_messages.csv", arrayToCsv(
+        ["timestamp", "ven_id", "message_type", "action", "msg"],
+        buf.messages,
+        function (m) { return [m.timestamp, m.ven_id, m.message_type, m.action, m.msg]; }
+      ), "text/csv");
+    }
+  }
 
   requestAnimationFrame(poll);
 })();
