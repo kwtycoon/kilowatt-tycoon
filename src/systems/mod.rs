@@ -31,6 +31,9 @@ pub mod time;
 pub mod utility_billing;
 pub mod win_lose;
 
+#[cfg(target_arch = "wasm32")]
+pub mod test_bridge;
+
 use bevy::camera;
 use bevy::camera::visibility::RenderLayers;
 use bevy::core_pipeline::tonemapping::Tonemapping;
@@ -494,6 +497,13 @@ impl Plugin for SystemsPlugin {
                 .run_if(screenshot_mode_enabled)
                 .run_if(in_state(AppState::Playing)),
         );
+
+        // Test bridge: exposes game state + element positions to JS for Playwright.
+        #[cfg(target_arch = "wasm32")]
+        {
+            app.init_resource::<test_bridge::TestBridgeState>();
+            app.add_systems(PostUpdate, test_bridge::update_test_bridge);
+        }
     }
 }
 
@@ -523,8 +533,16 @@ fn day_night_clear_color_system(
 }
 
 /// Design resolution the UI was authored for. UiScale is computed relative to this.
-const DESIGN_WIDTH: f32 = 1600.0;
-const DESIGN_HEIGHT: f32 = 900.0;
+pub const DESIGN_WIDTH: f32 = 1600.0;
+pub const DESIGN_HEIGHT: f32 = 900.0;
+
+/// Pure math for UI scale: shrinks proportionally on screens smaller than the design
+/// resolution, capped at 1.0 so desktop users see no upscale.
+pub fn compute_ui_scale(window_width: f32, window_height: f32) -> f32 {
+    (window_width / DESIGN_WIDTH)
+        .min(window_height / DESIGN_HEIGHT)
+        .min(1.0)
+}
 
 /// Keeps `UiScale` in sync with the window size so all Bevy UI shrinks proportionally
 /// on screens smaller than the 1600x900 design resolution (e.g. tablets).
@@ -535,13 +553,13 @@ fn update_ui_scale(windows: Query<&Window, With<PrimaryWindow>>, mut ui_scale: R
     };
     let w = window.resolution.width();
     let h = window.resolution.height();
-    let scale = (w / DESIGN_WIDTH).min(h / DESIGN_HEIGHT).min(1.0);
+    let scale = compute_ui_scale(w, h);
     if (ui_scale.0 - scale).abs() > 0.001 {
         ui_scale.0 = scale;
     }
 }
 
-fn ui_layout_constants() -> (f32, f32, f32, f32) {
+pub fn ui_layout_constants() -> (f32, f32, f32, f32) {
     // These match the HUD layout (logical pixels):
     // - Top bar: 42px (`src/ui/hud.rs`)
     // - Top nav: 50px (`src/ui/top_nav.rs`)
@@ -559,7 +577,7 @@ fn ui_layout_constants() -> (f32, f32, f32, f32) {
     )
 }
 
-fn compute_fit_scale(
+pub fn compute_fit_scale(
     grid_width: f32,
     grid_height: f32,
     viewport_width: f32,

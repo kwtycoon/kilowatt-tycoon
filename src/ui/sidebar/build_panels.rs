@@ -51,6 +51,18 @@ pub struct UpgradeStatusIcon {
     pub upgrade_id: UpgradeId,
 }
 
+/// Marker for the upgrade name text (for locked/disabled styling)
+#[derive(Component)]
+pub struct UpgradeNameText {
+    pub upgrade_id: UpgradeId,
+}
+
+/// Marker for the upgrade description text (for locked/disabled styling)
+#[derive(Component)]
+pub struct UpgradeDescText {
+    pub upgrade_id: UpgradeId,
+}
+
 /// Marker for the utility max label in infrastructure panel
 #[derive(Component)]
 pub struct UtilityMaxLabel;
@@ -419,6 +431,7 @@ fn spawn_upgrade_button(
                         ..default()
                     },
                     TextColor(colors::TEXT_PRIMARY),
+                    UpgradeNameText { upgrade_id },
                 ));
                 // Status area: icon + text row
                 row.spawn(Node {
@@ -458,6 +471,7 @@ fn spawn_upgrade_button(
                     ..default()
                 },
                 TextColor(colors::TEXT_SECONDARY),
+                UpgradeDescText { upgrade_id },
             ));
         });
 }
@@ -517,16 +531,14 @@ pub fn update_build_tool_button_colors(
 const UPGRADE_ACTIVE_BG: Color = Color::srgb(0.1, 0.3, 0.35);
 /// Border/accent color for active upgrades
 const UPGRADE_ACTIVE_TEXT: Color = Color::srgb(0.4, 0.9, 0.95);
+/// Amber color for "LOCKED" status text
+const UPGRADE_LOCKED_TEXT: Color = Color::srgb(0.6, 0.5, 0.3);
 
 pub fn handle_upgrade_purchases(
     mut game_state: ResMut<GameState>,
     mut multi_site: ResMut<MultiSiteManager>,
     upgrade_buttons: Query<(&Interaction, &UpgradeButton), Changed<Interaction>>,
-    mut button_colors: Query<(&UpgradeButton, &mut BackgroundColor)>,
-    mut status_texts: Query<(&UpgradeStatusText, &mut Text, &mut TextColor)>,
-    mut status_icons: Query<(&UpgradeStatusIcon, &mut Visibility)>,
 ) {
-    // Get active site's upgrades (need mutable access for purchases)
     let Some(site_state) = multi_site.active_site_mut() else {
         return;
     };
@@ -541,7 +553,6 @@ pub fn handle_upgrade_purchases(
         {
             continue;
         }
-        // Check OEM tier prerequisites (must purchase tiers in order)
         if !site_state
             .site_upgrades
             .can_purchase_oem(upgrade_btn.upgrade_id)
@@ -559,54 +570,84 @@ pub fn handle_upgrade_purchases(
             upgrade_btn.upgrade_id, cost
         );
     }
+}
 
-    // Re-borrow for read-only access after potential mutations
+/// Continuously sync upgrade button visuals with purchase/prerequisite state.
+/// Three visual states: Purchased, Locked (prerequisite missing), Available.
+pub fn update_upgrade_button_states(
+    multi_site: Res<MultiSiteManager>,
+    mut button_colors: Query<(&UpgradeButton, &mut BackgroundColor)>,
+    mut status_texts: Query<(&UpgradeStatusText, &mut Text, &mut TextColor)>,
+    mut status_icons: Query<(&UpgradeStatusIcon, &mut Visibility)>,
+    mut name_texts: Query<(&UpgradeNameText, &mut TextColor), Without<UpgradeStatusText>>,
+    mut desc_texts: Query<
+        (&UpgradeDescText, &mut TextColor),
+        (Without<UpgradeStatusText>, Without<UpgradeNameText>),
+    >,
+) {
     let Some(site_state) = multi_site.active_site() else {
         return;
     };
+    let upgrades = &site_state.site_upgrades;
 
-    // Update button backgrounds based on purchase status
     for (upgrade_btn, mut bg_color) in &mut button_colors {
-        if site_state
-            .site_upgrades
-            .is_purchased(upgrade_btn.upgrade_id)
-        {
+        let id = upgrade_btn.upgrade_id;
+        if upgrades.is_purchased(id) {
             *bg_color = BackgroundColor(UPGRADE_ACTIVE_BG);
+        } else if !upgrades.can_purchase_oem(id) {
+            *bg_color = BackgroundColor(colors::BUTTON_DISABLED);
         } else {
             *bg_color = BackgroundColor(colors::BUTTON_NORMAL);
         }
     }
 
-    // Update status icon visibility based on purchase status
     for (status_icon, mut visibility) in &mut status_icons {
-        if site_state
-            .site_upgrades
-            .is_purchased(status_icon.upgrade_id)
-        {
-            *visibility = Visibility::Inherited;
+        let id = status_icon.upgrade_id;
+        *visibility = if upgrades.is_purchased(id) {
+            Visibility::Inherited
         } else {
-            *visibility = Visibility::Hidden;
-        }
+            Visibility::Hidden
+        };
     }
 
-    // Update status text based on purchase status
     for (status_text, mut text, mut text_color) in &mut status_texts {
-        if site_state
-            .site_upgrades
-            .is_purchased(status_text.upgrade_id)
-        {
+        let id = status_text.upgrade_id;
+        if upgrades.is_purchased(id) {
             **text = "ACTIVE".to_string();
             *text_color = TextColor(UPGRADE_ACTIVE_TEXT);
+        } else if !upgrades.can_purchase_oem(id) {
+            **text = "LOCKED".to_string();
+            *text_color = TextColor(UPGRADE_LOCKED_TEXT);
         } else {
-            // Restore price text if not purchased
-            let cost = SiteUpgrades::get_cost(status_text.upgrade_id);
-            let cost_text = if cost >= 1000.0 {
+            let cost = SiteUpgrades::get_cost(id);
+            **text = if cost >= 1000.0 {
                 format!("${}k", (cost / 1000.0) as i32)
             } else {
                 format!("${}", cost as i32)
             };
-            **text = cost_text;
             *text_color = TextColor(colors::TYCOON_GREEN);
+        }
+    }
+
+    for (name_text, mut text_color) in &mut name_texts {
+        let id = name_text.upgrade_id;
+        if upgrades.is_purchased(id) {
+            *text_color = TextColor(UPGRADE_ACTIVE_TEXT);
+        } else if !upgrades.can_purchase_oem(id) {
+            *text_color = TextColor(colors::TEXT_DISABLED);
+        } else {
+            *text_color = TextColor(colors::TEXT_PRIMARY);
+        }
+    }
+
+    for (desc_text, mut text_color) in &mut desc_texts {
+        let id = desc_text.upgrade_id;
+        if upgrades.is_purchased(id) {
+            *text_color = TextColor(colors::TEXT_SECONDARY);
+        } else if !upgrades.can_purchase_oem(id) {
+            *text_color = TextColor(colors::TEXT_DISABLED);
+        } else {
+            *text_color = TextColor(colors::TEXT_SECONDARY);
         }
     }
 }

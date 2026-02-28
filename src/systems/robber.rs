@@ -133,9 +133,10 @@ pub fn cable_theft_system(
 
         let mut site_chance = base_chance * challenge_mult;
 
-        // Security system strongly deters robbers (0.25x spawn chance)
-        if site_state.grid.has_security_system() {
-            site_chance *= 0.25;
+        // Each security system multiplies spawn chance by 0.25 (diminishing returns)
+        let cam_count = site_state.grid.security_system_count();
+        if cam_count > 0 {
+            site_chance *= 0.25_f32.powi(cam_count as i32);
         }
 
         // If ALL chargers at this site have anti-theft cables, further deter (0.5x)
@@ -431,17 +432,19 @@ pub fn robber_stealing_system(
         let mut theft_succeeded = false;
         if let Ok(mut charger) = chargers.get_mut(robber.target_charger) {
             let has_cable = charger.anti_theft_cable;
-            let has_security = multi_site
+            let cam_count = multi_site
                 .get_site(belongs.site_id)
-                .map(|s| s.grid.has_security_system())
-                .unwrap_or(false);
+                .map(|s| s.grid.security_system_count())
+                .unwrap_or(0);
 
-            let success_chance = match (has_cable, has_security) {
-                (true, true) => 0.10,  // Both: 10% success
-                (true, false) => 0.40, // Cable only: 40% success
-                (false, true) => 0.60, // Security only: 60% success
-                (false, false) => 1.0, // No protection: 100% success
+            let base_chance = if has_cable { 0.40 } else { 1.0 };
+            let security_mult = if cam_count > 0 {
+                // First camera: 0.6x, each additional: another 0.6x
+                0.6_f32.powi(cam_count as i32)
+            } else {
+                1.0
             };
+            let success_chance = (base_chance * security_mult).max(0.01);
 
             theft_succeeded = rng.random::<f32>() < success_chance;
 

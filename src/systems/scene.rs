@@ -1132,7 +1132,7 @@ pub fn sync_chargers_with_grid(
 
         // Spawn Charger with ChargerSprite as child (so sprite is despawned with charger)
         // For DCFC100 with video ads: the charger is offset left and a screen panel is on the right
-        let has_ad_screen = video_ad_enabled && matches!(charger_pad_type, ChargerPadType::DCFC100);
+        let has_ad_screen = matches!(charger_pad_type, ChargerPadType::DCFC100);
 
         // Calculate the horizontal offset for DCFC100 ad-screen layout
         let charger_x_offset = if has_ad_screen {

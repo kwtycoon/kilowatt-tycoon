@@ -116,3 +116,88 @@ jobs:
       
       - name: Check WASM compilation
         run: cargo check --target wasm32-unknown-unknown
+
+
+  wasm-browser-tests:
+    name: WASM Browser Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wasm
+          cache-targets: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Run wasm-bindgen-test in headless Chrome
+        run: wasm-pack test --headless --chrome
+
+
+  e2e-mobile:
+    name: Playwright Mobile E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wasm
+          cache-targets: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Cache Trunk tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trunk
+          key: trunk-tools-${{ runner.os }}
+
+      - name: Install Trunk
+        uses: jetli/trunk-action@v0.5.1
+        with:
+          version: 'v0.21.14'
+
+      - name: Build WASM
+        run: trunk build
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright dependencies
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Serve dist and run Playwright tests
+        working-directory: tests/e2e
+        run: |
+          npx serve ../../dist -l 8080 &
+          npx playwright test
+        env:
+          BASE_URL: http://127.0.0.1:8080
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/e2e/playwright-report/
+          retention-days: 14

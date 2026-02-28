@@ -1,0 +1,7 @@
+node_modules/
+test-results/
+playwright-report/
+blob-report/
+# Visual regression snapshots are platform-specific (e.g. -darwin, -linux)
+# and should be generated per-platform rather than committed.
+**/*-snapshots/

@@ -225,10 +225,15 @@ fn toggle_pause(
     current_state: Res<State<AppState>>,
     mut next_state: ResMut<NextState<AppState>>,
     selected: Res<SelectedChargerEntity>,
+    tutorial: Res<crate::resources::TutorialState>,
 ) {
     if keyboard.just_pressed(KeyCode::Escape) {
         // Don't toggle pause if radial menu is open - Escape dismisses it instead
         if selected.0.is_some() {
+            return;
+        }
+        // Don't toggle pause if the tutorial is active — Escape skips the tutorial instead
+        if tutorial.is_active() {
             return;
         }
         match current_state.get() {

@@ -260,13 +260,7 @@ fn try_place_tile(
             }
         }
         BuildTool::SecuritySystem => {
-            if grid.security_system_pos.is_some() {
-                // Only one security system per site
-                if build_state.last_placed_tile.is_none() {
-                    build_state.last_placed_tile = Some((x, y));
-                }
-            } else if game_state.can_afford_build(cost) && grid.place_security_system(x, y).is_ok()
-            {
+            if game_state.can_afford_build(cost) && grid.place_security_system(x, y).is_ok() {
                 game_state.try_spend_build(cost);
                 build_state.last_placed_tile = Some((x, y));
                 info!("Placed security system (2x2) at ({}, {})", x, y);
@@ -520,13 +514,9 @@ fn validate_placement(
         BuildTool::BatteryStorage => grid
             .can_place_footprint(x, y, crate::resources::StructureSize::TwoByTwo)
             .is_ok(),
-        BuildTool::SecuritySystem => {
-            // Only one security system allowed per site
-            grid.security_system_pos.is_none()
-                && grid
-                    .can_place_footprint(x, y, crate::resources::StructureSize::TwoByTwo)
-                    .is_ok()
-        }
+        BuildTool::SecuritySystem => grid
+            .can_place_footprint(x, y, crate::resources::StructureSize::TwoByTwo)
+            .is_ok(),
         BuildTool::AmenityWifiRestrooms => grid
             .can_place_footprint(x, y, crate::resources::StructureSize::ThreeByThree)
             .is_ok(),

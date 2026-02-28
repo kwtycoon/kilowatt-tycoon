@@ -87,6 +87,7 @@
             display: block;
             width: 100% !important;
             height: 100% !important;
+            touch-action: none;
         }
         
         /* Splash page overlays the game canvas */
@@ -148,6 +149,29 @@
 
         @media (orientation: portrait) and (max-width: 1024px) {
             #rotate-prompt { display: flex; }
+        }
+
+        /* Landscape mobile: compact header, tighter hero */
+        @media (orientation: landscape) and (max-height: 500px) {
+            #splash-page header { padding: 0.5rem 1rem; }
+            .nav-link { display: none; }
+            .nav-btn-label { display: none; }
+
+            #hero {
+                height: auto;
+                min-height: calc(100vh - 52px);
+                align-items: flex-start;
+                padding-top: 1rem;
+            }
+
+            #hero .floating { display: none; }
+
+            .hero-logo { height: 6rem; }
+            .hero-logo-wrap { margin-bottom: 0.25rem; }
+            .hero-subtitle { font-size: 1rem; margin-bottom: 0.25rem; }
+            .hero-desc { font-size: 0.875rem; margin-bottom: 0.75rem; }
+            .hero-cta button,
+            .hero-cta a { padding: 0.5rem 1.5rem; font-size: 0.875rem; }
         }
     </style>
     
@@ -218,15 +242,15 @@
                 <span class="font-orbitron font-bold text-2xl bg-gradient-to-r from-[#DCF251] to-orange-500 bg-clip-text text-transparent">KILOWATT TYCOON</span>
             </div>
             <div class="flex items-center space-x-6">
-                <a href="#features" class="text-gray-300 hover:text-yellow-400 transition-colors duration-300">Features</a>
-                <a href="#about" class="text-gray-300 hover:text-yellow-400 transition-colors duration-300">About</a>
+                <a href="#features" class="nav-link text-gray-300 hover:text-yellow-400 transition-colors duration-300">Features</a>
+                <a href="#about" class="nav-link text-gray-300 hover:text-yellow-400 transition-colors duration-300">About</a>
                 <a href="https://discord.gg/taT77Aupxz" target="_blank" class="flex items-center space-x-2 bg-[#5865F2] hover:bg-[#4752C4] px-4 py-2 rounded-lg transition-all duration-300">
                     <i class="fab fa-discord"></i>
-                    <span>Discord</span>
+                    <span class="nav-btn-label">Discord</span>
                 </a>
                 <a href="https://github.com/kwtycoon/kilowatt-tycoon" target="_blank" class="flex items-center space-x-2 bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg transition-all duration-300">
                     <i class="fab fa-github"></i>
-                    <span>GitHub</span>
+                    <span class="nav-btn-label">GitHub</span>
                 </a>
                 <div class="flex items-center space-x-2 text-gray-300 font-medium ml-4 border-l border-gray-600 pl-4">
                     <span>made with</span>
@@ -270,22 +294,22 @@
             </div>
 
             <div class="relative z-10 text-center max-w-4xl mx-auto px-8">
-                <div class="mb-8">
-                    <img src="assets/ui/logo_full.png" alt="Kilowatt Tycoon" class="mx-auto h-56 energy-pulse">
+                <div class="hero-logo-wrap mb-8">
+                    <img src="assets/ui/logo_full.png" alt="Kilowatt Tycoon" class="hero-logo mx-auto h-56 energy-pulse">
                 </div>
 
                 <h1 class="sr-only">KILOWATT TYCOON</h1>
                 
-                <p class="text-2xl text-gray-300 mb-4 max-w-3xl mx-auto leading-relaxed">
+                <p class="hero-subtitle text-2xl text-gray-300 mb-4 max-w-3xl mx-auto leading-relaxed">
                     Run an EV charging network where nothing ever goes according to plan.
                 </p>
                 
-                <p class="text-xl text-gray-400 mb-8 max-w-3xl mx-auto leading-relaxed">
+                <p class="hero-desc text-xl text-gray-400 mb-8 max-w-3xl mx-auto leading-relaxed">
                     Chargers fail. The grid pushes back.<br>
                     Your job? Keep uptime high, costs low, and the lights on.
                 </p>
                 
-                <div class="flex items-center justify-center space-x-6">
+                <div class="hero-cta flex items-center justify-center space-x-6">
                     <button onclick="startGame()" class="group relative bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-[#DCF251] hover:to-orange-500 px-12 py-5 rounded-xl font-bold text-xl text-white transition-all duration-300 transform hover:scale-105 electric-glow">
                         <div class="flex items-center space-x-3">
                             <i class="fas fa-play text-2xl"></i>

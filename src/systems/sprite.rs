@@ -1601,7 +1601,7 @@ pub fn sync_anti_theft_shield_indicators(
 // ============ In-World Ad Screen ============
 
 /// Marker component for the physical screen panel next to a DCFC100 charger.
-/// Always present when the charger has `video_ad_enabled`. Spawned at charger
+/// Always present on DCFC100 chargers (built-in hardware). Spawned at charger
 /// creation time in `sync_chargers_with_grid` as a child of the `Charger` entity.
 #[derive(Component)]
 pub struct AdScreenPanel {

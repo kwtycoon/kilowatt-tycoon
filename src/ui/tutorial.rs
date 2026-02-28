@@ -693,11 +693,16 @@ pub fn update_tutorial_arrow_direction(
 /// Handle tutorial button clicks
 pub fn handle_tutorial_buttons(
     mut tutorial_state: ResMut<TutorialState>,
+    keyboard: Res<ButtonInput<KeyCode>>,
     next_btns: Query<&Interaction, (Changed<Interaction>, With<TutorialNextButton>)>,
     skip_btns: Query<&Interaction, (Changed<Interaction>, With<TutorialSkipButton>)>,
     done_btns: Query<&Interaction, (Changed<Interaction>, With<TutorialDoneButton>)>,
 ) {
-    // Handle Next button
+    // Handle Next button (click or Enter/Space key)
+    let key_advance =
+        keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space);
+    let key_skip = keyboard.just_pressed(KeyCode::Escape);
+
     for interaction in &next_btns {
         if *interaction == Interaction::Pressed
             && let Some(current_step) = tutorial_state.current_step
@@ -708,7 +713,26 @@ pub fn handle_tutorial_buttons(
         }
     }
 
-    // Handle Skip button
+    // Keyboard: Enter/Space advances modal steps, Escape skips any step.
+    if tutorial_state.is_active()
+        && let Some(current_step) = tutorial_state.current_step
+    {
+        if current_step.shows_modal() && key_advance {
+            if let Some(next_step) = current_step.next() {
+                tutorial_state.advance_to(next_step);
+                info!("Tutorial: Advanced to {:?} (keyboard)", next_step);
+            } else {
+                tutorial_state.complete();
+                info!("Tutorial: Completed (keyboard)");
+            }
+        }
+        if key_skip {
+            tutorial_state.skip();
+            info!("Tutorial: Skipped (keyboard)");
+        }
+    }
+
+    // Handle Skip button (click)
     for interaction in &skip_btns {
         if *interaction == Interaction::Pressed {
             tutorial_state.skip();
@@ -716,7 +740,7 @@ pub fn handle_tutorial_buttons(
         }
     }
 
-    // Handle Done button
+    // Handle Done button (click)
     for interaction in &done_btns {
         if *interaction == Interaction::Pressed {
             tutorial_state.complete();

@@ -1,4 +1,5 @@
 //! Tests for leaderboard API operations with mocked Supabase server
+#![cfg(not(target_arch = "wasm32"))]
 
 use kilowatt_tycoon::api::{SupabaseConfig, fetch_leaderboard, submit_score};
 use wiremock::matchers::{header, method, path};

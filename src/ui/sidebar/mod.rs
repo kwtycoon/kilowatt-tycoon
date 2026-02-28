@@ -455,6 +455,7 @@ impl Plugin for SidebarPlugin {
                 handle_strategy_panel_buttons,
                 update_summary_panel_values,
                 handle_upgrade_purchases,
+                update_upgrade_button_states,
                 // Lock overlay updates
                 update_power_lock_overlay,
                 update_opex_lock_overlay,

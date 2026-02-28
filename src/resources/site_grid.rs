@@ -418,8 +418,8 @@ pub struct SiteGrid {
     pub solar_positions: Vec<(i32, i32)>,
     /// Battery storage positions (anchor tiles, bottom-left of 2x2)
     pub battery_positions: Vec<(i32, i32)>,
-    /// Security system position (only one allowed per site, 2x2)
-    pub security_system_pos: Option<(i32, i32)>,
+    /// Security system positions (anchor tiles, bottom-left of 2x2)
+    pub security_system_positions: Vec<(i32, i32)>,
     /// Amenity building positions and types (unlimited per site, effects stack)
     pub amenities: Vec<(i32, i32, AmenityType)>,
     /// Total installed solar capacity (kW)
@@ -452,7 +452,7 @@ impl SiteGrid {
             revision: 1,
             solar_positions: Vec::new(),
             battery_positions: Vec::new(),
-            security_system_pos: None,
+            security_system_positions: Vec::new(),
             amenities: Vec::new(),
             total_solar_kw: 0.0,
             total_battery_kwh: 0.0,
@@ -864,12 +864,8 @@ impl SiteGrid {
         Ok(())
     }
 
-    /// Place a security system (2x2 tiles, only one allowed per site)
+    /// Place a security system (2x2 tiles)
     pub fn place_security_system(&mut self, x: i32, y: i32) -> Result<(), String> {
-        if self.security_system_pos.is_some() {
-            return Err("Only one security system allowed per site".to_string());
-        }
-
         let size = StructureSize::TwoByTwo;
         self.can_place_footprint(x, y, size)?;
 
@@ -880,13 +876,18 @@ impl SiteGrid {
             TileContent::SecurityOccupied,
             size,
         );
-        self.security_system_pos = Some((x, y));
+        self.security_system_positions.push((x, y));
         Ok(())
     }
 
-    /// Check if this site has a security system installed
+    /// Check if this site has at least one security system installed
     pub fn has_security_system(&self) -> bool {
-        self.security_system_pos.is_some()
+        !self.security_system_positions.is_empty()
+    }
+
+    /// Number of security systems installed on this site
+    pub fn security_system_count(&self) -> usize {
+        self.security_system_positions.len()
     }
 
     /// Place an amenity building (size depends on type, unlimited per site)
@@ -1135,7 +1136,8 @@ impl SiteGrid {
             // Handle security system removal (2x2)
             if anchor_content == TileContent::SecurityPad {
                 self.remove_multi_tile(anchor_x, anchor_y, StructureSize::TwoByTwo);
-                self.security_system_pos = None;
+                self.security_system_positions
+                    .retain(|pos| *pos != (anchor_x, anchor_y));
                 return Ok(SellResult::SoldEquipment(anchor_content));
             }
 
