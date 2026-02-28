@@ -13,6 +13,7 @@ export default defineConfig({
     toMatchSnapshot: { maxDiffPixelRatio: 0.02 },
   },
   fullyParallel: true,
+  workers: process.env.CI ? 1 : undefined,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {

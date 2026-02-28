@@ -37,6 +37,7 @@ struct BridgeSnapshot {
     tutorial_step: Option<String>,
     day_number: u32,
     cash: f32,
+    game_time: f32,
     selected_build_tool: Option<String>,
     elements: HashMap<String, ElementRect>,
 }
@@ -109,6 +110,7 @@ pub fn update_test_bridge(
         tutorial_step: tutorial.current_step.map(|s| format!("{s:?}")),
         day_number: game_clock.day,
         cash: game_state.cash,
+        game_time: game_clock.game_time,
         selected_build_tool: if build_state.selected_tool != BuildTool::Select {
             Some(format!("{:?}", build_state.selected_tool))
         } else {

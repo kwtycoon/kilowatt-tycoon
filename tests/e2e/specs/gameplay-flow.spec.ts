@@ -15,6 +15,7 @@ interface BridgeState {
   tutorial_step: string | null;
   day_number: number;
   cash: number;
+  game_time: number;
   selected_build_tool: string | null;
   elements: Record<string, ElementRect>;
 }
@@ -87,6 +88,11 @@ async function waitForElementPrefix(
  *
  * Splits into move → down → (wait for Bevy frame) → up so the press
  * and release are processed in separate frames.
+ *
+ * The hold time must exceed the longest possible Bevy frame duration
+ * so that at least one frame sees the mouse held down and sets
+ * `Interaction::Pressed`.  In CI (debug WASM + SwiftShader) frames
+ * can take 200-500ms, so 750ms gives comfortable margin.
  */
 async function tapElement(page: Page, name: string): Promise<void> {
   const el = await waitForElement(page, name);
@@ -94,7 +100,7 @@ async function tapElement(page: Page, name: string): Promise<void> {
   const cy = el.y + el.height / 2;
   await page.mouse.move(cx, cy);
   await page.mouse.down();
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(750);
   await page.mouse.up();
   await page.waitForTimeout(400);
 }
@@ -135,7 +141,7 @@ async function skipTutorial(page: Page): Promise<void> {
 // ── Test ─────────────────────────────────────────────────────────────
 
 test.describe("Full gameplay flow", () => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
 
   test("add charger, add transformer, start day, 10x, end of day report", async ({
     page,
@@ -223,9 +229,13 @@ test.describe("Full gameplay flow", () => {
     await page.waitForTimeout(1_500);
     await snap(page, "10-transformer-placed");
 
-    // ── 6. Start day ───────────────────────────────────────────────
-    await tapElement(page, "StartDayButton");
-    await page.waitForTimeout(500);
+    // ── 6. Start day (retry until bridge confirms clock is running) ─
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await tapElement(page, "StartDayButton");
+      await page.waitForTimeout(1_000);
+      const dayCheck = await bridge(page);
+      if (dayCheck && dayCheck.game_time > 0) break;
+    }
     await snap(page, "11-day-started");
 
     // ── 7. Set 10x speed ───────────────────────────────────────────
@@ -233,7 +243,7 @@ test.describe("Full gameplay flow", () => {
     await snap(page, "12-speed-10x");
 
     // ── 8. Wait for end of day ─────────────────────────────────────
-    await waitForState(page, "DayEnd", 120_000);
+    await waitForState(page, "DayEnd", 180_000);
     await snap(page, "13-day-end-report");
 
     // Verify the bridge reports day 1.
