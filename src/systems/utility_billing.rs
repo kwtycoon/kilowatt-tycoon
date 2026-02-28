@@ -5,10 +5,59 @@
 //! - Rolling 15-minute demand average
 //! - Peak demand tracking
 //! - Cost application to game state
+//! - Wholesale spot market pricing for solar export (level 2+ sites)
 
 use bevy::prelude::*;
 
-use crate::resources::{CharacterPerk, GameClock, GameState, MultiSiteManager, PlayerProfile};
+use crate::resources::{
+    CharacterPerk, EnvironmentState, GameClock, GameState, MultiSiteManager, PlayerProfile,
+};
+
+/// Minimum challenge level required for spot market pricing.
+/// Level 1 (starter) keeps fixed TOU export rates.
+const SPOT_MARKET_MIN_CHALLENGE_LEVEL: u8 = 2;
+
+/// Tick each site's wholesale spot market price.
+///
+/// Runs before `utility_billing_system` so the spot price is fresh when
+/// export revenue is calculated.  Sites with `challenge_level < 2` are
+/// skipped -- they keep the fixed TOU export rates.
+pub fn spot_market_system(
+    mut multi_site: ResMut<MultiSiteManager>,
+    game_clock: Res<GameClock>,
+    time: Res<Time>,
+    environment: Res<EnvironmentState>,
+) {
+    if game_clock.is_paused() {
+        return;
+    }
+
+    let delta_game_seconds = time.delta_secs() * game_clock.speed.multiplier();
+    if delta_game_seconds <= 0.0 {
+        return;
+    }
+
+    let day_length = 86400.0_f32;
+    let day_fraction = (game_clock.game_time % day_length) / day_length;
+    let weather_multiplier = environment.current_weather.spot_price_multiplier();
+    let game_time = game_clock.game_time;
+
+    let mut rng = rand::rng();
+
+    for (_site_id, site_state) in multi_site.owned_sites.iter_mut() {
+        if site_state.challenge_level < SPOT_MARKET_MIN_CHALLENGE_LEVEL {
+            continue;
+        }
+
+        site_state.spot_market.tick(
+            day_fraction,
+            weather_multiplier,
+            delta_game_seconds,
+            game_time,
+            &mut rng,
+        );
+    }
+}
 
 /// Utility billing system - tracks consumption and applies costs
 pub fn utility_billing_system(
@@ -63,13 +112,19 @@ pub fn utility_billing_system(
             game_state.add_energy_cost(energy_cost);
         }
 
-        // Solar export revenue: credit for power sold back to the grid
+        // Solar export revenue: credit for power sold back to the grid.
+        // Level 2+ sites use the per-site spot market price; level 1 uses
+        // the fixed TOU export rate from SiteEnergyConfig.
         let export_kw = site_state.grid_import.export_kw;
         if export_kw > 0.0 {
             let export_kwh = export_kw * (delta_game_seconds / 3600.0);
-            let export_rate = site_state
-                .site_energy_config
-                .current_export_rate(game_clock.game_time);
+            let export_rate = if site_state.challenge_level >= SPOT_MARKET_MIN_CHALLENGE_LEVEL {
+                site_state.spot_market.current_price_per_kwh
+            } else {
+                site_state
+                    .site_energy_config
+                    .current_export_rate(game_clock.game_time)
+            };
 
             site_state.utility_meter.add_export(export_kwh, export_rate);
 

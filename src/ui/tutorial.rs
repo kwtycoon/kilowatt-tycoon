@@ -903,7 +903,7 @@ pub fn manage_tutorial_highlights(
 ) {
     // Remove all existing highlights first
     for entity in &existing_highlights_q {
-        commands.entity(entity).remove::<TutorialHighlight>();
+        commands.entity(entity).try_remove::<TutorialHighlight>();
     }
 
     // If tutorial is not active, we're done
@@ -920,13 +920,17 @@ pub fn manage_tutorial_highlights(
         TutorialStep::StartDay => {
             // Highlight the start day button
             for entity in &start_day_button_q {
-                commands.entity(entity).insert(TutorialHighlight::default());
+                commands
+                    .entity(entity)
+                    .try_insert(TutorialHighlight::default());
             }
         }
         TutorialStep::SwitchSite => {
             // Highlight the site tabs
             for entity in &site_tabs_q {
-                commands.entity(entity).insert(TutorialHighlight::default());
+                commands
+                    .entity(entity)
+                    .try_insert(TutorialHighlight::default());
             }
         }
         _ => {

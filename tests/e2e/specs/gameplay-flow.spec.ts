@@ -157,27 +157,49 @@ async function tapElement(
 }
 
 /**
- * Tap a named element, retrying until `check` returns true.
- * Throws if all attempts fail.
+ * Tap a named element, keeping the mouse held down while polling the
+ * bridge until `check` returns true.  This adapts to arbitrarily slow
+ * frame rates — the mouse stays pressed until Bevy processes the frame
+ * and the expected state change is observed.
  */
 async function tapElementUntil(
   page: Page,
   name: string,
   label: string,
   check: (b: BridgeState | null) => boolean,
-  maxAttempts = 8,
+  timeout = 60_000,
 ): Promise<void> {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    await tapElement(page, name);
-    await page.waitForTimeout(500);
-    const s = await bridge(page);
-    const ok = check(s);
-    log(`${label} attempt ${attempt}/${maxAttempts}: ok=${ok} ${bridgeSummary(s)}`);
-    if (ok) return;
+  const el = await waitForElement(page, name);
+  const cx = el.x + el.width / 2;
+  const cy = el.y + el.height / 2;
+  const deadline = Date.now() + timeout;
+  let attempt = 0;
+
+  while (Date.now() < deadline) {
+    attempt++;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+
+    // Poll while holding — mouse stays pressed so any Bevy frame will
+    // see Interaction::Pressed regardless of frame rate.
+    const holdEnd = Math.min(Date.now() + 20_000, deadline);
+    while (Date.now() < holdEnd) {
+      await page.waitForTimeout(500);
+      const s = await bridge(page);
+      if (check(s)) {
+        await page.mouse.up();
+        log(`${label} succeeded on attempt ${attempt}: ${bridgeSummary(s)}`);
+        return;
+      }
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    log(`${label} attempt ${attempt} still pending, retrying...`);
   }
+
   const final = await bridge(page);
   throw new Error(
-    `${label}: all ${maxAttempts} tap attempts failed. Last: ${bridgeSummary(final)}`,
+    `${label}: failed after ${attempt} attempts (${timeout}ms). Last: ${bridgeSummary(final)}`,
   );
 }
 

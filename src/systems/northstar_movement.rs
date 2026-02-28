@@ -96,7 +96,7 @@ pub fn northstar_move_vehicles(
             agent_pos.0 = next_pos.0;
 
             // Remove NextPos to signal we're ready for the next step
-            commands.entity(entity).remove::<NextPos>();
+            commands.entity(entity).try_remove::<NextPos>();
 
             // Update waypoints for debug overlay compatibility
             // (VehicleMovement waypoint fields are not used for actual pathfinding -
@@ -246,7 +246,7 @@ pub fn northstar_trigger_departure(
 
         // Remove Blocking so departing vehicles don't deadlock on single-lane exits.
         // They still pathfind around static obstacles; this just relaxes local avoidance.
-        commands.entity(entity).remove::<Blocking>();
+        commands.entity(entity).try_remove::<Blocking>();
 
         // Get the exit position from the site's grid
         let exit_pos = multi_site
@@ -259,7 +259,7 @@ pub fn northstar_trigger_departure(
         // Insert Pathfind to route to exit
         commands
             .entity(entity)
-            .insert(Pathfind::new(exit_uvec).mode(PathfindMode::AStar));
+            .try_insert(Pathfind::new(exit_uvec).mode(PathfindMode::AStar));
 
         if should_depart {
             info!(
@@ -332,16 +332,16 @@ pub fn northstar_handle_pathfinding_failed(
 
                 commands
                     .entity(entity)
-                    .remove::<Pathfind>()
-                    .remove::<Path>()
-                    .remove::<PathfindingFailed>()
-                    .remove::<PathfindCooldown>();
+                    .try_remove::<Pathfind>()
+                    .try_remove::<Path>()
+                    .try_remove::<PathfindingFailed>()
+                    .try_remove::<PathfindCooldown>();
                 continue;
             }
 
             if cooldown.timer <= 0.0 {
                 if let Some(pathfind) = pathfind {
-                    commands.entity(entity).insert(pathfind.clone());
+                    commands.entity(entity).try_insert(pathfind.clone());
                 }
                 cooldown.timer = 0.5;
             }
@@ -357,7 +357,9 @@ pub fn northstar_handle_pathfinding_failed(
                     entity
                 );
             }
-            commands.entity(entity).insert(PathfindCooldown::default());
+            commands
+                .entity(entity)
+                .try_insert(PathfindCooldown::default());
         }
     }
 }
@@ -410,10 +412,10 @@ pub fn northstar_handle_reroute_failed(
                 // Remove pathfinding components so departure system can take over
                 commands
                     .entity(entity)
-                    .remove::<RerouteFailed>()
-                    .remove::<RerouteCooldown>()
-                    .remove::<Path>()
-                    .remove::<Pathfind>();
+                    .try_remove::<RerouteFailed>()
+                    .try_remove::<RerouteCooldown>()
+                    .try_remove::<Path>()
+                    .try_remove::<Pathfind>();
 
                 continue;
             }
@@ -437,10 +439,10 @@ pub fn northstar_handle_reroute_failed(
 
                 // Remove RerouteFailed to allow bevy_northstar to retry
                 // Keep RerouteCooldown with updated total_stuck_time in case it fails again
-                commands.entity(entity).remove::<RerouteFailed>();
+                commands.entity(entity).try_remove::<RerouteFailed>();
 
                 // Update cooldown for potential next failure
-                commands.entity(entity).insert(RerouteCooldown {
+                commands.entity(entity).try_insert(RerouteCooldown {
                     timer: 0.5, // Reset timer for next potential failure
                     total_stuck_time: total_stuck,
                 });
@@ -452,7 +454,9 @@ pub fn northstar_handle_reroute_failed(
             } else {
                 trace!("Reroute failed for ambient {:?} - adding cooldown", entity);
             }
-            commands.entity(entity).insert(RerouteCooldown::default());
+            commands
+                .entity(entity)
+                .try_insert(RerouteCooldown::default());
         }
     }
 }
@@ -466,7 +470,7 @@ pub fn northstar_clear_cooldown_on_success(
     query: Query<Entity, (With<RerouteCooldown>, Without<RerouteFailed>, With<Path>)>,
 ) {
     for entity in query.iter() {
-        commands.entity(entity).remove::<RerouteCooldown>();
+        commands.entity(entity).try_remove::<RerouteCooldown>();
     }
 }
 

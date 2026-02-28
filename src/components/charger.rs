@@ -305,6 +305,8 @@ pub struct Charger {
     // === KPI Tracking ===
     /// Total energy delivered by this charger (kWh)
     pub total_energy_delivered_kwh: f32,
+    /// Energy delivered by this charger today (kWh), reset each day
+    pub energy_delivered_kwh_today: f32,
     /// Number of completed charging sessions
     pub session_count: u32,
     /// Total revenue earned by this charger ($)
@@ -355,6 +357,7 @@ impl Default for Charger {
             fault_detected_at: None,
             fault_is_detected: true, // No fault = nothing to detect
             total_energy_delivered_kwh: 0.0,
+            energy_delivered_kwh_today: 0.0,
             session_count: 0,
             total_revenue: 0.0,
             total_repair_opex: 0.0,

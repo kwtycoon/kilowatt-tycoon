@@ -41,7 +41,6 @@ const BUTTON_BORDER_NEEDS_DISPATCH: Color = Color::srgba(1.0, 0.3, 0.3, 1.0);
 const CENTER_RING_BORDER: Color = Color::srgb(0.2, 0.6, 0.9);
 const HEALTH_BAR_GREEN: Color = Color::srgb(0.2, 0.8, 0.3);
 const POWER_BAR_ORANGE: Color = Color::srgb(0.9, 0.6, 0.2);
-const RELIABILITY_BAR_BLUE: Color = Color::srgb(0.3, 0.7, 1.0);
 const BAR_TRACK: Color = Color::srgba(0.2, 0.2, 0.2, 0.8);
 const BACKDROP_DIAMETER: f32 = 300.0;
 const BACKDROP_BG: Color = Color::srgba(0.08, 0.08, 0.12, 0.7);
@@ -86,10 +85,10 @@ pub struct RadialPowerText;
 pub struct RadialChargerId;
 
 #[derive(Component)]
-pub struct RadialReliabilityBar;
+pub struct RadialKwhTodayText;
 
 #[derive(Component)]
-pub struct RadialReliabilityText;
+pub struct RadialKwhLifetimeText;
 
 #[derive(Component)]
 pub struct RadialCenterIcon;
@@ -400,16 +399,16 @@ fn spawn_center_ring(parent: &mut ChildSpawnerCommands, charger: &Charger, image
 
 fn spawn_status_card(parent: &mut ChildSpawnerCommands, charger: &Charger) {
     let card_y = -MENU_RADIUS - 10.0;
-    let expanded_height = CARD_HEIGHT + 24.0; // Extra room for reliability row
+    let card_height = CARD_HEIGHT + 24.0;
 
     parent
         .spawn((
             Node {
                 width: Val::Px(CARD_WIDTH),
-                height: Val::Px(expanded_height),
+                height: Val::Px(card_height),
                 position_type: PositionType::Absolute,
                 left: Val::Px(-CARD_WIDTH / 2.0),
-                top: Val::Px(card_y - expanded_height / 2.0),
+                top: Val::Px(card_y - card_height / 2.0),
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
@@ -443,7 +442,6 @@ fn spawn_status_card(parent: &mut ChildSpawnerCommands, charger: &Charger) {
                 ..default()
             },))
                 .with_children(|row| {
-                    // Health bar track
                     row.spawn((
                         Node {
                             width: Val::Percent(70.0),
@@ -454,7 +452,6 @@ fn spawn_status_card(parent: &mut ChildSpawnerCommands, charger: &Charger) {
                         BorderRadius::all(Val::Px(3.0)),
                     ))
                     .with_children(|track| {
-                        // Health bar fill
                         track.spawn((
                             Node {
                                 width: Val::Percent(charger.health * 100.0),
@@ -467,7 +464,6 @@ fn spawn_status_card(parent: &mut ChildSpawnerCommands, charger: &Charger) {
                         ));
                     });
 
-                    // Health percentage text
                     row.spawn((
                         Text::new(format!("{:.0}%", charger.health * 100.0)),
                         TextFont {
@@ -479,60 +475,31 @@ fn spawn_status_card(parent: &mut ChildSpawnerCommands, charger: &Charger) {
                     ));
                 });
 
-            // Reliability bar container
-            let reliability_pct = charger.reliability * 100.0;
-            let reliability_color = if reliability_pct >= 95.0 {
-                Color::srgb(0.3, 0.9, 0.3)
-            } else if reliability_pct >= 80.0 {
-                Color::srgb(0.8, 0.8, 0.3)
-            } else {
-                Color::srgb(1.0, 0.4, 0.3)
-            };
+            card.spawn((
+                Text::new(format!(
+                    "Today: {:.1} kWh",
+                    charger.energy_delivered_kwh_today
+                )),
+                TextFont {
+                    font_size: 10.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.7, 0.85, 1.0)),
+                RadialKwhTodayText,
+            ));
 
-            card.spawn((Node {
-                width: Val::Percent(100.0),
-                height: Val::Px(8.0),
-                flex_direction: FlexDirection::Row,
-                align_items: AlignItems::Center,
-                column_gap: Val::Px(6.0),
-                ..default()
-            },))
-                .with_children(|row| {
-                    // Reliability bar track
-                    row.spawn((
-                        Node {
-                            width: Val::Percent(70.0),
-                            height: Val::Px(6.0),
-                            ..default()
-                        },
-                        BackgroundColor(BAR_TRACK),
-                        BorderRadius::all(Val::Px(3.0)),
-                    ))
-                    .with_children(|track| {
-                        // Reliability bar fill
-                        track.spawn((
-                            Node {
-                                width: Val::Percent(reliability_pct),
-                                height: Val::Percent(100.0),
-                                ..default()
-                            },
-                            BackgroundColor(RELIABILITY_BAR_BLUE),
-                            BorderRadius::all(Val::Px(3.0)),
-                            RadialReliabilityBar,
-                        ));
-                    });
-
-                    // Reliability text
-                    row.spawn((
-                        Text::new(format!("Rel {reliability_pct:.0}%")),
-                        TextFont {
-                            font_size: 10.0,
-                            ..default()
-                        },
-                        TextColor(reliability_color),
-                        RadialReliabilityText,
-                    ));
-                });
+            card.spawn((
+                Text::new(format!(
+                    "Lifetime: {:.1} kWh",
+                    charger.total_energy_delivered_kwh
+                )),
+                TextFont {
+                    font_size: 10.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.7, 0.85, 1.0)),
+                RadialKwhLifetimeText,
+            ));
         });
 }
 
@@ -1042,7 +1009,7 @@ pub fn update_button_flash(
 
         if flash.timer.is_finished() {
             // Remove flash component and reset to normal color
-            commands.entity(entity).remove::<ButtonPressFlash>();
+            commands.entity(entity).try_remove::<ButtonPressFlash>();
             // If button has pulse animation, don't set static color - let pulse handle it
             if pulse_opt.is_none() {
                 *bg_color = BackgroundColor(if enabled {
@@ -1122,51 +1089,47 @@ pub fn update_radial_menu_data(
     menu_query: Query<&RadialMenu>,
     chargers: Query<&Charger>,
     mut status_text: Query<(&mut Text, &mut TextColor), With<RadialStatusText>>,
-    mut health_bar: Query<
-        &mut Node,
-        (
-            With<RadialHealthBar>,
-            Without<RadialPowerBar>,
-            Without<RadialReliabilityBar>,
-        ),
-    >,
+    mut health_bar: Query<&mut Node, (With<RadialHealthBar>, Without<RadialPowerBar>)>,
     mut health_text: Query<
         &mut Text,
         (
             With<RadialHealthText>,
             Without<RadialStatusText>,
             Without<RadialPowerText>,
-            Without<RadialReliabilityText>,
+            Without<RadialKwhTodayText>,
+            Without<RadialKwhLifetimeText>,
         ),
     >,
-    mut power_bar: Query<
-        &mut Node,
-        (
-            With<RadialPowerBar>,
-            Without<RadialHealthBar>,
-            Without<RadialReliabilityBar>,
-        ),
-    >,
+    mut power_bar: Query<&mut Node, (With<RadialPowerBar>, Without<RadialHealthBar>)>,
     mut power_text: Query<
         &mut Text,
         (
             With<RadialPowerText>,
             Without<RadialStatusText>,
             Without<RadialHealthText>,
-            Without<RadialReliabilityText>,
+            Without<RadialKwhTodayText>,
+            Without<RadialKwhLifetimeText>,
         ),
     >,
-    mut reliability_bar: Query<
-        &mut Node,
+    mut kwh_today_text: Query<
+        &mut Text,
         (
-            With<RadialReliabilityBar>,
-            Without<RadialHealthBar>,
-            Without<RadialPowerBar>,
+            With<RadialKwhTodayText>,
+            Without<RadialStatusText>,
+            Without<RadialHealthText>,
+            Without<RadialPowerText>,
+            Without<RadialKwhLifetimeText>,
         ),
     >,
-    mut reliability_text: Query<
-        (&mut Text, &mut TextColor),
-        (With<RadialReliabilityText>, Without<RadialStatusText>),
+    mut kwh_lifetime_text: Query<
+        &mut Text,
+        (
+            With<RadialKwhLifetimeText>,
+            Without<RadialStatusText>,
+            Without<RadialHealthText>,
+            Without<RadialPowerText>,
+            Without<RadialKwhTodayText>,
+        ),
     >,
     mut center_icon: Query<&mut ImageNode, With<RadialCenterIcon>>,
     images: Res<ImageAssets>,
@@ -1179,28 +1142,23 @@ pub fn update_radial_menu_data(
         return;
     };
 
-    // Update status text
     for (mut text, mut color) in &mut status_text {
         **text = format!("Status: {}", charger.state().display_name());
         *color = TextColor(get_status_color(charger.state()));
     }
 
-    // Update center icon to match charger state
     for mut icon in &mut center_icon {
         icon.image = get_charger_icon(charger, &images);
     }
 
-    // Update health bar
     for mut node in &mut health_bar {
         node.width = Val::Percent(charger.health * 100.0);
     }
 
-    // Update health text
     for mut text in &mut health_text {
         **text = format!("{:.0}%", charger.health * 100.0);
     }
 
-    // Update power bar
     let power_pct = if charger.rated_power_kw > 0.0 {
         (charger.current_power_kw / charger.rated_power_kw * 100.0).clamp(0.0, 100.0)
     } else {
@@ -1210,7 +1168,6 @@ pub fn update_radial_menu_data(
         node.width = Val::Percent(power_pct);
     }
 
-    // Update power text
     for mut text in &mut power_text {
         **text = format!(
             "{:.0} / {:.0} kW",
@@ -1218,23 +1175,12 @@ pub fn update_radial_menu_data(
         );
     }
 
-    // Update reliability bar
-    let reliability_pct = charger.reliability * 100.0;
-    for mut node in &mut reliability_bar {
-        node.width = Val::Percent(reliability_pct);
+    for mut text in &mut kwh_today_text {
+        **text = format!("Today: {:.1} kWh", charger.energy_delivered_kwh_today);
     }
 
-    // Update reliability text + color
-    let reliability_color = if reliability_pct >= 95.0 {
-        Color::srgb(0.3, 0.9, 0.3)
-    } else if reliability_pct >= 80.0 {
-        Color::srgb(0.8, 0.8, 0.3)
-    } else {
-        Color::srgb(1.0, 0.4, 0.3)
-    };
-    for (mut text, mut color) in &mut reliability_text {
-        **text = format!("Rel {reliability_pct:.0}%");
-        *color = TextColor(reliability_color);
+    for mut text in &mut kwh_lifetime_text {
+        **text = format!("Lifetime: {:.1} kWh", charger.total_energy_delivered_kwh);
     }
 }
 

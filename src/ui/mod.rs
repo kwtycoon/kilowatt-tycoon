@@ -96,6 +96,8 @@ impl Plugin for UiPlugin {
                 update_overlay,
                 handle_speed_buttons,
                 sync_speed_button_colors,
+                update_effective_price_badge,
+                update_spot_price_badge,
                 handle_overlay_buttons,
                 // Tutorial systems
                 update_tutorial_visibility,

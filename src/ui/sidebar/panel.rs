@@ -84,6 +84,15 @@ pub enum StrategyControl {
     BessDischargeThreshold,
     BessChargeThreshold,
     SolarExportPolicy,
+    PricingMode,
+    TouOffPeakPrice,
+    TouOnPeakPrice,
+    CostPlusMarkup,
+    CostPlusFloor,
+    CostPlusCeiling,
+    SurgeBasePrice,
+    SurgeMultiplier,
+    SurgeThreshold,
 }
 
 /// Marker for minus buttons
@@ -106,6 +115,11 @@ pub struct SliderTrack(pub StrategyControl);
 #[derive(Component, Clone, Copy)]
 pub struct SliderLabelText(pub StrategyControl);
 
+/// Marker for the outermost column node wrapping an entire slider control.
+/// Toggling `Display` on this hides/shows the whole slider (label, value, buttons, bar).
+#[derive(Component, Clone, Copy)]
+pub struct SliderContainer(pub StrategyControl);
+
 /// Spawn a slider control with +/- buttons and a visual bar
 pub fn spawn_slider_control<M: Component>(
     parent: &mut ChildSpawnerCommands,
@@ -116,12 +130,15 @@ pub fn spawn_slider_control<M: Component>(
     image_assets: &ImageAssets,
 ) {
     parent
-        .spawn(Node {
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(4.0),
-            width: Val::Percent(100.0),
-            ..default()
-        })
+        .spawn((
+            Node {
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(4.0),
+                width: Val::Percent(100.0),
+                ..default()
+            },
+            SliderContainer(control),
+        ))
         .with_children(|container| {
             // Label row with value
             container

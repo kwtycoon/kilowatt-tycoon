@@ -315,6 +315,7 @@ impl Plugin for SystemsPlugin {
         app.add_systems(
             Update,
             (
+                spot_market_system,
                 utility_billing_system,
                 demand_warnings::monitor_demand_warnings,
             )
@@ -325,6 +326,7 @@ impl Plugin for SystemsPlugin {
             Update,
             (
                 action_system,
+                handle_oem_upgrade_existing_faults,
                 om_auto_dispatch_system,
                 dispatch_technician_system,
                 technician_travel_system,

@@ -8,6 +8,8 @@ use bevy::prelude::*;
 use crate::components::charger::{FaultType, RemoteAction};
 use crate::components::ticket::{TicketResolution, TicketType};
 use crate::resources::achievements::AchievementKind;
+use crate::resources::multi_site::SiteId;
+use crate::resources::site_upgrades::OemTier;
 
 pub use demand::*;
 pub use site::*;
@@ -46,6 +48,8 @@ impl Plugin for EventsPlugin {
             .add_message::<BessSavedPeakEvent>()
             .add_message::<BessLowSocEvent>()
             .add_message::<DemandBurdenEvent>()
+            // O&M events
+            .add_message::<OemUpgradeEvent>()
             // Achievement events
             .add_message::<AchievementUnlockedEvent>();
     }
@@ -195,6 +199,16 @@ pub struct RepairFailedEvent {
     pub charger_id: String,
     pub repair_cost: f32,
     pub failure_reason: String,
+}
+
+// ============ O&M Events ============
+
+/// Emitted when an O&M package is purchased so existing faults can be
+/// immediately processed (detected, auto-remediated, or auto-dispatched).
+#[derive(Event, Message, Debug, Clone)]
+pub struct OemUpgradeEvent {
+    pub site_id: SiteId,
+    pub new_tier: OemTier,
 }
 
 // ============ Achievement Events ============

@@ -4,7 +4,7 @@ use crate::components::charger::Charger;
 use crate::components::driver::{Driver, DriverMood, DriverState};
 use crate::components::emotion::{DriverEmotion, EmotionMood, EmotionReason};
 use crate::components::site::BelongsToSite;
-use crate::resources::{EnvironmentState, GameClock, MultiSiteManager, ServiceStrategy};
+use crate::resources::{EnvironmentState, GameClock, MultiSiteManager};
 use bevy::prelude::*;
 
 /// Add DriverEmotion component to newly spawned drivers
@@ -23,7 +23,7 @@ pub fn init_driver_emotions(
             None
         };
 
-        commands.entity(entity).insert(DriverEmotion {
+        commands.entity(entity).try_insert(DriverEmotion {
             mood: EmotionMood::Neutral,
             reason,
             set_at: game_clock.total_real_time,
@@ -60,12 +60,13 @@ pub fn evaluate_driver_emotions(
             continue;
         };
 
-        let (new_mood, new_reason) = evaluate_emotion_for_state(
-            driver,
-            &chargers,
-            &site_state.service_strategy,
-            &environment,
+        let effective_price = site_state.service_strategy.pricing.effective_price(
+            game_clock.game_time,
+            &site_state.site_energy_config,
+            site_state.charger_utilization,
         );
+        let (new_mood, new_reason) =
+            evaluate_emotion_for_state(driver, &chargers, effective_price, &environment);
 
         let would_change = emotion.mood != new_mood || emotion.reason != new_reason;
 
@@ -85,15 +86,14 @@ pub fn evaluate_driver_emotions(
 fn evaluate_emotion_for_state(
     driver: &Driver,
     chargers: &Query<&Charger>,
-    strategy: &ServiceStrategy,
+    effective_price: f32,
     environment: &EnvironmentState,
 ) -> (EmotionMood, EmotionReason) {
     match driver.state {
         DriverState::Arriving => {
             // Check if they're assigned vs waiting
             if driver.assigned_charger.is_some() {
-                // Evaluate pricing reaction using ServiceStrategy
-                let price = strategy.energy_price_kwh;
+                let price = effective_price;
 
                 // Adjust thresholds based on weather
                 // In extreme weather, drivers are more sensitive to price

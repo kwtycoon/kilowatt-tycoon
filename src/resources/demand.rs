@@ -47,6 +47,7 @@ impl DemandState {
         news_multiplier: f32,
         marketing_multiplier: f32,
         hour: u32,
+        price_multiplier: f32,
     ) -> f32 {
         self.base_customers_per_hour
             * reputation_factor(reputation)
@@ -54,6 +55,7 @@ impl DemandState {
             * news_multiplier
             * marketing_multiplier
             * time_of_day_multiplier(hour)
+            * price_multiplier
     }
 
     /// Calculate spawn interval in game seconds based on effective demand
@@ -103,6 +105,20 @@ impl DemandState {
 pub fn reputation_factor(rep: i32) -> f32 {
     let clamped_rep = rep.clamp(0, 100);
     0.5 + (clamped_rep as f32 / 100.0)
+}
+
+/// Reference price for demand elasticity (the default flat price).
+const REFERENCE_PRICE: f32 = 0.45;
+/// Elasticity coefficient — how strongly demand reacts to price deviations.
+const PRICE_ELASTICITY: f32 = 0.5;
+
+/// Convert a customer-facing price into a demand multiplier.
+///
+/// Prices below the reference attract more customers; prices above repel.
+/// Clamped to `0.3 .. 1.8` to prevent extreme swings.
+pub fn price_elasticity_factor(current_price: f32) -> f32 {
+    let factor = 1.0 + PRICE_ELASTICITY * (REFERENCE_PRICE - current_price) / REFERENCE_PRICE;
+    factor.clamp(0.3, 1.8)
 }
 
 /// Get time-of-day demand multiplier based on hour (0-23)

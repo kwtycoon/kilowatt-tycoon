@@ -156,7 +156,7 @@ pub fn transfer_pathfinding_grid_on_site_switch(
                 let grid = create_northstar_grid(&site_state.grid);
                 let revision = GridSyncRevision::new(site_state.grid.revision);
 
-                commands.entity(root_entity).insert((grid, revision));
+                commands.entity(root_entity).try_insert((grid, revision));
 
                 attach_debug_grid_checked(
                     &mut commands,

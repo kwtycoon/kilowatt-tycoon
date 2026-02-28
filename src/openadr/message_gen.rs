@@ -6,7 +6,7 @@
 
 use bevy::prelude::*;
 
-use crate::resources::{GameClock, MultiSiteManager, SolarExportPolicy};
+use crate::resources::{GameClock, MultiSiteManager, PricingMode, SolarExportPolicy};
 
 use super::queue::{OpenAdrMessageQueue, TELEMETRY_INTERVAL_GAME_SECS};
 use super::types::*;
@@ -386,14 +386,25 @@ pub fn openadr_event_system(
                     json,
                 );
 
-                // Also emit an ExportPrice event with the buyback rate
-                let export_rate = site_state
-                    .site_energy_config
-                    .current_export_rate(game_clock.game_time);
+                // Emit an ExportPrice event with the buyback rate.
+                // Level 2+ sites use the spot market price; level 1 uses fixed TOU.
+                let export_rate = if site_state.challenge_level >= 2 {
+                    site_state.spot_market.current_price_per_kwh
+                } else {
+                    site_state
+                        .site_energy_config
+                        .current_export_rate(game_clock.game_time)
+                };
+
+                let export_label = if site_state.challenge_level >= 2 {
+                    format!("Spot-Export-{}", current_tou.display_name())
+                } else {
+                    format!("TOU-Export-{}", current_tou.display_name())
+                };
 
                 let export_event = EventContent {
                     program_id: program_id.clone(),
-                    event_name: Some(format!("TOU-Export-{}", current_tou.display_name())),
+                    event_name: Some(export_label),
                     priority: Priority::new(5),
                     targets: None,
                     report_descriptors: None,
@@ -425,6 +436,59 @@ pub fn openadr_event_system(
                     "Solar Export Price",
                     export_json,
                 );
+            }
+        }
+
+        // Spot market grid event start/end signals (level 2+ only)
+        if site_state.challenge_level >= 2 {
+            let has_event = site_state.spot_market.grid_event.is_some();
+            let der_state = queue.get_or_create(*site_id);
+            let was_active = der_state.spot_grid_event_active;
+
+            if has_event && !was_active {
+                der_state.spot_grid_event_active = true;
+
+                if let Some(ref grid_event) = site_state.spot_market.grid_event {
+                    let event_content = EventContent {
+                        program_id: program_id.clone(),
+                        event_name: Some(format!("Grid-Event: {}", grid_event.name)),
+                        priority: Priority::new(1),
+                        targets: None,
+                        report_descriptors: None,
+                        payload_descriptors: Some(vec![EventPayloadDescriptor {
+                            payload_type: EventType::ExportPrice,
+                            units: Some(Unit::Private("$/kWh".to_string())),
+                            currency: None,
+                        }]),
+                        interval_period: Some(IntervalPeriod {
+                            start: timestamp,
+                            duration: None,
+                            randomize_start: None,
+                        }),
+                        intervals: vec![EventInterval {
+                            id: 0,
+                            interval_period: None,
+                            payloads: vec![EventValuesMap {
+                                value_type: EventType::ExportPrice,
+                                values: vec![ovalue_f32(
+                                    site_state.spot_market.current_price_per_kwh,
+                                )],
+                            }],
+                        }],
+                    };
+
+                    let json = serialize_openadr(&event_content);
+                    queue.push_log(
+                        vtn_name.clone(),
+                        ts_iso.clone(),
+                        "Event",
+                        "Grid Event Start",
+                        json,
+                    );
+                }
+            } else if !has_event && was_active {
+                let der_state = queue.get_or_create(*site_id);
+                der_state.spot_grid_event_active = false;
             }
         }
 
@@ -633,5 +697,84 @@ pub fn openadr_export_event_system(
         } else if !is_exporting && der_state.export_active {
             der_state.export_active = false;
         }
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  8. Customer Price Signal system
+// ─────────────────────────────────────────────────────
+
+/// Emit an OpenADR Event whenever the customer-facing effective price changes
+/// (TOU transition, surge ramp, mode switch, etc.).
+pub fn openadr_customer_price_system(
+    multi_site: Res<MultiSiteManager>,
+    mut queue: ResMut<OpenAdrMessageQueue>,
+    game_clock: Res<GameClock>,
+) {
+    if !queue.is_active() {
+        return;
+    }
+
+    let program_id = match make_program_id(DR_PROGRAM_ID) {
+        Some(id) => id,
+        None => return,
+    };
+    let sim_start = queue.sim_start;
+
+    for (site_id, site) in &multi_site.owned_sites {
+        let effective = site.service_strategy.pricing.effective_price(
+            game_clock.game_time,
+            &site.site_energy_config,
+            site.charger_utilization,
+        );
+
+        // Quantise to 2 decimal places to avoid noise from floating-point jitter
+        let quantised = (effective * 100.0).round() / 100.0;
+
+        let der_state = queue.get_or_create(*site_id);
+        if der_state.last_customer_price == Some(quantised) {
+            continue;
+        }
+        der_state.last_customer_price = Some(quantised);
+
+        let timestamp = sim_start + chrono::Duration::seconds(game_clock.total_game_time as i64);
+        let ts_iso = timestamp.to_rfc3339();
+        let vtn_name = format!("grid-site-{}", site_id.0);
+
+        let mode_label = match site.service_strategy.pricing.mode {
+            PricingMode::Flat => "Flat",
+            PricingMode::TouLinked => "TOU-Linked",
+            PricingMode::CostPlus => "Cost-Plus",
+            PricingMode::DemandResponsive => "Surge",
+        };
+
+        let event_content = EventContent {
+            program_id: program_id.clone(),
+            event_name: Some(format!("CustomerPrice-{mode_label}-{}", site_id.0)),
+            priority: Priority::new(5),
+            targets: None,
+            report_descriptors: None,
+            payload_descriptors: Some(vec![EventPayloadDescriptor {
+                payload_type: EventType::Price,
+                units: Some(Unit::Private("$/kWh".to_string())),
+                currency: None,
+            }]),
+            interval_period: Some(IntervalPeriod {
+                start: timestamp,
+                duration: None,
+                randomize_start: None,
+            }),
+            intervals: vec![EventInterval {
+                id: 0,
+                interval_period: None,
+                payloads: vec![EventValuesMap {
+                    value_type: EventType::Price,
+                    values: vec![ovalue_f32(quantised)],
+                }],
+            }],
+        };
+
+        let json = serialize_openadr(&event_content);
+        queue.push_log(vtn_name, ts_iso, "Event", "Customer Price Signal", json);
     }
 }

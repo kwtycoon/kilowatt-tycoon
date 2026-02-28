@@ -75,6 +75,38 @@ pub struct SessionsValueContainer;
 #[derive(Component)]
 pub struct SummaryUptimeLabel;
 
+// ============ Dynamic Pricing Labels ============
+
+#[derive(Component)]
+pub struct PricingModeLabel;
+
+#[derive(Component)]
+pub struct TouOffPeakPriceLabel;
+
+#[derive(Component)]
+pub struct TouOnPeakPriceLabel;
+
+#[derive(Component)]
+pub struct CostPlusMarkupLabel;
+
+#[derive(Component)]
+pub struct CostPlusFloorLabel;
+
+#[derive(Component)]
+pub struct CostPlusCeilingLabel;
+
+#[derive(Component)]
+pub struct SurgeBasePriceLabel;
+
+#[derive(Component)]
+pub struct SurgeMultiplierLabel;
+
+#[derive(Component)]
+pub struct SurgeThresholdLabel;
+
+#[derive(Component)]
+pub struct EffectivePriceLabel;
+
 // ============ Lock Overlay Markers ============
 
 /// Marker for the power controls lock overlay (shown when Advanced Power Management not purchased)
@@ -84,6 +116,14 @@ pub struct PowerControlsLockOverlay;
 /// Marker for the OPEX controls lock overlay (shown when no OEM tier purchased)
 #[derive(Component)]
 pub struct OpexControlsLockOverlay;
+
+/// Marker for the dynamic pricing lock overlay (shown when Dynamic Pricing Engine not purchased)
+#[derive(Component)]
+pub struct DynamicPricingLockOverlay;
+
+/// Marker for the effective-price indicator row (visible only when upgrade purchased)
+#[derive(Component)]
+pub struct EffectivePriceRow;
 
 // UpgradeButton moved to build_panels.rs
 
@@ -201,7 +241,71 @@ fn spawn_price_panel(parent: &mut ChildSpawnerCommands, image_assets: &ImageAsse
                 ));
             });
 
-            spawn_slider_control(panel, "Energy $/kWh:", "$0.35", StrategyControl::EnergyPrice, EnergyPriceLabel, image_assets);
+            // Mode selector (first control — hidden until upgrade purchased)
+            spawn_slider_control(panel, "Mode:", "Flat", StrategyControl::PricingMode, PricingModeLabel, image_assets);
+
+            // Flat price slider (visible in Flat mode or when upgrade not purchased)
+            spawn_slider_control(panel, "Energy $/kWh:", "$0.45", StrategyControl::EnergyPrice, EnergyPriceLabel, image_assets);
+
+            // Dynamic pricing lock overlay
+            panel.spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    padding: UiRect::all(Val::Px(8.0)),
+                    margin: UiRect::bottom(Val::Px(8.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.8)),
+                DynamicPricingLockOverlay,
+            )).with_child((
+                Text::new("Purchase Dynamic Pricing Engine ($15k) in Build > Upgrades to unlock TOU, cost-plus, and surge pricing modes."),
+                TextFont { font_size: 11.0, ..default() },
+                TextColor(Color::srgb(0.9, 0.7, 0.3)),
+            ));
+
+            // Effective price indicator
+            panel.spawn((
+                Node {
+                    flex_direction: FlexDirection::Row,
+                    justify_content: JustifyContent::SpaceBetween,
+                    width: Val::Percent(100.0),
+                    display: Display::None,
+                    ..default()
+                },
+                EffectivePriceRow,
+            )).with_children(|row| {
+                row.spawn((
+                    Text::new("Effective Price:"),
+                    TextFont { font_size: 12.0, ..default() },
+                    TextColor(colors::TEXT_SECONDARY),
+                ));
+                row.spawn((
+                    Text::new("$0.45/kWh"),
+                    TextFont { font_size: 12.0, ..default() },
+                    TextColor(Color::srgb(0.3, 0.9, 0.3)),
+                    EffectivePriceLabel,
+                ));
+            });
+
+            spawn_separator(panel);
+
+            // TOU-Linked controls
+            spawn_slider_control(panel, "Off-Peak $/kWh:", "$0.30", StrategyControl::TouOffPeakPrice, TouOffPeakPriceLabel, image_assets);
+            spawn_slider_control(panel, "On-Peak $/kWh:", "$0.55", StrategyControl::TouOnPeakPrice, TouOnPeakPriceLabel, image_assets);
+
+            // Cost-Plus controls
+            spawn_slider_control(panel, "Markup %:", "200%", StrategyControl::CostPlusMarkup, CostPlusMarkupLabel, image_assets);
+            spawn_slider_control(panel, "Price Floor:", "$0.20", StrategyControl::CostPlusFloor, CostPlusFloorLabel, image_assets);
+            spawn_slider_control(panel, "Price Ceiling:", "$1.00", StrategyControl::CostPlusCeiling, CostPlusCeilingLabel, image_assets);
+
+            // Demand-Responsive controls
+            spawn_slider_control(panel, "Base Price:", "$0.35", StrategyControl::SurgeBasePrice, SurgeBasePriceLabel, image_assets);
+            spawn_slider_control(panel, "Surge Mult:", "1.5x", StrategyControl::SurgeMultiplier, SurgeMultiplierLabel, image_assets);
+            spawn_slider_control(panel, "Surge @:", "75%", StrategyControl::SurgeThreshold, SurgeThresholdLabel, image_assets);
+
+            spawn_separator(panel);
+
+            // Common controls
             spawn_slider_control(panel, "Idle Fee $/min:", "$0.50", StrategyControl::IdleFee, IdleFeeLabel, image_assets);
             spawn_slider_control(panel, "Sell Video Ad Space:", "$2.00/hr", StrategyControl::VideoAdPrice, VideoAdPriceLabel, image_assets);
 
@@ -483,7 +587,7 @@ pub fn update_strategy_panel_values(
     };
 
     for mut text in &mut energy_price {
-        **text = format!("${:.2}", site_state.service_strategy.energy_price_kwh);
+        **text = format!("${:.2}", site_state.service_strategy.pricing.flat.price_kwh);
     }
     for mut text in &mut idle_fee {
         **text = format!("${:.2}", site_state.service_strategy.idle_fee_min);
@@ -532,6 +636,147 @@ pub fn update_strategy_panel_values(
     }
 }
 
+/// Update dynamic pricing label text values (separate system to avoid query filter explosion).
+pub fn update_dynamic_pricing_labels(
+    multi_site: Res<crate::resources::MultiSiteManager>,
+    game_clock: Res<crate::resources::GameClock>,
+    mut pricing_mode: Query<&mut Text, With<PricingModeLabel>>,
+    mut tou_off_peak: Query<&mut Text, (With<TouOffPeakPriceLabel>, Without<PricingModeLabel>)>,
+    mut tou_on_peak: Query<
+        &mut Text,
+        (
+            With<TouOnPeakPriceLabel>,
+            Without<PricingModeLabel>,
+            Without<TouOffPeakPriceLabel>,
+        ),
+    >,
+    mut cost_markup: Query<
+        &mut Text,
+        (
+            With<CostPlusMarkupLabel>,
+            Without<PricingModeLabel>,
+            Without<TouOffPeakPriceLabel>,
+            Without<TouOnPeakPriceLabel>,
+        ),
+    >,
+    mut cost_floor: Query<
+        &mut Text,
+        (
+            With<CostPlusFloorLabel>,
+            Without<PricingModeLabel>,
+            Without<TouOffPeakPriceLabel>,
+            Without<TouOnPeakPriceLabel>,
+            Without<CostPlusMarkupLabel>,
+        ),
+    >,
+    mut cost_ceiling: Query<
+        &mut Text,
+        (
+            With<CostPlusCeilingLabel>,
+            Without<PricingModeLabel>,
+            Without<TouOffPeakPriceLabel>,
+            Without<TouOnPeakPriceLabel>,
+            Without<CostPlusMarkupLabel>,
+            Without<CostPlusFloorLabel>,
+        ),
+    >,
+    mut surge_base: Query<
+        &mut Text,
+        (
+            With<SurgeBasePriceLabel>,
+            Without<PricingModeLabel>,
+            Without<TouOffPeakPriceLabel>,
+            Without<TouOnPeakPriceLabel>,
+            Without<CostPlusMarkupLabel>,
+            Without<CostPlusFloorLabel>,
+            Without<CostPlusCeilingLabel>,
+        ),
+    >,
+    mut surge_mult: Query<
+        &mut Text,
+        (
+            With<SurgeMultiplierLabel>,
+            Without<PricingModeLabel>,
+            Without<TouOffPeakPriceLabel>,
+            Without<TouOnPeakPriceLabel>,
+            Without<CostPlusMarkupLabel>,
+            Without<CostPlusFloorLabel>,
+            Without<CostPlusCeilingLabel>,
+            Without<SurgeBasePriceLabel>,
+        ),
+    >,
+    mut surge_thresh: Query<
+        &mut Text,
+        (
+            With<SurgeThresholdLabel>,
+            Without<PricingModeLabel>,
+            Without<TouOffPeakPriceLabel>,
+            Without<TouOnPeakPriceLabel>,
+            Without<CostPlusMarkupLabel>,
+            Without<CostPlusFloorLabel>,
+            Without<CostPlusCeilingLabel>,
+            Without<SurgeBasePriceLabel>,
+            Without<SurgeMultiplierLabel>,
+        ),
+    >,
+    mut effective: Query<
+        &mut Text,
+        (
+            With<EffectivePriceLabel>,
+            Without<PricingModeLabel>,
+            Without<TouOffPeakPriceLabel>,
+            Without<TouOnPeakPriceLabel>,
+            Without<CostPlusMarkupLabel>,
+            Without<CostPlusFloorLabel>,
+            Without<CostPlusCeilingLabel>,
+            Without<SurgeBasePriceLabel>,
+            Without<SurgeMultiplierLabel>,
+            Without<SurgeThresholdLabel>,
+        ),
+    >,
+) {
+    let Some(site) = multi_site.active_site() else {
+        return;
+    };
+    let strat = &site.service_strategy;
+
+    for mut t in &mut pricing_mode {
+        **t = strat.pricing.mode.display_name().to_string();
+    }
+    for mut t in &mut tou_off_peak {
+        **t = format!("${:.2}", strat.pricing.tou.off_peak_price);
+    }
+    for mut t in &mut tou_on_peak {
+        **t = format!("${:.2}", strat.pricing.tou.on_peak_price);
+    }
+    for mut t in &mut cost_markup {
+        **t = format!("{:.0}%", strat.pricing.cost_plus.markup_pct);
+    }
+    for mut t in &mut cost_floor {
+        **t = format!("${:.2}", strat.pricing.cost_plus.floor);
+    }
+    for mut t in &mut cost_ceiling {
+        **t = format!("${:.2}", strat.pricing.cost_plus.ceiling);
+    }
+    for mut t in &mut surge_base {
+        **t = format!("${:.2}", strat.pricing.surge.base_price);
+    }
+    for mut t in &mut surge_mult {
+        **t = format!("{:.1}x", strat.pricing.surge.multiplier);
+    }
+    for mut t in &mut surge_thresh {
+        **t = format!("{:.0}%", strat.pricing.surge.threshold * 100.0);
+    }
+    for mut t in &mut effective {
+        let price = strat.pricing.effective_price(
+            game_clock.game_time,
+            &site.site_energy_config,
+            site.charger_utilization,
+        );
+        **t = format!("${:.2}/kWh", price);
+    }
+}
+
 pub fn handle_strategy_panel_buttons(
     mut multi_site: ResMut<crate::resources::MultiSiteManager>,
     mut interaction_query: Query<
@@ -557,8 +802,8 @@ pub fn handle_strategy_panel_buttons(
 
         match control {
             StrategyControl::EnergyPrice => {
-                site_state.service_strategy.energy_price_kwh =
-                    (site_state.service_strategy.energy_price_kwh + delta).clamp(0.10, 2.00);
+                site_state.service_strategy.pricing.flat.price_kwh =
+                    (site_state.service_strategy.pricing.flat.price_kwh + delta).clamp(0.10, 2.00);
             }
             StrategyControl::IdleFee => {
                 site_state.service_strategy.idle_fee_min =
@@ -617,6 +862,81 @@ pub fn handle_strategy_panel_buttons(
                     site_state.service_strategy.solar_export_policy.next()
                 };
             }
+            StrategyControl::PricingMode => {
+                if !site_state.site_upgrades.has_dynamic_pricing() {
+                    continue;
+                }
+                site_state.service_strategy.pricing.mode = if is_minus.is_some() {
+                    site_state.service_strategy.pricing.mode.prev()
+                } else {
+                    site_state.service_strategy.pricing.mode.next()
+                };
+            }
+            StrategyControl::TouOffPeakPrice => {
+                if !site_state.site_upgrades.has_dynamic_pricing() {
+                    continue;
+                }
+                site_state.service_strategy.pricing.tou.off_peak_price =
+                    (site_state.service_strategy.pricing.tou.off_peak_price + delta)
+                        .clamp(0.10, 2.00);
+            }
+            StrategyControl::TouOnPeakPrice => {
+                if !site_state.site_upgrades.has_dynamic_pricing() {
+                    continue;
+                }
+                site_state.service_strategy.pricing.tou.on_peak_price =
+                    (site_state.service_strategy.pricing.tou.on_peak_price + delta)
+                        .clamp(0.10, 2.00);
+            }
+            StrategyControl::CostPlusMarkup => {
+                if !site_state.site_upgrades.has_dynamic_pricing() {
+                    continue;
+                }
+                let markup_delta = if is_minus.is_some() { -25.0 } else { 25.0 };
+                site_state.service_strategy.pricing.cost_plus.markup_pct =
+                    (site_state.service_strategy.pricing.cost_plus.markup_pct + markup_delta)
+                        .clamp(50.0, 2000.0);
+            }
+            StrategyControl::CostPlusFloor => {
+                if !site_state.site_upgrades.has_dynamic_pricing() {
+                    continue;
+                }
+                site_state.service_strategy.pricing.cost_plus.floor =
+                    (site_state.service_strategy.pricing.cost_plus.floor + delta).clamp(0.10, 1.00);
+            }
+            StrategyControl::CostPlusCeiling => {
+                if !site_state.site_upgrades.has_dynamic_pricing() {
+                    continue;
+                }
+                let ceil_delta = if is_minus.is_some() { -0.10 } else { 0.10 };
+                site_state.service_strategy.pricing.cost_plus.ceiling =
+                    (site_state.service_strategy.pricing.cost_plus.ceiling + ceil_delta)
+                        .clamp(0.30, 3.00);
+            }
+            StrategyControl::SurgeBasePrice => {
+                if !site_state.site_upgrades.has_dynamic_pricing() {
+                    continue;
+                }
+                site_state.service_strategy.pricing.surge.base_price =
+                    (site_state.service_strategy.pricing.surge.base_price + delta)
+                        .clamp(0.10, 1.50);
+            }
+            StrategyControl::SurgeMultiplier => {
+                if !site_state.site_upgrades.has_dynamic_pricing() {
+                    continue;
+                }
+                let mult_delta = if is_minus.is_some() { -0.1 } else { 0.1 };
+                site_state.service_strategy.pricing.surge.multiplier =
+                    (site_state.service_strategy.pricing.surge.multiplier + mult_delta)
+                        .clamp(1.0, 3.0);
+            }
+            StrategyControl::SurgeThreshold => {
+                if !site_state.site_upgrades.has_dynamic_pricing() {
+                    continue;
+                }
+                site_state.service_strategy.pricing.surge.threshold =
+                    (site_state.service_strategy.pricing.surge.threshold + delta).clamp(0.50, 0.90);
+            }
         }
     }
 }
@@ -636,7 +956,7 @@ pub fn update_slider_fill_widths(
             StrategyControl::EnergyPrice => {
                 // Range: 0.10 - 2.00
                 let normalized =
-                    (site_state.service_strategy.energy_price_kwh - 0.10) / (2.00 - 0.10);
+                    (site_state.service_strategy.pricing.flat.price_kwh - 0.10) / (2.00 - 0.10);
                 (normalized * 100.0).clamp(0.0, 100.0)
             }
             StrategyControl::IdleFee => {
@@ -670,6 +990,55 @@ pub fn update_slider_fill_widths(
             StrategyControl::BessChargeThreshold => {
                 // Range: 0.20 - 0.50
                 let normalized = (site_state.bess_state.charge_threshold - 0.20) / (0.50 - 0.20);
+                (normalized * 100.0).clamp(0.0, 100.0)
+            }
+            StrategyControl::PricingMode => {
+                use crate::resources::PricingMode;
+                match site_state.service_strategy.pricing.mode {
+                    PricingMode::Flat => 0.0,
+                    PricingMode::TouLinked => 33.0,
+                    PricingMode::CostPlus => 66.0,
+                    PricingMode::DemandResponsive => 100.0,
+                }
+            }
+            StrategyControl::TouOffPeakPrice => {
+                let normalized =
+                    (site_state.service_strategy.pricing.tou.off_peak_price - 0.10) / (2.00 - 0.10);
+                (normalized * 100.0).clamp(0.0, 100.0)
+            }
+            StrategyControl::TouOnPeakPrice => {
+                let normalized =
+                    (site_state.service_strategy.pricing.tou.on_peak_price - 0.10) / (2.00 - 0.10);
+                (normalized * 100.0).clamp(0.0, 100.0)
+            }
+            StrategyControl::CostPlusMarkup => {
+                let normalized = (site_state.service_strategy.pricing.cost_plus.markup_pct - 50.0)
+                    / (2000.0 - 50.0);
+                (normalized * 100.0).clamp(0.0, 100.0)
+            }
+            StrategyControl::CostPlusFloor => {
+                let normalized =
+                    (site_state.service_strategy.pricing.cost_plus.floor - 0.10) / (1.00 - 0.10);
+                (normalized * 100.0).clamp(0.0, 100.0)
+            }
+            StrategyControl::CostPlusCeiling => {
+                let normalized =
+                    (site_state.service_strategy.pricing.cost_plus.ceiling - 0.30) / (3.00 - 0.30);
+                (normalized * 100.0).clamp(0.0, 100.0)
+            }
+            StrategyControl::SurgeBasePrice => {
+                let normalized =
+                    (site_state.service_strategy.pricing.surge.base_price - 0.10) / (1.50 - 0.10);
+                (normalized * 100.0).clamp(0.0, 100.0)
+            }
+            StrategyControl::SurgeMultiplier => {
+                let normalized =
+                    (site_state.service_strategy.pricing.surge.multiplier - 1.0) / (3.0 - 1.0);
+                (normalized * 100.0).clamp(0.0, 100.0)
+            }
+            StrategyControl::SurgeThreshold => {
+                let normalized =
+                    (site_state.service_strategy.pricing.surge.threshold - 0.50) / (0.90 - 0.50);
                 (normalized * 100.0).clamp(0.0, 100.0)
             }
             StrategyControl::SolarExportPolicy => {
@@ -1048,4 +1417,90 @@ pub fn update_power_control_visual_state(
     for mut text_color in &mut solar_export_value {
         *text_color = value_color;
     }
+}
+
+/// Update dynamic pricing lock overlay and mode-specific control visibility.
+///
+/// Uses `SliderContainer` to toggle entire slider sections at once (hiding
+/// the parent container hides all children: labels, value text, buttons, bars).
+pub fn update_dynamic_pricing_visibility(
+    multi_site: Res<crate::resources::MultiSiteManager>,
+    mut lock_overlay: Query<&mut Node, With<DynamicPricingLockOverlay>>,
+    mut containers: Query<(&SliderContainer, &mut Node), Without<DynamicPricingLockOverlay>>,
+    mut effective_price_row: Query<
+        &mut Node,
+        (
+            With<EffectivePriceRow>,
+            Without<DynamicPricingLockOverlay>,
+            Without<SliderContainer>,
+        ),
+    >,
+) {
+    let Some(site) = multi_site.active_site() else {
+        return;
+    };
+    let has_upgrade = site.site_upgrades.has_dynamic_pricing();
+    let mode = site.service_strategy.pricing.mode;
+
+    for mut node in &mut lock_overlay {
+        node.display = if has_upgrade {
+            Display::None
+        } else {
+            Display::Flex
+        };
+    }
+
+    let should_show = |control: &StrategyControl| -> bool {
+        use crate::resources::PricingMode;
+        match control {
+            StrategyControl::PricingMode => has_upgrade,
+            StrategyControl::TouOffPeakPrice | StrategyControl::TouOnPeakPrice => {
+                has_upgrade && mode == PricingMode::TouLinked
+            }
+            StrategyControl::CostPlusMarkup
+            | StrategyControl::CostPlusFloor
+            | StrategyControl::CostPlusCeiling => has_upgrade && mode == PricingMode::CostPlus,
+            StrategyControl::SurgeBasePrice
+            | StrategyControl::SurgeMultiplier
+            | StrategyControl::SurgeThreshold => {
+                has_upgrade && mode == PricingMode::DemandResponsive
+            }
+            StrategyControl::EnergyPrice => !has_upgrade || mode == PricingMode::Flat,
+            _ => true,
+        }
+    };
+
+    for (container, mut node) in &mut containers {
+        if is_dynamic_pricing_control(&container.0) {
+            node.display = if should_show(&container.0) {
+                Display::Flex
+            } else {
+                Display::None
+            };
+        }
+    }
+
+    for mut node in &mut effective_price_row {
+        node.display = if has_upgrade {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+}
+
+fn is_dynamic_pricing_control(control: &StrategyControl) -> bool {
+    matches!(
+        control,
+        StrategyControl::PricingMode
+            | StrategyControl::TouOffPeakPrice
+            | StrategyControl::TouOnPeakPrice
+            | StrategyControl::CostPlusMarkup
+            | StrategyControl::CostPlusFloor
+            | StrategyControl::CostPlusCeiling
+            | StrategyControl::SurgeBasePrice
+            | StrategyControl::SurgeMultiplier
+            | StrategyControl::SurgeThreshold
+            | StrategyControl::EnergyPrice
+    )
 }

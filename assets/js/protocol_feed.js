@@ -65,6 +65,7 @@
     "BESS DR Response": "#4ade80",
     "Solar Export Price": "#fbbf24",
     "Solar Export": "#facc15",
+    "Customer Price Signal": "#a3e635",
   };
 
   // OCPI action colors
@@ -74,6 +75,7 @@
     "Session PATCH": "#22d3ee",
     "CDR POST": "#fb923c",
     "EVSE Status": "#60a5fa",
+    "Tariff PUT": "#e879f9",
   };
 
   // ─── OCPP detail extraction (unchanged from original) ───
@@ -201,6 +203,18 @@
         }
         return obj.event_name || obj.eventName || "";
       }
+      if (action === "Customer Price Signal") {
+        var name = obj.event_name || obj.eventName || "";
+        var intervals = obj.intervals;
+        if (intervals && intervals[0] && intervals[0].payloads) {
+          var vals = intervals[0].payloads[0];
+          if (vals && vals.values && vals.values[0] != null) {
+            var mode = name.replace("CustomerPrice-", "").replace(/-\d+$/, "");
+            return "$" + Number(vals.values[0]).toFixed(2) + "/kWh (" + mode + ")";
+          }
+        }
+        return name;
+      }
       return "";
     } catch (_) {
       return "";
@@ -239,6 +253,20 @@
       }
       if (action === "EVSE Status") {
         return (obj.status || "") + " " + (obj.evse_uid || "");
+      }
+      if (action === "Tariff PUT") {
+        var altText = obj.tariff_alt_text || obj.tariffAltText;
+        if (altText && altText[0] && altText[0].text) {
+          return altText[0].text;
+        }
+        var elems = obj.elements;
+        if (elems && elems[0] && elems[0].price_components) {
+          var pc = elems[0].price_components[0];
+          if (pc) {
+            return "Energy: $" + Number(pc.price).toFixed(2) + "/kWh";
+          }
+        }
+        return obj.id || "";
       }
       return "";
     } catch (_) {

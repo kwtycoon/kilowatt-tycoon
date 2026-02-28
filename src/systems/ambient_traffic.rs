@@ -362,7 +362,7 @@ pub fn update_interested_vehicles(
                 // Change mood to impatient (disappointed they couldn't stop)
                 ambient.mood = DriverMood::Impatient;
                 // Remove the interested marker
-                commands.entity(entity).remove::<InterestedVehicle>();
+                commands.entity(entity).try_remove::<InterestedVehicle>();
             }
         }
     }
@@ -541,10 +541,10 @@ pub fn ambient_to_customer_system(
         let pathfind = Pathfind::new_2d(*bay_x as u32, *bay_y as u32);
 
         // Remove ambient component, add driver and pathfinding components
-        commands.entity(entity).remove::<AmbientVehicle>();
+        commands.entity(entity).try_remove::<AmbientVehicle>();
         commands
             .entity(entity)
-            .insert((driver, new_movement, agent_pos, pathfind));
+            .try_insert((driver, new_movement, agent_pos, pathfind));
 
         info!(
             "Ambient vehicle {} diverted to bay ({}, {})",

@@ -49,6 +49,7 @@ impl Plugin for OcpiPlugin {
                 ocpi_session_start_system,
                 ocpi_session_update_system,
                 ocpi_cdr_system,
+                ocpi_tariff_system,
             )
                 .chain()
                 .run_if(in_state(AppState::Playing)),

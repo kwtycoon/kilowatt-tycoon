@@ -53,6 +53,7 @@ impl Plugin for OpenAdrPlugin {
                 openadr_event_system,
                 openadr_event_response_system,
                 openadr_export_event_system,
+                openadr_customer_price_system,
             )
                 .chain()
                 .run_if(in_state(AppState::Playing)),

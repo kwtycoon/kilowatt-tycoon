@@ -456,6 +456,9 @@ impl Plugin for SidebarPlugin {
                 update_summary_panel_values,
                 handle_upgrade_purchases,
                 update_upgrade_button_states,
+                // Dynamic pricing
+                update_dynamic_pricing_labels,
+                update_dynamic_pricing_visibility,
                 // Lock overlay updates
                 update_power_lock_overlay,
                 update_opex_lock_overlay,

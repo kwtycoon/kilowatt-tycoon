@@ -40,7 +40,13 @@ pub struct AchievementCountLabel;
 pub struct CashLabel;
 
 #[derive(Component)]
+pub struct EffectivePriceBadge;
+
+#[derive(Component)]
 pub struct PowerTotalLabel;
+
+#[derive(Component)]
+pub struct SpotPriceBadge;
 
 #[derive(Component)]
 pub struct ReputationLabel;
@@ -275,6 +281,48 @@ pub fn setup_hud(
                         },
                         TextColor(Color::srgb(1.0, 1.0, 0.4)),
                         PowerTotalLabel,
+                    ));
+                });
+
+                // 2b. Effective Price Badge (visible only with Dynamic Pricing upgrade)
+                bar.spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(4.0),
+                    align_items: AlignItems::Center,
+                    padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
+                    display: Display::None,
+                    ..default()
+                })
+                .with_children(|group| {
+                    group.spawn((
+                        Text::new("$0.45/kWh"),
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.3, 0.9, 0.3)),
+                        EffectivePriceBadge,
+                    ));
+                });
+
+                // 2c. Spot Price Badge (visible only for level 2+ sites)
+                bar.spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(4.0),
+                    align_items: AlignItems::Center,
+                    padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
+                    display: Display::None,
+                    ..default()
+                })
+                .with_children(|group| {
+                    group.spawn((
+                        Text::new("SPOT $0.06"),
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.4, 0.8, 1.0)),
+                        SpotPriceBadge,
                     ));
                 });
 
@@ -641,6 +689,99 @@ pub fn sync_speed_button_colors(
         } else {
             *bg = BackgroundColor(Color::srgb(0.2, 0.3, 0.2)); // Dark green for inactive
         }
+    }
+}
+
+/// Update the effective price badge in the HUD top bar.
+/// Only visible when the Dynamic Pricing Engine upgrade is purchased.
+pub fn update_effective_price_badge(
+    multi_site: Res<crate::resources::MultiSiteManager>,
+    game_clock: Res<GameClock>,
+    mut badge_q: Query<(&mut Text, &mut TextColor, &ChildOf), With<EffectivePriceBadge>>,
+    mut parent_q: Query<&mut Node, Without<EffectivePriceBadge>>,
+) {
+    let Some(site) = multi_site.active_site() else {
+        return;
+    };
+
+    let has_upgrade = site.site_upgrades.has_dynamic_pricing();
+
+    for (mut text, mut text_color, parent) in &mut badge_q {
+        // Toggle parent container visibility
+        if let Ok(mut parent_node) = parent_q.get_mut(parent.parent()) {
+            parent_node.display = if has_upgrade {
+                Display::Flex
+            } else {
+                Display::None
+            };
+        }
+
+        if !has_upgrade {
+            continue;
+        }
+
+        let effective = site.service_strategy.pricing.effective_price(
+            game_clock.game_time,
+            &site.site_energy_config,
+            site.charger_utilization,
+        );
+        let utility_rate = site.site_energy_config.current_rate(game_clock.game_time);
+        let margin = effective - utility_rate;
+
+        **text = format!("${effective:.2}/kWh");
+
+        // Color-code by margin health
+        *text_color = if margin >= 0.15 {
+            TextColor(Color::srgb(0.3, 0.9, 0.3)) // Green - healthy margin
+        } else if margin >= 0.0 {
+            TextColor(Color::srgb(0.9, 0.9, 0.3)) // Yellow - thin margin
+        } else {
+            TextColor(Color::srgb(0.9, 0.3, 0.3)) // Red - selling below cost
+        };
+    }
+}
+
+/// Update the wholesale spot price badge in the HUD top bar.
+/// Only visible when the viewed site has `challenge_level >= 2`.
+pub fn update_spot_price_badge(
+    multi_site: Res<crate::resources::MultiSiteManager>,
+    mut badge_q: Query<(&mut Text, &mut TextColor, &ChildOf), With<SpotPriceBadge>>,
+    mut parent_q: Query<&mut Node, Without<SpotPriceBadge>>,
+) {
+    let Some(site) = multi_site.active_site() else {
+        return;
+    };
+
+    let show = site.challenge_level >= 2;
+
+    for (mut text, mut text_color, parent) in &mut badge_q {
+        if let Ok(mut parent_node) = parent_q.get_mut(parent.parent()) {
+            parent_node.display = if show { Display::Flex } else { Display::None };
+        }
+
+        if !show {
+            continue;
+        }
+
+        let price = site.spot_market.current_price_per_kwh;
+
+        // Show grid event name when active, otherwise "SPOT"
+        let label = if let Some(ref event) = site.spot_market.grid_event {
+            event.name
+        } else {
+            "SPOT"
+        };
+
+        **text = format!("{label} ${price:.2}");
+
+        // Color-code: green = low, yellow = moderate, red = spike
+        *text_color = if price >= 0.50 {
+            TextColor(Color::srgb(1.0, 0.2, 0.2)) // Red - price spike
+        } else if price >= 0.15 {
+            TextColor(Color::srgb(1.0, 0.8, 0.2)) // Yellow - elevated
+        } else {
+            TextColor(Color::srgb(0.4, 0.8, 1.0)) // Blue - normal
+        };
     }
 }
 

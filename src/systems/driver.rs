@@ -334,12 +334,18 @@ pub fn driver_spawn_system(
             // a procedural driver onto the same entry tile.
             if !spawned_vehicle_this_frame && site_state.demand_state.should_spawn() {
                 let hour = game_clock.hour();
+                let effective_price = site_state.service_strategy.pricing.effective_price(
+                    game_clock.game_time,
+                    &site_state.site_energy_config,
+                    site_state.charger_utilization,
+                );
                 let base_demand = site_state.demand_state.calculate_effective_demand(
                     game_state.reputation,
                     environment.current_weather.demand_multiplier(),
                     environment.news_demand_multiplier,
                     site_state.site_upgrades.demand_multiplier(),
                     hour,
+                    crate::resources::demand::price_elasticity_factor(effective_price),
                 );
 
                 // Apply average charger reliability as a demand multiplier.
@@ -980,7 +986,11 @@ pub fn charging_system(
             }
 
             // No jam - proceed with successful session completion
-            let price_per_kwh = site_state.service_strategy.energy_price_kwh;
+            let price_per_kwh = site_state.service_strategy.pricing.effective_price(
+                game_clock.game_time,
+                &site_state.site_energy_config,
+                site_state.charger_utilization,
+            );
             let revenue = driver.charge_received_kwh * price_per_kwh;
 
             // Check for connector jam
@@ -1016,6 +1026,7 @@ pub fn charging_system(
 
             // Update charger KPIs
             charger.total_energy_delivered_kwh += driver.charge_received_kwh;
+            charger.energy_delivered_kwh_today += driver.charge_received_kwh;
             charger.session_count += 1;
             charger.total_revenue += revenue;
 

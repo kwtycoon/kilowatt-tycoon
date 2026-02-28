@@ -259,14 +259,14 @@ fn sync_debug_paths(
         for entity in &drivers {
             commands
                 .entity(entity)
-                .remove::<DebugPath>()
-                .remove::<AgentOfGrid>();
+                .try_remove::<DebugPath>()
+                .try_remove::<AgentOfGrid>();
         }
         for entity in &technicians {
             commands
                 .entity(entity)
-                .remove::<DebugPath>()
-                .remove::<AgentOfGrid>();
+                .try_remove::<DebugPath>()
+                .try_remove::<AgentOfGrid>();
         }
         return;
     }
@@ -276,14 +276,14 @@ fn sync_debug_paths(
     };
 
     for entity in &drivers {
-        commands.entity(entity).insert((
+        commands.entity(entity).try_insert((
             DebugPath::new(Color::srgb(0.9, 0.2, 0.2)),
             AgentOfGrid(grid_entity),
         ));
     }
 
     for entity in &technicians {
-        commands.entity(entity).insert((
+        commands.entity(entity).try_insert((
             DebugPath::new(Color::srgb(0.2, 0.6, 0.9)),
             AgentOfGrid(grid_entity),
         ));

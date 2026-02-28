@@ -64,6 +64,21 @@ impl Default for OcpiChargerState {
 }
 
 // ─────────────────────────────────────────────────────
+//  Tariff change-detection fingerprint
+// ─────────────────────────────────────────────────────
+
+/// Snapshot of the last emitted OCPI tariff for a site, used to detect when
+/// the tariff content has actually changed (mode switch, player config edit,
+/// or dynamic price fluctuation).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LastEmittedTariff {
+    pub tariff_id: String,
+    /// Price of each tariff element quantized to whole cents to avoid
+    /// floating-point jitter from triggering spurious emissions.
+    pub price_cents: Vec<i32>,
+}
+
+// ─────────────────────────────────────────────────────
 //  OcpiMessageQueue (Resource)
 // ─────────────────────────────────────────────────────
 
@@ -74,6 +89,8 @@ pub struct OcpiMessageQueue {
     pub event_log_enabled: bool,
     pub charger_state: HashMap<Entity, OcpiChargerState>,
     next_session_id: i32,
+    /// Last emitted tariff per site (content-aware change detection).
+    pub last_emitted_tariff: HashMap<crate::resources::SiteId, LastEmittedTariff>,
 }
 
 impl Default for OcpiMessageQueue {
@@ -91,6 +108,7 @@ impl Default for OcpiMessageQueue {
             event_log_enabled: true,
             charger_state: HashMap::new(),
             next_session_id: 1,
+            last_emitted_tariff: HashMap::new(),
         }
     }
 }

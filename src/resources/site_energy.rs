@@ -281,6 +281,8 @@ impl SolarState {
 pub enum BessMode {
     #[default]
     PeakShaving,
+    /// Charge during off-peak, discharge during on-peak (TOU schedule driven).
+    TouArbitrage,
     Backup,
     Manual,
 }
@@ -289,8 +291,27 @@ impl BessMode {
     pub fn display_name(&self) -> &'static str {
         match self {
             BessMode::PeakShaving => "Peak Shaving",
+            BessMode::TouArbitrage => "TOU Arbitrage",
             BessMode::Backup => "Backup",
             BessMode::Manual => "Manual",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            BessMode::PeakShaving => BessMode::TouArbitrage,
+            BessMode::TouArbitrage => BessMode::Backup,
+            BessMode::Backup => BessMode::Manual,
+            BessMode::Manual => BessMode::PeakShaving,
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            BessMode::PeakShaving => BessMode::Manual,
+            BessMode::TouArbitrage => BessMode::PeakShaving,
+            BessMode::Backup => BessMode::TouArbitrage,
+            BessMode::Manual => BessMode::Backup,
         }
     }
 }
@@ -460,6 +481,186 @@ impl GridImport {
         } else {
             self.current_kva = 0.0;
         }
+    }
+}
+
+/// Active grid event causing a wholesale price spike at a specific site.
+#[derive(Debug, Clone)]
+pub struct GridEvent {
+    /// Human-readable event headline
+    pub name: &'static str,
+    /// Multiplier applied to the base spot price during this event (5x-20x)
+    pub price_multiplier: f32,
+}
+
+/// Per-site wholesale electricity spot market state.
+///
+/// Tracks the real-time fluctuating export price that replaces fixed TOU
+/// export rates for sites with `challenge_level >= 2`.  Level 1 sites
+/// never tick this and fall back to the fixed rates in `SiteEnergyConfig`.
+#[derive(Debug, Clone)]
+pub struct SpotMarket {
+    /// Current effective export price ($/kWh) after all multipliers
+    pub current_price_per_kwh: f32,
+    /// Base price from time-of-day curve before weather/event multipliers
+    pub base_price_per_kwh: f32,
+    /// Active grid event causing a price spike (if any)
+    pub grid_event: Option<GridEvent>,
+    /// Game time at which the active grid event expires
+    pub grid_event_end_time: f32,
+    /// Highest price seen today (reset at day boundary)
+    pub price_24h_high: f32,
+    /// Lowest price seen today (reset at day boundary)
+    pub price_24h_low: f32,
+    /// Game time of the last grid-event roll (to throttle rolls to ~1/hr)
+    pub last_event_roll_time: f32,
+}
+
+/// Minimum spot price floor ($/kWh) -- overnight surplus
+const SPOT_PRICE_FLOOR: f32 = 0.02;
+
+impl Default for SpotMarket {
+    fn default() -> Self {
+        Self {
+            current_price_per_kwh: 0.06,
+            base_price_per_kwh: 0.06,
+            grid_event: None,
+            grid_event_end_time: 0.0,
+            price_24h_high: 0.06,
+            price_24h_low: 0.06,
+            last_event_roll_time: 0.0,
+        }
+    }
+}
+
+impl SpotMarket {
+    /// Catalogue of possible grid events with their price multipliers.
+    const GRID_EVENTS: &[(&'static str, f32)] = &[
+        ("Record Demand", 8.0),
+        ("Generator Trip", 12.0),
+        ("Transmission Constraint", 10.0),
+        ("Heat Emergency", 15.0),
+        ("Unexpected Plant Outage", 20.0),
+        ("Renewable Shortfall", 6.0),
+        ("Grid Congestion", 5.0),
+    ];
+
+    /// Compute the base spot price from the time-of-day demand curve.
+    ///
+    /// The curve peaks in the late afternoon / early evening (5-7 pm,
+    /// day_fraction ~0.71-0.79) when residential AC load is highest and
+    /// solar generation is declining.
+    ///
+    /// Returns $/kWh in the range ~$0.02 (overnight) to ~$0.18 (peak evening).
+    pub fn base_price_for_time(day_fraction: f32) -> f32 {
+        // Demand curve parameters
+        let overnight_base = 0.03; // $/kWh overnight floor
+        let peak_premium = 0.15; // additional $/kWh at peak
+
+        // Two peaks: morning (8-9am, ~0.35) and evening (5-7pm, ~0.75)
+        // Evening peak is dominant
+        let morning_peak = 0.35_f32;
+        let evening_peak = 0.75_f32;
+
+        // Gaussian-ish bumps using cos^2
+        let morning_dist = (day_fraction - morning_peak).abs().min(0.5);
+        let morning_factor = if morning_dist < 0.08 {
+            let t = morning_dist / 0.08 * std::f32::consts::FRAC_PI_2;
+            let c = ops::cos(t);
+            c * c * 0.4 // morning peak is 40% of evening
+        } else {
+            0.0
+        };
+
+        let evening_dist = (day_fraction - evening_peak).abs().min(0.5);
+        let evening_factor = if evening_dist < 0.10 {
+            let t = evening_dist / 0.10 * std::f32::consts::FRAC_PI_2;
+            let c = ops::cos(t);
+            c * c
+        } else {
+            0.0
+        };
+
+        let demand_factor = morning_factor.max(evening_factor);
+
+        (overnight_base + peak_premium * demand_factor).max(SPOT_PRICE_FLOOR)
+    }
+
+    /// Update the spot price for this tick.
+    ///
+    /// `day_fraction`: 0.0-1.0 position within the day
+    /// `weather_multiplier`: from `WeatherType::spot_price_multiplier()`
+    /// `delta_game_seconds`: elapsed game time this tick
+    /// `game_time`: current absolute game time (for event timing)
+    /// `rng`: random number generator
+    pub fn tick(
+        &mut self,
+        day_fraction: f32,
+        weather_multiplier: f32,
+        delta_game_seconds: f32,
+        game_time: f32,
+        rng: &mut impl rand::Rng,
+    ) {
+        // 1. Base price from time-of-day curve
+        self.base_price_per_kwh = Self::base_price_for_time(day_fraction);
+
+        // 2. Expire active grid event if past its end time
+        if self.grid_event.is_some() && game_time >= self.grid_event_end_time {
+            self.grid_event = None;
+        }
+
+        // 3. Roll for new grid event (~5% chance per game-hour, throttled to 1 roll/hr)
+        let hours_since_last_roll = (game_time - self.last_event_roll_time) / 3600.0;
+        if self.grid_event.is_none() && hours_since_last_roll >= 1.0 {
+            self.last_event_roll_time = game_time;
+
+            let roll: f32 = rng.random();
+            if roll < 0.05 {
+                let event_idx = (rng.random::<f32>() * Self::GRID_EVENTS.len() as f32) as usize
+                    % Self::GRID_EVENTS.len();
+                let (name, multiplier) = Self::GRID_EVENTS[event_idx];
+
+                // Duration: 1-4 game hours
+                let duration_hours: f32 = 1.0 + rng.random::<f32>() * 3.0;
+                let duration_seconds = duration_hours * 3600.0;
+
+                self.grid_event = Some(GridEvent {
+                    name,
+                    price_multiplier: multiplier,
+                });
+                self.grid_event_end_time = game_time + duration_seconds;
+            }
+        }
+
+        // 4. Compute final price: base * weather * event * noise
+        let event_multiplier = self.grid_event.as_ref().map_or(1.0, |e| e.price_multiplier);
+
+        // Small random noise: +/- 5%
+        let noise = 0.95 + rng.random::<f32>() * 0.10;
+
+        self.current_price_per_kwh =
+            (self.base_price_per_kwh * weather_multiplier * event_multiplier * noise)
+                .max(SPOT_PRICE_FLOOR);
+
+        // 5. Update daily high/low
+        if self.current_price_per_kwh > self.price_24h_high {
+            self.price_24h_high = self.current_price_per_kwh;
+        }
+        if self.current_price_per_kwh < self.price_24h_low {
+            self.price_24h_low = self.current_price_per_kwh;
+        }
+
+        // Suppress unused warning -- delta_game_seconds reserved for future smoothing
+        let _ = delta_game_seconds;
+    }
+
+    /// Reset daily tracking (call at day boundary)
+    pub fn reset_daily(&mut self) {
+        self.price_24h_high = self.current_price_per_kwh;
+        self.price_24h_low = self.current_price_per_kwh;
+        self.grid_event = None;
+        self.grid_event_end_time = 0.0;
+        self.last_event_roll_time = 0.0;
     }
 }
 

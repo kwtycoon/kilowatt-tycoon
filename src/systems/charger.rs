@@ -542,6 +542,95 @@ pub fn fault_detection_system(
     }
 }
 
+// ============ O&M Upgrade → Existing Fault Handler ============
+
+/// When an O&M package is purchased, immediately process pre-existing faults at
+/// the site so the player gets the benefit they just paid for:
+///
+/// - **Detect tier**: detect any still-undetected faults, auto-remediate software
+///   faults (including ones previously discovered only by a driver).
+/// - **Optimize tier**: auto-dispatch technicians for hardware faults that were
+///   already detected but never dispatched.
+pub fn handle_oem_upgrade_existing_faults(
+    mut oem_events: MessageReader<crate::events::OemUpgradeEvent>,
+    mut chargers: Query<(Entity, &mut Charger, &crate::components::BelongsToSite)>,
+    game_clock: Res<GameClock>,
+    mut fault_events: MessageWriter<ChargerFaultEvent>,
+    mut dispatch_events: MessageWriter<crate::events::TechnicianDispatchEvent>,
+) {
+    for event in oem_events.read() {
+        for (entity, mut charger, belongs) in &mut chargers {
+            if belongs.site_id != event.site_id {
+                continue;
+            }
+            let Some(fault_type) = charger.current_fault else {
+                continue;
+            };
+
+            // Detect any faults that haven't been detected yet (e.g. legacy faults
+            // without timestamps that fault_detection_system marks detected but
+            // doesn't emit events for, or faults the system hasn't reached yet).
+            if !charger.fault_is_detected && event.new_tier.detection_delay_secs().is_some() {
+                charger.fault_is_detected = true;
+                charger.fault_discovered = true;
+                charger.fault_detected_at = Some(game_clock.total_game_time);
+
+                fault_events.write(ChargerFaultEvent {
+                    charger_entity: entity,
+                    charger_id: charger.id.clone(),
+                    fault_type,
+                });
+
+                info!(
+                    "O&M upgrade: detecting pre-existing {:?} on {}",
+                    fault_type, charger.id
+                );
+            }
+
+            // Auto-remediate detected software faults
+            if charger.fault_is_detected
+                && event.new_tier.has_auto_remediation()
+                && !fault_type.requires_technician()
+            {
+                let occurred_at = charger
+                    .fault_occurred_at
+                    .unwrap_or(game_clock.total_game_time);
+                let downtime = game_clock.total_game_time - occurred_at;
+                charger.current_fault = None;
+                charger.recover_reliability_fast_fix(
+                    downtime,
+                    event.new_tier.reliability_recovery_multiplier(),
+                );
+                charger.fault_occurred_at = None;
+                charger.fault_detected_at = None;
+                charger.fault_is_detected = false;
+
+                info!(
+                    "O&M upgrade: auto-remediated {:?} on {}",
+                    fault_type, charger.id
+                );
+                continue;
+            }
+
+            // Auto-dispatch technician for detected hardware faults
+            if charger.fault_is_detected
+                && event.new_tier.has_auto_dispatch()
+                && fault_type.requires_technician()
+            {
+                dispatch_events.write(crate::events::TechnicianDispatchEvent {
+                    charger_entity: entity,
+                    charger_id: charger.id.clone(),
+                });
+
+                info!(
+                    "O&M upgrade: auto-dispatching technician for {:?} on {}",
+                    fault_type, charger.id
+                );
+            }
+        }
+    }
+}
+
 // ============ Reliability Degradation System ============
 
 /// Degrades charger reliability while faulted (ongoing downtime penalty).

@@ -377,11 +377,11 @@ fn test_pricing_independence() {
     let state_b = multi_site.get_site(site_b).unwrap();
 
     assert_eq!(
-        state_a.service_strategy.energy_price_kwh, 0.45,
+        state_a.service_strategy.pricing.flat.price_kwh, 0.45,
         "Site A default pricing"
     );
     assert_eq!(
-        state_b.service_strategy.energy_price_kwh, 0.45,
+        state_b.service_strategy.pricing.flat.price_kwh, 0.45,
         "Site B default pricing"
     );
 
@@ -391,7 +391,9 @@ fn test_pricing_independence() {
         .get_site_mut(site_a)
         .unwrap()
         .service_strategy
-        .energy_price_kwh = 0.50;
+        .pricing
+        .flat
+        .price_kwh = 0.50;
 
     // Verify site B is unaffected
     let multi_site = app.world().resource::<MultiSiteManager>();
@@ -400,7 +402,9 @@ fn test_pricing_independence() {
             .get_site(site_a)
             .unwrap()
             .service_strategy
-            .energy_price_kwh,
+            .pricing
+            .flat
+            .price_kwh,
         0.50
     );
     assert_eq!(
@@ -408,7 +412,9 @@ fn test_pricing_independence() {
             .get_site(site_b)
             .unwrap()
             .service_strategy
-            .energy_price_kwh,
+            .pricing
+            .flat
+            .price_kwh,
         0.45
     );
 }

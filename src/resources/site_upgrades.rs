@@ -7,6 +7,7 @@ pub mod upgrade_costs {
     pub const TRANSFORMER_COOLING: f32 = 8000.0;
     pub const ADVANCED_POWER_MANAGEMENT: f32 = 25000.0;
     pub const MARKETING_CAMPAIGN: f32 = 3000.0;
+    pub const DYNAMIC_PRICING: f32 = 15000.0;
     // O&M platform tiers
     pub const OEM_DETECT: f32 = 5000.0;
     pub const OEM_OPTIMIZE: f32 = 20000.0;
@@ -125,6 +126,8 @@ pub struct SiteUpgrades {
     pub has_advanced_power_management: bool,
     /// Marketing campaign - +10% demand (temporary or permanent depending on design)
     pub has_marketing: bool,
+    /// Dynamic pricing engine - unlocks TOU, cost-plus, and surge pricing modes
+    pub has_dynamic_pricing: bool,
     /// O&M platform tier
     pub oem_tier: OemTier,
 }
@@ -161,6 +164,11 @@ impl SiteUpgrades {
         self.has_advanced_power_management
     }
 
+    /// Check if dynamic pricing engine is active (unlocks TOU, cost-plus, surge modes)
+    pub fn has_dynamic_pricing(&self) -> bool {
+        self.has_dynamic_pricing
+    }
+
     /// Whether any O&M tier is active
     pub fn has_om_software(&self) -> bool {
         self.oem_tier != OemTier::None
@@ -186,6 +194,12 @@ impl SiteUpgrades {
     pub fn upgrade_info() -> Vec<UpgradeInfo> {
         vec![
             UpgradeInfo {
+                id: UpgradeId::Marketing,
+                name: "Marketing Campaign",
+                description: "+10% customer demand",
+                cost: upgrade_costs::MARKETING_CAMPAIGN,
+            },
+            UpgradeInfo {
                 id: UpgradeId::TransformerCooling,
                 name: "Transformer Cooling",
                 description: "+15% thermal headroom",
@@ -198,10 +212,10 @@ impl SiteUpgrades {
                 cost: upgrade_costs::ADVANCED_POWER_MANAGEMENT,
             },
             UpgradeInfo {
-                id: UpgradeId::Marketing,
-                name: "Marketing Campaign",
-                description: "+10% customer demand",
-                cost: upgrade_costs::MARKETING_CAMPAIGN,
+                id: UpgradeId::DynamicPricing,
+                name: "Dynamic Pricing Engine",
+                description: "Unlocks TOU, cost-plus, and surge pricing modes",
+                cost: upgrade_costs::DYNAMIC_PRICING,
             },
             UpgradeInfo {
                 id: UpgradeId::OemDetect,
@@ -224,6 +238,7 @@ impl SiteUpgrades {
             UpgradeId::TransformerCooling => self.has_transformer_cooling,
             UpgradeId::AdvancedPowerManagement => self.has_advanced_power_management,
             UpgradeId::Marketing => self.has_marketing,
+            UpgradeId::DynamicPricing => self.has_dynamic_pricing,
             UpgradeId::OemDetect => self.oem_tier.at_least(OemTier::Detect),
             UpgradeId::OemOptimize => self.oem_tier.at_least(OemTier::Optimize),
         }
@@ -235,6 +250,7 @@ impl SiteUpgrades {
             UpgradeId::TransformerCooling => self.has_transformer_cooling = true,
             UpgradeId::AdvancedPowerManagement => self.has_advanced_power_management = true,
             UpgradeId::Marketing => self.has_marketing = true,
+            UpgradeId::DynamicPricing => self.has_dynamic_pricing = true,
             UpgradeId::OemDetect => {
                 if self.oem_tier == OemTier::None {
                     self.oem_tier = OemTier::Detect;
@@ -254,6 +270,7 @@ impl SiteUpgrades {
             UpgradeId::TransformerCooling => upgrade_costs::TRANSFORMER_COOLING,
             UpgradeId::AdvancedPowerManagement => upgrade_costs::ADVANCED_POWER_MANAGEMENT,
             UpgradeId::Marketing => upgrade_costs::MARKETING_CAMPAIGN,
+            UpgradeId::DynamicPricing => upgrade_costs::DYNAMIC_PRICING,
             UpgradeId::OemDetect => upgrade_costs::OEM_DETECT,
             UpgradeId::OemOptimize => upgrade_costs::OEM_OPTIMIZE,
         }
@@ -275,6 +292,7 @@ pub enum UpgradeId {
     TransformerCooling,
     AdvancedPowerManagement,
     Marketing,
+    DynamicPricing,
     OemDetect,
     OemOptimize,
 }

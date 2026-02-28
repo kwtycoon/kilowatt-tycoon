@@ -689,6 +689,12 @@ fn on_enter_day_end(
         .values()
         .any(|s| s.grid.total_solar_kw > 0.0);
 
+    // Spot market stats for the viewed site (only meaningful for challenge_level >= 2)
+    let spot_stats: Option<(f32, f32)> = multi_site
+        .active_site()
+        .filter(|s| s.challenge_level >= 2)
+        .map(|s| (s.spot_market.price_24h_low, s.spot_market.price_24h_high));
+
     // Revenue/cost hints for collapsed view
     let revenue_hint: Option<&str> = if charging_revenue < energy_cost && energy_cost > 0.01 {
         Some("(Pricing: Too Low?)")
@@ -1145,10 +1151,23 @@ fn on_enter_day_end(
                                                         &format!("+${solar_export_revenue:.2}"),
                                                         Color::srgb(0.4, 0.9, 0.4),
                                                     );
-                                                    spawn_insight_row(
-                                                        section,
-                                                        "Excess solar sold back to the grid at wholesale rates.",
-                                                    );
+                                                    if let Some((low, high)) = spot_stats {
+                                                        spawn_indented_row(
+                                                            section,
+                                                            "  Spot Range",
+                                                            &format!("${low:.2} - ${high:.2}/kWh"),
+                                                            Color::srgb(0.4, 0.8, 1.0),
+                                                        );
+                                                        spawn_insight_row(
+                                                            section,
+                                                            "Wholesale spot price fluctuates with demand and grid events.",
+                                                        );
+                                                    } else {
+                                                        spawn_insight_row(
+                                                            section,
+                                                            "Excess solar sold back to the grid at wholesale rates.",
+                                                        );
+                                                    }
                                                 } else {
                                                     spawn_indented_row(
                                                         section,
@@ -1156,10 +1175,17 @@ fn on_enter_day_end(
                                                         "+$0.00",
                                                         Color::srgb(0.7, 0.7, 0.7),
                                                     );
-                                                    spawn_insight_row(
-                                                        section,
-                                                        "All solar consumed on-site -- no excess to export.",
-                                                    );
+                                                    if spot_stats.is_some() {
+                                                        spawn_insight_row(
+                                                            section,
+                                                            "All solar consumed on-site. Try MaxExport to sell at spot prices!",
+                                                        );
+                                                    } else {
+                                                        spawn_insight_row(
+                                                            section,
+                                                            "All solar consumed on-site -- no excess to export.",
+                                                        );
+                                                    }
                                                 }
                                             }
                                         });
@@ -1912,7 +1938,7 @@ fn on_exit_day_end(
         charger.requested_power_kw = 0.0;
         charger.allocated_power_kw = 0.0;
         charger.session_start_game_time = None;
-        // Note: Don't reset health/energy totals - those accumulate across days
+        charger.energy_delivered_kwh_today = 0.0;
     }
 
     // Reset per-site resources for all sites
@@ -1922,6 +1948,9 @@ fn on_exit_day_end(
 
         // Reset utility meter for new day
         site.utility_meter.reset();
+
+        // Reset spot market daily tracking (24h high/low, events)
+        site.spot_market.reset_daily();
 
         // Reset driver schedule for new day
         site.driver_schedule.next_driver_index = 0;

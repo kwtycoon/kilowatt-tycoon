@@ -219,7 +219,7 @@ fn test_effective_demand_calculation() {
     let demand = DemandState::default();
 
     // At baseline conditions (rep=50, sunny weather, no news, no marketing, noon)
-    let effective = demand.calculate_effective_demand(50, 1.0, 1.0, 1.0, 12);
+    let effective = demand.calculate_effective_demand(50, 1.0, 1.0, 1.0, 12, 1.0);
 
     // Should be close to base rate at noon with baseline conditions
     // Noon has 1.0x multiplier, rep 50 = 1.0x, all others 1.0x
@@ -231,8 +231,8 @@ fn test_effective_demand_with_high_reputation() {
     let demand = DemandState::default();
 
     // High reputation should increase demand
-    let effective_high_rep = demand.calculate_effective_demand(100, 1.0, 1.0, 1.0, 12);
-    let effective_low_rep = demand.calculate_effective_demand(0, 1.0, 1.0, 1.0, 12);
+    let effective_high_rep = demand.calculate_effective_demand(100, 1.0, 1.0, 1.0, 12, 1.0);
+    let effective_low_rep = demand.calculate_effective_demand(0, 1.0, 1.0, 1.0, 12, 1.0);
 
     assert!(effective_high_rep > effective_low_rep);
     assert!(effective_high_rep > demand.base_customers_per_hour);
@@ -243,8 +243,8 @@ fn test_effective_demand_with_weather() {
     let demand = DemandState::default();
 
     // Rainy weather should reduce demand
-    let effective_rainy = demand.calculate_effective_demand(50, 0.8, 1.0, 1.0, 12);
-    let effective_sunny = demand.calculate_effective_demand(50, 1.0, 1.0, 1.0, 12);
+    let effective_rainy = demand.calculate_effective_demand(50, 0.8, 1.0, 1.0, 12, 1.0);
+    let effective_sunny = demand.calculate_effective_demand(50, 1.0, 1.0, 1.0, 12, 1.0);
 
     assert!(effective_rainy < effective_sunny);
 }
@@ -254,8 +254,8 @@ fn test_effective_demand_evening_rush() {
     let demand = DemandState::default();
 
     // Evening rush should have higher demand than night
-    let effective_evening = demand.calculate_effective_demand(50, 1.0, 1.0, 1.0, 18);
-    let effective_night = demand.calculate_effective_demand(50, 1.0, 1.0, 1.0, 3);
+    let effective_evening = demand.calculate_effective_demand(50, 1.0, 1.0, 1.0, 18, 1.0);
+    let effective_night = demand.calculate_effective_demand(50, 1.0, 1.0, 1.0, 3, 1.0);
 
     assert!(effective_evening > effective_night);
 }
@@ -449,6 +449,7 @@ fn test_demand_state_integration_with_environment() {
         environment.news_demand_multiplier,
         upgrades.demand_multiplier(),
         12,
+        1.0,
     );
 
     assert!(effective > 0.0);
@@ -533,6 +534,7 @@ fn test_demand_calculation_with_all_multipliers() {
         environment.news_demand_multiplier,
         upgrades.demand_multiplier(),
         18,
+        1.0,
     );
 
     // Expected: 3.0 * 1.25 * 1.0 * 1.2 * 1.1 * 1.5 = ~7.425

@@ -27,7 +27,7 @@ fn test_l2_profit_margin_off_peak() {
     let energy_config = SiteEnergyConfig::default();
 
     // L2 charging: sell at unified price, buy at $0.12/kWh (off-peak)
-    let sell_price = strategy.energy_price_kwh;
+    let sell_price = strategy.pricing.flat.price_kwh;
     let buy_price = energy_config.off_peak_rate;
     let margin = sell_price - buy_price;
 
@@ -56,7 +56,7 @@ fn test_l2_profit_margin_on_peak() {
     let energy_config = SiteEnergyConfig::default();
 
     // L2 charging: sell at unified price, buy at $0.28/kWh (on-peak)
-    let sell_price = strategy.energy_price_kwh;
+    let sell_price = strategy.pricing.flat.price_kwh;
     let buy_price = energy_config.on_peak_rate;
     let margin = sell_price - buy_price;
 
@@ -80,7 +80,7 @@ fn test_dcfc_profit_margin_off_peak() {
     let energy_config = SiteEnergyConfig::default();
 
     // DCFC: sell at unified price, buy at $0.12/kWh (off-peak)
-    let sell_price = strategy.energy_price_kwh;
+    let sell_price = strategy.pricing.flat.price_kwh;
     let buy_price = energy_config.off_peak_rate;
     let margin = sell_price - buy_price;
 
@@ -108,7 +108,7 @@ fn test_dcfc_profit_margin_on_peak() {
     let energy_config = SiteEnergyConfig::default();
 
     // DCFC: sell at unified price, buy at $0.28/kWh (on-peak)
-    let sell_price = strategy.energy_price_kwh;
+    let sell_price = strategy.pricing.flat.price_kwh;
     let buy_price = energy_config.on_peak_rate;
     let margin = sell_price - buy_price;
 
@@ -135,8 +135,8 @@ fn test_unified_margin_positive_both_periods() {
     let strategy = ServiceStrategy::default();
     let energy_config = SiteEnergyConfig::default();
 
-    let off_peak_margin = strategy.energy_price_kwh - energy_config.off_peak_rate;
-    let on_peak_margin = strategy.energy_price_kwh - energy_config.on_peak_rate;
+    let off_peak_margin = strategy.pricing.flat.price_kwh - energy_config.off_peak_rate;
+    let on_peak_margin = strategy.pricing.flat.price_kwh - energy_config.on_peak_rate;
 
     assert!(
         off_peak_margin > 0.10,
@@ -151,7 +151,7 @@ fn test_unified_margin_positive_both_periods() {
 
     println!(
         "Unified price ${:.2}: off-peak margin ${:.3}/kWh, on-peak margin ${:.3}/kWh",
-        strategy.energy_price_kwh, off_peak_margin, on_peak_margin
+        strategy.pricing.flat.price_kwh, off_peak_margin, on_peak_margin
     );
 }
 
@@ -176,8 +176,8 @@ fn test_site_rent_achievable_with_multiple_dcfc() {
     let rent_per_day = 5000.0;
 
     // Use blended margin (mix of off-peak and on-peak)
-    let off_peak_margin = strategy.energy_price_kwh - energy_config.off_peak_rate;
-    let on_peak_margin = strategy.energy_price_kwh - energy_config.on_peak_rate;
+    let off_peak_margin = strategy.pricing.flat.price_kwh - energy_config.off_peak_rate;
+    let on_peak_margin = strategy.pricing.flat.price_kwh - energy_config.on_peak_rate;
     let blended_margin = (off_peak_margin * 0.5) + (on_peak_margin * 0.5);
 
     // Assume average session is 50 kWh (mid-sized EV)
@@ -216,7 +216,7 @@ fn test_high_rent_sites_require_multiple_chargers() {
 
     // Mall site: $12,000/day rent
     let rent_per_day = 12000.0;
-    let dcfc_margin_off_peak = strategy.energy_price_kwh - energy_config.off_peak_rate;
+    let dcfc_margin_off_peak = strategy.pricing.flat.price_kwh - energy_config.off_peak_rate;
     let avg_session_kwh = 50.0;
     let revenue_per_session = avg_session_kwh * dcfc_margin_off_peak;
 
@@ -285,8 +285,8 @@ fn test_peak_demand_charge_affordable() {
     let avg_kwh_per_session = 50.0;
 
     // Use blended margin (mix of off-peak and on-peak rates)
-    let off_peak_margin = strategy.energy_price_kwh - energy_config.off_peak_rate;
-    let on_peak_margin = strategy.energy_price_kwh - energy_config.on_peak_rate;
+    let off_peak_margin = strategy.pricing.flat.price_kwh - energy_config.off_peak_rate;
+    let on_peak_margin = strategy.pricing.flat.price_kwh - energy_config.on_peak_rate;
     let blended_margin = (off_peak_margin * 0.5) + (on_peak_margin * 0.5);
 
     let monthly_revenue = num_chargers as f32
@@ -382,7 +382,7 @@ fn test_l2_charger_roi() {
 
     // L2 assumptions: 7kW charger, average 4 hour session (28 kWh)
     let avg_session_kwh = 28.0;
-    let margin_off_peak = strategy.energy_price_kwh - energy_config.off_peak_rate;
+    let margin_off_peak = strategy.pricing.flat.price_kwh - energy_config.off_peak_rate;
     let profit_per_session = avg_session_kwh * margin_off_peak;
 
     // At 50% utilization (3 sessions per day)
@@ -415,7 +415,7 @@ fn test_dcfc50_charger_roi() {
 
     // DCFC50 assumptions: 50kW charger, average 1 hour session (50 kWh)
     let avg_session_kwh = 50.0;
-    let margin_off_peak = strategy.energy_price_kwh - energy_config.off_peak_rate;
+    let margin_off_peak = strategy.pricing.flat.price_kwh - energy_config.off_peak_rate;
     let profit_per_session = avg_session_kwh * margin_off_peak;
 
     // At 50% utilization (12 sessions per day)
@@ -448,7 +448,7 @@ fn test_dcfc150_charger_roi() {
 
     // DCFC150 assumptions: 150kW charger, faster sessions (0.5 hour for 75 kWh)
     let avg_session_kwh = 75.0;
-    let margin_off_peak = strategy.energy_price_kwh - energy_config.off_peak_rate;
+    let margin_off_peak = strategy.pricing.flat.price_kwh - energy_config.off_peak_rate;
     let profit_per_session = avg_session_kwh * margin_off_peak;
 
     // Higher throughput: 15 sessions per day at 60% utilization
@@ -481,7 +481,7 @@ fn test_dcfc350_charger_roi() {
 
     // DCFC350 assumptions: 350kW charger, very fast sessions (0.33 hour for 115 kWh)
     let avg_session_kwh = 115.0;
-    let margin_off_peak = strategy.energy_price_kwh - energy_config.off_peak_rate;
+    let margin_off_peak = strategy.pricing.flat.price_kwh - energy_config.off_peak_rate;
     let profit_per_session = avg_session_kwh * margin_off_peak;
 
     // Highest throughput: 20 sessions per day at 70% utilization
@@ -506,7 +506,7 @@ fn test_dcfc350_charger_roi() {
 fn test_higher_power_chargers_have_better_roi() {
     let strategy = ServiceStrategy::default();
     let energy_config = SiteEnergyConfig::default();
-    let margin = strategy.energy_price_kwh - energy_config.off_peak_rate;
+    let margin = strategy.pricing.flat.price_kwh - energy_config.off_peak_rate;
 
     // Calculate daily profit potential for each charger type
     // (sessions/day * kwh/session * margin)
@@ -557,7 +557,8 @@ fn test_daily_revenue_with_time_of_day_curve() {
             energy_config.off_peak_rate
         };
 
-        let revenue_this_hour = customers_this_hour * avg_session_kwh * strategy.energy_price_kwh;
+        let revenue_this_hour =
+            customers_this_hour * avg_session_kwh * strategy.pricing.flat.price_kwh;
         let energy_cost_this_hour = customers_this_hour * avg_session_kwh * energy_rate;
 
         total_revenue += revenue_this_hour;
@@ -612,7 +613,7 @@ fn test_low_reputation_still_profitable() {
             energy_config.off_peak_rate
         };
 
-        total_revenue += customers_this_hour * avg_session_kwh * strategy.energy_price_kwh;
+        total_revenue += customers_this_hour * avg_session_kwh * strategy.pricing.flat.price_kwh;
         total_energy_cost += customers_this_hour * avg_session_kwh * energy_rate;
     }
 
@@ -643,8 +644,8 @@ fn test_evening_rush_most_profitable() {
     let morning_customers = base_customers_per_hour * morning_multiplier;
     let evening_customers = base_customers_per_hour * evening_multiplier;
 
-    let morning_revenue = morning_customers * avg_session_kwh * strategy.energy_price_kwh;
-    let evening_revenue = evening_customers * avg_session_kwh * strategy.energy_price_kwh;
+    let morning_revenue = morning_customers * avg_session_kwh * strategy.pricing.flat.price_kwh;
+    let evening_revenue = evening_customers * avg_session_kwh * strategy.pricing.flat.price_kwh;
 
     println!(
         "Morning rush revenue: ${:.0}, evening rush: ${:.0}",
@@ -672,7 +673,7 @@ fn test_overnight_operations_less_profitable() {
     let overnight_customers = base_customers_per_hour * overnight_multiplier;
 
     // Both use off-peak energy rates, so same margin per kWh
-    let margin = strategy.energy_price_kwh - energy_config.off_peak_rate;
+    let margin = strategy.pricing.flat.price_kwh - energy_config.off_peak_rate;
 
     let peak_profit = peak_customers * avg_session_kwh * margin;
     let overnight_profit = overnight_customers * avg_session_kwh * margin;
@@ -720,7 +721,7 @@ fn test_full_site_daily_profitability() {
             energy_config.off_peak_rate
         };
 
-        total_revenue += customers_this_hour * avg_session_kwh * strategy.energy_price_kwh;
+        total_revenue += customers_this_hour * avg_session_kwh * strategy.pricing.flat.price_kwh;
         total_energy_cost += customers_this_hour * avg_session_kwh * energy_rate;
 
         // Estimate peak demand (assume 50% of chargers active during peak hour)
@@ -1331,7 +1332,7 @@ fn test_cable_theft_cost_vs_daily_revenue() {
     daily_sessions *= num_chargers as f32;
 
     let blended_rate = (energy_config.off_peak_rate + energy_config.on_peak_rate) / 2.0;
-    let margin = strategy.energy_price_kwh - blended_rate;
+    let margin = strategy.pricing.flat.price_kwh - blended_rate;
     let daily_revenue = daily_sessions * avg_session_kwh * margin;
 
     // Expected theft losses with security + anti-theft
@@ -1427,7 +1428,6 @@ fn test_reputation_not_death_spiral() {
 #[test]
 fn test_large_site_profitable_with_upgrades() {
     let strategy = ServiceStrategy {
-        energy_price_kwh: 0.45,
         maintenance_investment: 30.0,
         amenity_counts: [0, 1, 0], // 1x Lounge + Snacks ($15/hr)
         ..Default::default()
@@ -1453,7 +1453,7 @@ fn test_large_site_profitable_with_upgrades() {
             energy_config.off_peak_rate
         };
 
-        daily_revenue += customers * avg_session_kwh * strategy.energy_price_kwh;
+        daily_revenue += customers * avg_session_kwh * strategy.pricing.flat.price_kwh;
         daily_energy_cost += customers * avg_session_kwh * rate;
 
         let active = (num_chargers as f32 * 0.5).max(1.0);

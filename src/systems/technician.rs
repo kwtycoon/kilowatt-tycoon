@@ -471,7 +471,7 @@ pub fn technician_movement_system(
             agent_pos.0 = next_pos.0;
 
             // Remove NextPos to signal we're ready for the next step
-            commands.entity(entity).remove::<NextPos>();
+            commands.entity(entity).try_remove::<NextPos>();
         } else {
             // Move towards target
             let direction = (target_world - current).normalize();
@@ -534,7 +534,7 @@ pub fn technician_arrival_detection(
                     movement.phase = TechnicianPhase::Exited;
                     technician.phase = TechnicianPhase::Exited;
                     // Remove pathfinding components
-                    commands.entity(entity).remove::<AgentPos>();
+                    commands.entity(entity).try_remove::<AgentPos>();
                     info!("Technician reached exit");
                 }
             }
@@ -791,7 +791,7 @@ pub fn technician_repair_system(
                             TechnicianEmotionReason::NextJob,
                             game_clock.total_real_time,
                         );
-                        commands.entity(tech_entity).insert(
+                        commands.entity(tech_entity).try_insert(
                             Pathfind::new_2d(bay.0 as u32, bay.1 as u32).mode(PathfindMode::AStar),
                         );
                         info!(
@@ -811,7 +811,7 @@ pub fn technician_repair_system(
                         movement.phase = TechnicianPhase::WalkingToExit;
                         technician.phase = TechnicianPhase::WalkingToExit;
                         tech_state.status = TechStatus::LeavingSite;
-                        commands.entity(tech_entity).insert(
+                        commands.entity(tech_entity).try_insert(
                             Pathfind::new_2d(exit_pos.0 as u32, exit_pos.1 as u32)
                                 .mode(PathfindMode::AStar),
                         );
@@ -839,7 +839,7 @@ pub fn technician_repair_system(
                     movement.phase = TechnicianPhase::WalkingToExit;
                     technician.phase = TechnicianPhase::WalkingToExit;
 
-                    commands.entity(tech_entity).insert(
+                    commands.entity(tech_entity).try_insert(
                         Pathfind::new_2d(exit_pos.0 as u32, exit_pos.1 as u32)
                             .mode(PathfindMode::AStar),
                     );

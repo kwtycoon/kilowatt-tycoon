@@ -3,7 +3,7 @@
 use bevy::math::ops;
 use bevy::prelude::*;
 
-use super::{AmenityType, MultiSiteManager, SiteGrid};
+use super::{AmenityType, MultiSiteManager, SiteEnergyConfig, SiteGrid};
 
 /// Policy controlling when excess solar generation is exported to the grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -43,12 +43,187 @@ impl SolarExportPolicy {
     }
 }
 
+/// Customer-facing pricing mode — controls how the energy sell price is computed each tick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PricingMode {
+    /// Single fixed price (the original behaviour).
+    #[default]
+    Flat,
+    /// Two prices that auto-switch with the utility TOU schedule.
+    TouLinked,
+    /// Markup percentage over the current utility buy rate with floor/ceiling.
+    CostPlus,
+    /// Surge pricing based on charger utilization.
+    DemandResponsive,
+}
+
+impl PricingMode {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            PricingMode::Flat => "Flat",
+            PricingMode::TouLinked => "TOU-Linked",
+            PricingMode::CostPlus => "Cost-Plus",
+            PricingMode::DemandResponsive => "Surge",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            PricingMode::Flat => "Fixed price for all customers at all times.",
+            PricingMode::TouLinked => {
+                "Set separate off-peak and on-peak prices that follow the utility schedule."
+            }
+            PricingMode::CostPlus => {
+                "Automatic markup over your utility buy rate with floor and ceiling."
+            }
+            PricingMode::DemandResponsive => {
+                "Price rises when charger utilization exceeds a threshold."
+            }
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            PricingMode::Flat => PricingMode::TouLinked,
+            PricingMode::TouLinked => PricingMode::CostPlus,
+            PricingMode::CostPlus => PricingMode::DemandResponsive,
+            PricingMode::DemandResponsive => PricingMode::Flat,
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            PricingMode::Flat => PricingMode::DemandResponsive,
+            PricingMode::TouLinked => PricingMode::Flat,
+            PricingMode::CostPlus => PricingMode::TouLinked,
+            PricingMode::DemandResponsive => PricingMode::CostPlus,
+        }
+    }
+}
+
+// === Dynamic Pricing sub-structs ===
+
+/// Flat pricing: a single fixed $/kWh.
+#[derive(Debug, Clone)]
+pub struct FlatPricing {
+    pub price_kwh: f32,
+}
+
+/// TOU-linked pricing: separate prices that switch with the utility schedule.
+#[derive(Debug, Clone)]
+pub struct TouPricing {
+    pub off_peak_price: f32,
+    pub on_peak_price: f32,
+}
+
+/// Cost-plus pricing: automatic markup over the utility buy rate with floor/ceiling.
+#[derive(Debug, Clone)]
+pub struct CostPlusPricing {
+    /// Markup percentage over utility buy rate (e.g. 200.0 = 200%)
+    pub markup_pct: f32,
+    pub floor: f32,
+    pub ceiling: f32,
+}
+
+/// Demand-responsive (surge) pricing based on charger utilization.
+#[derive(Debug, Clone)]
+pub struct SurgePricing {
+    pub base_price: f32,
+    pub multiplier: f32,
+    /// Utilization fraction (0.0-1.0) where surge begins
+    pub threshold: f32,
+}
+
+/// All customer-facing sell-price configuration, grouped by mode.
+///
+/// Lives on `ServiceStrategy` as `.pricing`. Separated so future buy-side
+/// TOU dynamics (grid import/export rates, event-driven tariffs) can live
+/// on `SiteEnergyConfig` without polluting this struct.
+#[derive(Debug, Clone)]
+pub struct DynamicPricingConfig {
+    pub mode: PricingMode,
+    pub flat: FlatPricing,
+    pub tou: TouPricing,
+    pub cost_plus: CostPlusPricing,
+    pub surge: SurgePricing,
+}
+
+impl Default for DynamicPricingConfig {
+    fn default() -> Self {
+        Self {
+            mode: PricingMode::Flat,
+            flat: FlatPricing { price_kwh: 0.45 },
+            tou: TouPricing {
+                off_peak_price: 0.30,
+                on_peak_price: 0.55,
+            },
+            cost_plus: CostPlusPricing {
+                markup_pct: 200.0,
+                floor: 0.20,
+                ceiling: 1.00,
+            },
+            surge: SurgePricing {
+                base_price: 0.35,
+                multiplier: 1.5,
+                threshold: 0.75,
+            },
+        }
+    }
+}
+
+impl DynamicPricingConfig {
+    /// Validate and clamp all pricing parameters to their allowed ranges.
+    pub fn clamp(&mut self) {
+        self.flat.price_kwh = self.flat.price_kwh.clamp(0.10, 2.00);
+        self.tou.off_peak_price = self.tou.off_peak_price.clamp(0.10, 2.00);
+        self.tou.on_peak_price = self.tou.on_peak_price.clamp(0.10, 2.00);
+        self.cost_plus.markup_pct = self.cost_plus.markup_pct.clamp(50.0, 2000.0);
+        self.cost_plus.floor = self.cost_plus.floor.clamp(0.10, 1.00);
+        self.cost_plus.ceiling = self.cost_plus.ceiling.clamp(0.30, 3.00);
+        self.surge.base_price = self.surge.base_price.clamp(0.10, 1.50);
+        self.surge.multiplier = self.surge.multiplier.clamp(1.0, 3.0);
+        self.surge.threshold = self.surge.threshold.clamp(0.50, 0.90);
+    }
+
+    /// Compute the current customer-facing energy price based on the active pricing mode.
+    pub fn effective_price(
+        &self,
+        game_time: f32,
+        energy_config: &SiteEnergyConfig,
+        charger_utilization: f32,
+    ) -> f32 {
+        match self.mode {
+            PricingMode::Flat => self.flat.price_kwh,
+            PricingMode::TouLinked => match energy_config.current_tou_period(game_time) {
+                crate::resources::TouPeriod::OffPeak => self.tou.off_peak_price,
+                crate::resources::TouPeriod::OnPeak => self.tou.on_peak_price,
+            },
+            PricingMode::CostPlus => {
+                let utility_rate = energy_config.current_rate(game_time);
+                let markup = utility_rate * (1.0 + self.cost_plus.markup_pct / 100.0);
+                markup.clamp(self.cost_plus.floor, self.cost_plus.ceiling)
+            }
+            PricingMode::DemandResponsive => {
+                let util = charger_utilization.clamp(0.0, 1.0);
+                if util <= self.surge.threshold {
+                    self.surge.base_price
+                } else {
+                    let ramp =
+                        (util - self.surge.threshold) / (1.0 - self.surge.threshold).max(0.01);
+                    self.surge.base_price * (1.0 + ramp * (self.surge.multiplier - 1.0))
+                }
+            }
+        }
+    }
+}
+
+// === ServiceStrategy ===
+
 /// Service strategy - the player's control panel for balancing price, quality, and customer satisfaction
 #[derive(Resource, Debug, Clone)]
 pub struct ServiceStrategy {
-    // === Pricing (The "Price") ===
-    /// Energy price per kWh charged to customers
-    pub energy_price_kwh: f32,
+    // === Pricing ===
+    pub pricing: DynamicPricingConfig,
     /// Idle fee per minute after charging completes
     pub idle_fee_min: f32,
     /// Video ad space price per hour charged to advertisers
@@ -80,11 +255,11 @@ pub struct ServiceStrategy {
 impl Default for ServiceStrategy {
     fn default() -> Self {
         Self {
-            energy_price_kwh: 0.45,
+            pricing: DynamicPricingConfig::default(),
             idle_fee_min: 0.50,
-            ad_space_price_per_hour: 2.0, // $2/hour default - balanced price/probability
-            target_power_density: 1.0,    // 100% of rated power
-            maintenance_investment: 10.0, // $10/hour
+            ad_space_price_per_hour: 2.0,
+            target_power_density: 1.0,
+            maintenance_investment: 10.0,
             amenity_counts: [0; 3],
             solar_export_policy: SolarExportPolicy::Never,
         }
@@ -142,7 +317,7 @@ impl ServiceStrategy {
 
     /// Validate and clamp strategy values
     pub fn clamp(&mut self) {
-        self.energy_price_kwh = self.energy_price_kwh.clamp(0.10, 2.00);
+        self.pricing.clamp();
         self.idle_fee_min = self.idle_fee_min.clamp(0.0, 5.0);
         self.ad_space_price_per_hour = self.ad_space_price_per_hour.clamp(0.50, 10.0);
         self.target_power_density = self.target_power_density.clamp(0.5, 1.5);
@@ -266,6 +441,18 @@ impl WeatherType {
             WeatherType::Rainy => 0.8,    // Fewer trips
             WeatherType::Heatwave => 0.9, // Some avoid travel
             WeatherType::Cold => 0.85,    // Reduced travel
+        }
+    }
+
+    /// Wholesale spot price multiplier driven by weather-induced grid stress.
+    /// Heatwaves and cold snaps drive up wholesale electricity prices.
+    pub fn spot_price_multiplier(&self) -> f32 {
+        match self {
+            WeatherType::Sunny => 1.0,
+            WeatherType::Overcast => 0.9,
+            WeatherType::Rainy => 0.7,
+            WeatherType::Heatwave => 2.5, // Everyone running AC
+            WeatherType::Cold => 1.8,     // Heating load spike
         }
     }
 }

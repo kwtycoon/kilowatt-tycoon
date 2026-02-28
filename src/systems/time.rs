@@ -73,7 +73,13 @@ pub fn day_ending_system(
                 {
                     let price_per_kwh = multi_site
                         .get_site(belongs.site_id)
-                        .map(|site| site.service_strategy.energy_price_kwh)
+                        .map(|site| {
+                            site.service_strategy.pricing.effective_price(
+                                game_clock.game_time,
+                                &site.site_energy_config,
+                                site.charger_utilization,
+                            )
+                        })
                         .unwrap_or(0.0);
 
                     let oem_recovery = multi_site
@@ -92,6 +98,7 @@ pub fn day_ending_system(
 
                     // Update charger KPIs
                     charger.total_energy_delivered_kwh += driver.charge_received_kwh;
+                    charger.energy_delivered_kwh_today += driver.charge_received_kwh;
                     charger.session_count += 1;
                     charger.total_revenue += revenue;
                     charger.recover_reliability_session(oem_recovery);

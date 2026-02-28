@@ -538,7 +538,11 @@ pub fn handle_upgrade_purchases(
     mut game_state: ResMut<GameState>,
     mut multi_site: ResMut<MultiSiteManager>,
     upgrade_buttons: Query<(&Interaction, &UpgradeButton), Changed<Interaction>>,
+    mut oem_events: MessageWriter<crate::events::OemUpgradeEvent>,
 ) {
+    let Some(site_id) = multi_site.viewed_site_id else {
+        return;
+    };
     let Some(site_state) = multi_site.active_site_mut() else {
         return;
     };
@@ -565,6 +569,17 @@ pub fn handle_upgrade_purchases(
         }
         game_state.cash -= cost;
         site_state.site_upgrades.purchase(upgrade_btn.upgrade_id);
+
+        if matches!(
+            upgrade_btn.upgrade_id,
+            UpgradeId::OemDetect | UpgradeId::OemOptimize
+        ) {
+            oem_events.write(crate::events::OemUpgradeEvent {
+                site_id,
+                new_tier: site_state.site_upgrades.oem_tier,
+            });
+        }
+
         info!(
             "Purchased upgrade: {:?} for ${:.0}",
             upgrade_btn.upgrade_id, cost

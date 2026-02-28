@@ -295,6 +295,58 @@ pub struct Tax {
     pub amount: f64,
 }
 
+// ─── Tariff (v2.3.0) ─────────────────────────────────
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Tariff {
+    pub country_code: String,
+    pub party_id: String,
+    pub id: String,
+    pub currency: String,
+    pub elements: Vec<TariffElement>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tariff_alt_text: Option<Vec<DisplayText>>,
+    pub last_updated: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct TariffElement {
+    pub price_components: Vec<PriceComponent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restrictions: Option<TariffRestrictions>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct PriceComponent {
+    #[serde(rename = "type")]
+    pub component_type: TariffDimensionType,
+    pub price: f64,
+    pub step_size: i32,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum TariffDimensionType {
+    Energy,
+    FlatRate,
+    ParkingTime,
+    Time,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct TariffRestrictions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DisplayText {
+    pub language: String,
+    pub text: String,
+}
+
 // ─── Helpers ─────────────────────────────────────────
 
 pub fn serialize_ocpi(value: &impl Serialize) -> String {

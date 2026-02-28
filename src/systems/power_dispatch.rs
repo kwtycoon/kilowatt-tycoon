@@ -7,7 +7,8 @@
 use bevy::prelude::*;
 
 use crate::components::BelongsToSite;
-use crate::components::charger::Charger;
+use crate::components::charger::{Charger, ChargerState};
+use crate::resources::SiteId;
 use crate::resources::{
     EnvironmentState, GameClock, GameState, MultiSiteManager, SiteConfig, SolarExportPolicy,
     TouPeriod,
@@ -100,6 +101,25 @@ pub fn power_dispatch_system(
             }
         }
 
+        // Update cached charger utilization for this site
+        {
+            let mut enabled = 0u32;
+            let mut occupied = 0u32;
+            for (_, charger, belongs) in &chargers {
+                if belongs.site_id == *site_id && !charger.is_disabled {
+                    enabled += 1;
+                    if charger.state() == ChargerState::Charging {
+                        occupied += 1;
+                    }
+                }
+            }
+            site_state.charger_utilization = if enabled > 0 {
+                occupied as f32 / enabled as f32
+            } else {
+                0.0
+            };
+        }
+
         // Sort by session start time (FCFS - earlier sessions get priority)
         active_sessions.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -131,6 +151,8 @@ pub fn power_dispatch_system(
         let export_policy = site_state.service_strategy.solar_export_policy;
 
         if site_state.bess_state.capacity_kwh > 0.0 {
+            use crate::resources::site_energy::BessMode;
+
             // Net load after solar (using kVA for infrastructure threshold comparison)
             let solar_kva_reduction = if gross_charger_load_kw > 0.0 {
                 solar_kw * (gross_charger_load_kva / gross_charger_load_kw)
@@ -156,43 +178,65 @@ pub fn power_dispatch_system(
             // Current peak demand from utility meter
             let current_peak_kw = site_state.utility_meter.peak_demand_kw;
 
-            // PRIORITY 1: Prevent new demand peaks (demand charge optimization)
-            // If current load would set a new peak, discharge to prevent it
-            if load_after_solar_kw > current_peak_kw
-                && site_state.bess_state.soc_kwh > 0.0
-                && available_discharge > 0.0
-            {
-                // Discharge enough to keep load at or below current peak
-                let needed_discharge = load_after_solar_kw - current_peak_kw;
-                bess_contribution_kw = needed_discharge.min(available_discharge);
-            }
-            // PRIORITY 2: Peak shave when approaching site capacity threshold
-            else if load_after_solar_kva > peak_shave_threshold_kva
-                && site_state.bess_state.soc_kwh > 0.0
-                && available_discharge > 0.0
-            {
-                let needed_discharge_kva = load_after_solar_kva - peak_shave_threshold_kva;
-                bess_contribution_kw = needed_discharge_kva.min(available_discharge);
-            }
-            // PRIORITY 3: Store excess solar generation
-            // Skipped when MaxExport is active -- that solar is exported to the grid instead
-            else if export_policy != SolarExportPolicy::MaxExport
-                && solar_kw > gross_charger_load_kw
-                && site_state.bess_state.soc_percent() < 95.0
-                && available_charge > 0.0
-            {
-                let excess_solar = solar_kw - gross_charger_load_kw;
-                bess_contribution_kw = -excess_solar.min(available_charge); // Negative = charging
-            }
-            // PRIORITY 4: Off-peak charging when load is low
-            else if tou_period == TouPeriod::OffPeak
-                && load_after_solar_kva < charge_threshold_kva
-                && site_state.bess_state.soc_percent() < 95.0
-                && available_charge > 0.0
-            {
-                let headroom = charge_threshold_kva - load_after_solar_kva;
-                bess_contribution_kw = -headroom.min(available_charge); // Negative = charging
-            }
+            match site_state.bess_state.mode {
+                BessMode::TouArbitrage => {
+                    // TOU Arbitrage: charge during off-peak, discharge during on-peak.
+                    // Purely schedule-driven (does not react to load levels).
+                    if tou_period == TouPeriod::OnPeak
+                        && site_state.bess_state.soc_kwh > 0.0
+                        && available_discharge > 0.0
+                    {
+                        bess_contribution_kw = available_discharge;
+                    } else if tou_period == TouPeriod::OffPeak
+                        && site_state.bess_state.soc_percent() < 95.0
+                        && available_charge > 0.0
+                    {
+                        bess_contribution_kw = -available_charge;
+                    }
+                }
+                BessMode::Backup | BessMode::Manual => {
+                    // Backup/Manual: do nothing automatically
+                }
+                BessMode::PeakShaving => {
+                    // PRIORITY 1: Prevent new demand peaks (demand charge optimization)
+                    // If current load would set a new peak, discharge to prevent it
+                    if load_after_solar_kw > current_peak_kw
+                        && site_state.bess_state.soc_kwh > 0.0
+                        && available_discharge > 0.0
+                    {
+                        // Discharge enough to keep load at or below current peak
+                        let needed_discharge = load_after_solar_kw - current_peak_kw;
+                        bess_contribution_kw = needed_discharge.min(available_discharge);
+                    }
+                    // PRIORITY 2: Peak shave when approaching site capacity threshold
+                    else if load_after_solar_kva > peak_shave_threshold_kva
+                        && site_state.bess_state.soc_kwh > 0.0
+                        && available_discharge > 0.0
+                    {
+                        let needed_discharge_kva = load_after_solar_kva - peak_shave_threshold_kva;
+                        bess_contribution_kw = needed_discharge_kva.min(available_discharge);
+                    }
+                    // PRIORITY 3: Store excess solar generation
+                    // Skipped when MaxExport is active -- that solar is exported to the grid instead
+                    else if export_policy != SolarExportPolicy::MaxExport
+                        && solar_kw > gross_charger_load_kw
+                        && site_state.bess_state.soc_percent() < 95.0
+                        && available_charge > 0.0
+                    {
+                        let excess_solar = solar_kw - gross_charger_load_kw;
+                        bess_contribution_kw = -excess_solar.min(available_charge); // Negative = charging
+                    }
+                    // PRIORITY 4: Off-peak charging when load is low
+                    else if tou_period == TouPeriod::OffPeak
+                        && load_after_solar_kva < charge_threshold_kva
+                        && site_state.bess_state.soc_percent() < 95.0
+                        && available_charge > 0.0
+                    {
+                        let headroom = charge_threshold_kva - load_after_solar_kva;
+                        bess_contribution_kw = -headroom.min(available_charge); // Negative = charging
+                    }
+                } // end PeakShaving
+            } // end match
 
             // Apply BESS action
             if bess_contribution_kw > 0.0 {
@@ -275,5 +319,30 @@ pub fn power_dispatch_system(
         if delta_game_seconds > 0.0 {
             site_state.solar_state.total_generated_kwh += solar_kw * (delta_game_seconds / 3600.0);
         }
+    }
+}
+
+/// Fraction of enabled chargers at a site that are actively charging (0.0 - 1.0).
+pub fn charger_utilization(
+    chargers: &Query<
+        (Entity, &Charger, &BelongsToSite),
+        Without<crate::components::driver::Driver>,
+    >,
+    site_id: SiteId,
+) -> f32 {
+    let mut total = 0u32;
+    let mut occupied = 0u32;
+    for (_, charger, belongs) in chargers.iter() {
+        if belongs.site_id == site_id && !charger.is_disabled {
+            total += 1;
+            if charger.state() == ChargerState::Charging {
+                occupied += 1;
+            }
+        }
+    }
+    if total == 0 {
+        0.0
+    } else {
+        occupied as f32 / total as f32
     }
 }

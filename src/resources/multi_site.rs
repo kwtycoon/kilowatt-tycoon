@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use super::site_grid::SiteGrid;
 use super::{
     BessState, ChargerQueue, DemandState, DriverSchedule, GridImport, ServiceStrategy,
-    SiteEnergyConfig, SiteUpgrades, SolarState, UtilityMeter,
+    SiteEnergyConfig, SiteUpgrades, SolarState, SpotMarket, UtilityMeter,
 };
 use crate::components::power::{PhaseLoads, VoltageState};
 
@@ -161,10 +161,14 @@ pub struct SiteState {
     pub grid_import: GridImport,
     pub utility_meter: UtilityMeter,
     pub site_energy_config: SiteEnergyConfig,
+    pub spot_market: SpotMarket,
 
     // Site configuration
     pub service_strategy: ServiceStrategy,
     pub site_upgrades: SiteUpgrades,
+
+    /// Fraction of enabled chargers currently charging (0.0 - 1.0), updated by power dispatch.
+    pub charger_utilization: f32,
 
     /// Maximum vehicles allowed in the lot at once (prevents entrance gridlock)
     pub max_vehicles: usize,
@@ -223,8 +227,10 @@ impl SiteState {
             grid_import: GridImport::default(),
             utility_meter: UtilityMeter::default(),
             site_energy_config: SiteEnergyConfig::default(),
+            spot_market: SpotMarket::default(),
             service_strategy: ServiceStrategy::default(),
             site_upgrades: SiteUpgrades::default(),
+            charger_utilization: 0.0,
             max_vehicles: 20,
             energy_delivered_kwh_today: 0.0,
             sessions_today: 0,
