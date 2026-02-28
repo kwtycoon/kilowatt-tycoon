@@ -829,7 +829,7 @@ impl SiteGrid {
         Ok(())
     }
 
-    /// Place a solar array (3x2 tiles, 75 kW per array)
+    /// Place a solar array (3x2 tiles, 25 kW per array)
     pub fn place_solar(&mut self, x: i32, y: i32) -> Result<(), String> {
         let size = StructureSize::ThreeByTwo;
         self.can_place_footprint(x, y, size)?;
@@ -1119,7 +1119,7 @@ impl SiteGrid {
                 self.remove_multi_tile(anchor_x, anchor_y, StructureSize::ThreeByTwo);
                 self.solar_positions
                     .retain(|pos| *pos != (anchor_x, anchor_y));
-                self.total_solar_kw = (self.total_solar_kw - 75.0).max(0.0);
+                self.total_solar_kw = (self.total_solar_kw - 25.0).max(0.0);
                 return Ok(SellResult::SoldEquipment(anchor_content));
             }
 

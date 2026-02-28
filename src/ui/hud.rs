@@ -669,3 +669,23 @@ pub fn sync_player_name_label(
         **text = profile.name.clone();
     }
 }
+
+/// Keep the HUD avatar image in sync with the selected character.
+pub fn sync_player_avatar_image(
+    profile: Res<PlayerProfile>,
+    image_assets: Res<ImageAssets>,
+    mut avatar_q: Query<&mut ImageNode, With<PlayerAvatarImage>>,
+) {
+    if !profile.is_changed() {
+        return;
+    }
+    let handle = match profile.character {
+        Some(CharacterKind::Ant) => image_assets.character_main_ant.clone(),
+        Some(CharacterKind::Mallard) => image_assets.character_main_mallard.clone(),
+        Some(CharacterKind::Raccoon) => image_assets.character_main_raccoon.clone(),
+        None => return,
+    };
+    for mut image_node in &mut avatar_q {
+        image_node.image = handle.clone();
+    }
+}

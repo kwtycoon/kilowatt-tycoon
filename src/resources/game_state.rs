@@ -64,13 +64,13 @@ pub struct DailyRecord {
 }
 
 impl DailyRecord {
-    /// Total revenue (charging + ads)
+    /// Total revenue (charging + ads + solar export)
     pub fn total_revenue(&self) -> f32 {
-        self.charging_revenue + self.ad_revenue
+        self.charging_revenue + self.ad_revenue + self.solar_export_revenue
     }
 
     pub fn net_profit(&self) -> f32 {
-        self.total_revenue() + self.carbon_credits + self.solar_export_revenue
+        self.total_revenue() + self.carbon_credits
             - self.energy_cost
             - self.demand_charge
             - self.opex
@@ -101,9 +101,9 @@ pub struct CurrentDayTracker {
 }
 
 impl CurrentDayTracker {
-    /// Total revenue (charging + ads)
+    /// Total revenue (charging + ads + solar export)
     pub fn total_revenue(&self) -> f32 {
-        self.charging_revenue + self.ad_revenue
+        self.charging_revenue + self.ad_revenue + self.solar_export_revenue
     }
 }
 

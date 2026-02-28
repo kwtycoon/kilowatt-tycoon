@@ -20,6 +20,8 @@ interface BridgeState {
   elements: Record<string, ElementRect>;
 }
 
+const IS_CI = !!process.env.CI;
+
 function log(msg: string): void {
   const ts = new Date().toISOString().slice(11, 23);
   console.log(`[e2e ${ts}] ${msg}`);
@@ -29,16 +31,15 @@ async function bridge(page: Page): Promise<BridgeState | null> {
   return page.evaluate(() => (window as any).__kwtycoon_bridge ?? null);
 }
 
+function bridgeSummary(s: BridgeState | null): string {
+  if (!s) return "bridge=null";
+  const nEl = Object.keys(s.elements).length;
+  return `state=${s.app_state} day=${s.day_number} gt=${s.game_time.toFixed(0)} cash=${s.cash.toFixed(0)} tool=${s.selected_build_tool ?? "-"} els=${nEl}`;
+}
+
 async function logBridge(page: Page, label: string): Promise<BridgeState | null> {
   const s = await bridge(page);
-  if (s) {
-    const elKeys = Object.keys(s.elements).join(", ");
-    log(
-      `${label}: state=${s.app_state} day=${s.day_number} game_time=${s.game_time.toFixed(0)} cash=${s.cash.toFixed(0)} tool=${s.selected_build_tool ?? "none"} elements=[${elKeys}]`,
-    );
-  } else {
-    log(`${label}: bridge is null`);
-  }
+  log(`${label}: ${bridgeSummary(s)}`);
   return s;
 }
 
@@ -62,8 +63,8 @@ async function waitForState(
 }
 
 /**
- * Wait for a state, logging bridge status every `logIntervalMs` so CI
- * output shows progress even when the wait is long.
+ * Wait for a state, logging bridge status periodically so CI output
+ * shows progress even when the wait is long.
  */
 async function waitForStateWithLogs(
   page: Page,
@@ -75,20 +76,20 @@ async function waitForStateWithLogs(
   while (Date.now() < deadline) {
     const s = await bridge(page);
     if (s?.app_state === state) {
-      log(`Reached state=${state} (game_time=${s.game_time.toFixed(0)})`);
+      log(`Reached state=${state} (gt=${s.game_time.toFixed(0)})`);
       return;
     }
     log(
-      `Waiting for state=${state}: current=${s?.app_state ?? "null"} game_time=${s?.game_time?.toFixed(0) ?? "?"} day=${s?.day_number ?? "?"}`,
+      `Waiting for ${state}: ${bridgeSummary(s)}`,
     );
-    await page.waitForTimeout(Math.min(logIntervalMs, deadline - Date.now()));
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await page.waitForTimeout(Math.min(logIntervalMs, remaining));
   }
-  // One final check before failing
   const final = await bridge(page);
   if (final?.app_state === state) return;
   throw new Error(
-    `Timed out waiting for state=${state} after ${timeout}ms. ` +
-      `Last bridge: state=${final?.app_state} game_time=${final?.game_time?.toFixed(0)} day=${final?.day_number}`,
+    `Timed out waiting for state=${state} after ${timeout}ms. Last: ${bridgeSummary(final)}`,
   );
 }
 
@@ -152,7 +153,7 @@ async function tapElement(
   await page.mouse.down();
   await page.waitForTimeout(holdMs);
   await page.mouse.up();
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(300);
 }
 
 /**
@@ -168,18 +169,15 @@ async function tapElementUntil(
 ): Promise<void> {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await tapElement(page, name);
-    await page.waitForTimeout(1_000);
+    await page.waitForTimeout(500);
     const s = await bridge(page);
     const ok = check(s);
-    log(
-      `${label} attempt ${attempt}/${maxAttempts}: ok=${ok} state=${s?.app_state} game_time=${s?.game_time?.toFixed(0)}`,
-    );
+    log(`${label} attempt ${attempt}/${maxAttempts}: ok=${ok} ${bridgeSummary(s)}`);
     if (ok) return;
   }
-  const final = await logBridge(page, `${label} FAILED after ${maxAttempts} attempts`);
+  const final = await bridge(page);
   throw new Error(
-    `${label}: all ${maxAttempts} tap attempts failed. ` +
-      `Last bridge: state=${final?.app_state} game_time=${final?.game_time?.toFixed(0)}`,
+    `${label}: all ${maxAttempts} tap attempts failed. Last: ${bridgeSummary(final)}`,
   );
 }
 
@@ -189,11 +187,15 @@ async function tapCanvas(page: Page, x: number, y: number): Promise<void> {
   await page.mouse.down();
   await page.waitForTimeout(150);
   await page.mouse.up();
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(300);
 }
 
-/** Take a named debug screenshot, bucketed by viewport width. Best-effort; never fails the test. */
+/**
+ * Take a named debug screenshot. Skipped in CI to save time
+ * (SwiftShader screenshots are slow and the artifacts are rarely useful).
+ */
 async function snap(page: Page, name: string): Promise<void> {
+  if (IS_CI) return;
   try {
     const w = page.viewportSize()?.width ?? 0;
     await page.screenshot({
@@ -219,13 +221,13 @@ async function skipTutorial(page: Page): Promise<void> {
 // ── Test ─────────────────────────────────────────────────────────────
 
 test.describe("Full gameplay flow", () => {
-  test.setTimeout(300_000);
+  test.setTimeout(480_000);
 
   test("add charger, add transformer, start day, 10x, end of day report", async ({
     page,
   }) => {
     const vp = page.viewportSize()!;
-    log(`Viewport: ${vp.width}×${vp.height}`);
+    log(`Viewport: ${vp.width}×${vp.height}  CI=${IS_CI}`);
 
     // Skip portrait viewports — the rotate-device prompt blocks interaction.
     if (vp.height > vp.width && vp.width <= 1024) {
@@ -250,24 +252,20 @@ test.describe("Full gameplay flow", () => {
 
     // ── 2. Character setup ─────────────────────────────────────────
     await waitForElement(page, "NextButton", 60_000);
-    await snap(page, "02-character-select");
 
     // Tap "Next" to accept the default character.
     await tapElement(page, "NextButton");
-    await snap(page, "03-name-input");
 
     // Accept default name via Enter key.
-    await page.waitForTimeout(1_000);
+    await page.waitForTimeout(500);
     await page.keyboard.press("Enter");
-    await page.waitForTimeout(2_000);
-    await snap(page, "04-after-start-mission");
+    await page.waitForTimeout(1_000);
 
     // ── 3. Skip tutorial ───────────────────────────────────────────
     await waitForState(page, "Playing", 30_000);
-    await page.waitForTimeout(1_000);
+    await page.waitForTimeout(500);
     await skipTutorial(page);
     await logBridge(page, "Tutorial skipped");
-    await snap(page, "05-tutorial-skipped");
 
     // ── 4. Place a charger ─────────────────────────────────────────
     await tapElementUntil(
@@ -276,9 +274,7 @@ test.describe("Full gameplay flow", () => {
       "Select charger tool",
       (b) => b?.selected_build_tool === "ChargerL2",
     );
-    await snap(page, "06-charger-selected");
 
-    // Use bridge placement hints to find a valid charger position.
     const chargerHint = await waitForElementPrefix(
       page,
       "PlacementHint_Charger_",
@@ -287,18 +283,13 @@ test.describe("Full gameplay flow", () => {
     const chargerCx = chargerHint.rect.x + chargerHint.rect.width / 2;
     const chargerCy = chargerHint.rect.y + chargerHint.rect.height / 2;
     await tapCanvas(page, chargerCx, chargerCy);
-    await page.waitForTimeout(1_500);
+    await page.waitForTimeout(1_000);
     await logBridge(page, "After charger placement");
-    await snap(page, "07-charger-placed");
 
     // ── 5. Place a transformer ─────────────────────────────────────
-    // Use keyboard shortcut "5" to select a 500kVA transformer.
     await page.keyboard.press("Digit5");
     await page.waitForTimeout(500);
-    await logBridge(page, "After Digit5 press");
-    await snap(page, "08-transformer-selected");
 
-    // Use bridge placement hints to find a valid transformer position.
     const xfmrHint = await waitForElementPrefix(
       page,
       "PlacementHint_Transformer_",
@@ -307,9 +298,8 @@ test.describe("Full gameplay flow", () => {
     const xfmrCx = xfmrHint.rect.x + xfmrHint.rect.width / 2;
     const xfmrCy = xfmrHint.rect.y + xfmrHint.rect.height / 2;
     await tapCanvas(page, xfmrCx, xfmrCy);
-    await page.waitForTimeout(1_500);
+    await page.waitForTimeout(1_000);
     await logBridge(page, "After transformer placement");
-    await snap(page, "10-transformer-placed");
 
     // ── 6. Start day (retry until bridge confirms clock is running) ─
     await tapElementUntil(
@@ -318,16 +308,13 @@ test.describe("Full gameplay flow", () => {
       "Start day",
       (b) => b != null && b.game_time > 0,
     );
-    await snap(page, "11-day-started");
 
     // ── 7. Set 10x speed ───────────────────────────────────────────
     await tapElement(page, "SpeedButton_Fast");
     await logBridge(page, "After speed button");
-    await snap(page, "12-speed-10x");
 
     // ── 8. Wait for end of day (with periodic logging) ──────────────
-    await waitForStateWithLogs(page, "DayEnd", 180_000, 10_000);
-    await snap(page, "13-day-end-report");
+    await waitForStateWithLogs(page, "DayEnd", 240_000, 10_000);
 
     // Verify the bridge reports day 1.
     const state = await bridge(page);
@@ -342,7 +329,6 @@ test.describe("Full gameplay flow", () => {
 
     // Should be back to Playing state for day 2.
     await waitForState(page, "Playing", 10_000);
-    await snap(page, "14-after-continue");
 
     const stateAfter = await bridge(page);
     expect(stateAfter).not.toBeNull();

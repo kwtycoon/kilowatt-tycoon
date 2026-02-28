@@ -52,6 +52,7 @@ impl Plugin for OpenAdrPlugin {
                 openadr_grid_telemetry_system,
                 openadr_event_system,
                 openadr_event_response_system,
+                openadr_export_event_system,
             )
                 .chain()
                 .run_if(in_state(AppState::Playing)),

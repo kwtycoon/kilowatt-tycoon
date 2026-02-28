@@ -59,6 +59,8 @@ pub struct OpenAdrSiteState {
     pub last_demand_event_game_time: f32,
     /// Whether a demand-limit event is currently active.
     pub demand_event_active: bool,
+    /// Whether a solar export event is currently active.
+    pub export_active: bool,
     /// Monotonically increasing interval counter for reports.
     pub next_interval_id: i32,
 }
@@ -74,6 +76,7 @@ impl Default for OpenAdrSiteState {
             last_telemetry_game_time: 0.0,
             last_demand_event_game_time: 0.0,
             demand_event_active: false,
+            export_active: false,
             next_interval_id: 1,
         }
     }

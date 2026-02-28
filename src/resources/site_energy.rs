@@ -1,5 +1,6 @@
 //! Site energy resources for power dispatch, utility billing, solar, and battery storage.
 
+use bevy::math::ops;
 use bevy::prelude::*;
 use std::collections::VecDeque;
 
@@ -106,7 +107,8 @@ impl SiteEnergyConfig {
 
         // Bell curve: sin^2 for smooth rise/fall
         let angle = daylight_fraction * std::f32::consts::PI;
-        angle.sin().powi(2)
+        let s = ops::sin(angle);
+        s * s
     }
 }
 

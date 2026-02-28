@@ -622,7 +622,7 @@ fn on_enter_day_end(
     let new_badges = achievement_state.newly_unlocked_since(snapshot);
 
     // Compose LinkedIn share text and store as resource
-    let total_income = total_revenue + carbon_credits + solar_export_revenue;
+    let total_income = total_revenue + carbon_credits;
     let share_text = format!(
         "I just finished Day {} of Kilowatt Tycoon ⚡\n\n${:.0} in revenue\n{} sessions\n{} dispatches\n\nIs this really what it feels like to run an EV charging empire?\n\n#KilowattTycoon #EVCharging",
         game_clock.day, total_income, sessions_delta, dispatches_delta,
@@ -683,6 +683,11 @@ fn on_enter_day_end(
     } else {
         0.0
     };
+
+    let has_solar = multi_site
+        .owned_sites
+        .values()
+        .any(|s| s.grid.total_solar_kw > 0.0);
 
     // Revenue/cost hints for collapsed view
     let revenue_hint: Option<&str> = if charging_revenue < energy_cost && energy_cost > 0.01 {
@@ -1130,19 +1135,32 @@ fn on_enter_day_end(
                                             }
 
                                             // ===== E. Solar Export =====
-                                            if solar_export_revenue > 0.01 {
+                                            if has_solar {
                                                 let solar_color = Color::srgb(1.0, 0.85, 0.1);
                                                 spawn_section_header(section, "Solar Export", "[>]", solar_color);
-                                                spawn_indented_row(
-                                                    section,
-                                                    "  Grid Sellback",
-                                                    &format!("+${solar_export_revenue:.2}"),
-                                                    Color::srgb(0.4, 0.9, 0.4),
-                                                );
-                                                spawn_insight_row(
-                                                    section,
-                                                    "Excess solar sold back to the grid at wholesale rates.",
-                                                );
+                                                if solar_export_revenue > 0.01 {
+                                                    spawn_indented_row(
+                                                        section,
+                                                        "  Grid Sellback",
+                                                        &format!("+${solar_export_revenue:.2}"),
+                                                        Color::srgb(0.4, 0.9, 0.4),
+                                                    );
+                                                    spawn_insight_row(
+                                                        section,
+                                                        "Excess solar sold back to the grid at wholesale rates.",
+                                                    );
+                                                } else {
+                                                    spawn_indented_row(
+                                                        section,
+                                                        "  Grid Sellback",
+                                                        "+$0.00",
+                                                        Color::srgb(0.7, 0.7, 0.7),
+                                                    );
+                                                    spawn_insight_row(
+                                                        section,
+                                                        "All solar consumed on-site -- no excess to export.",
+                                                    );
+                                                }
                                             }
                                         });
 

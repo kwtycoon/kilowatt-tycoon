@@ -92,6 +92,7 @@ impl Plugin for UiPlugin {
             (
                 update_hud,
                 sync_player_name_label,
+                sync_player_avatar_image,
                 update_overlay,
                 handle_speed_buttons,
                 sync_speed_button_colors,

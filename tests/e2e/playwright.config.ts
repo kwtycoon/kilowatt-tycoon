@@ -87,5 +87,8 @@ export default defineConfig({
     timeout: 120_000,
     stdout: "pipe",
     stderr: "pipe",
+    // Trunk's --no-color flag only accepts "true"/"false", but Playwright
+    // sets NO_COLOR=1. Override to a value trunk understands.
+    env: { ...process.env, NO_COLOR: "true" },
   },
 });

@@ -60,6 +60,8 @@
     "Price Signal": "#fb923c",
     "Demand Limit": "#f87171",
     "BESS DR Response": "#4ade80",
+    "Solar Export Price": "#fbbf24",
+    "Solar Export": "#facc15",
   };
 
   // ─── OCPP detail extraction (unchanged from original) ───
@@ -166,6 +168,26 @@
           }
         }
         return "";
+      }
+      if (action === "Solar Export Price") {
+        var intervals = obj.intervals;
+        if (intervals && intervals[0] && intervals[0].payloads) {
+          var vals = intervals[0].payloads[0];
+          if (vals && vals.values && vals.values[0] != null) {
+            return "$" + Number(vals.values[0]).toFixed(3) + "/kWh";
+          }
+        }
+        return obj.event_name || obj.eventName || "";
+      }
+      if (action === "Solar Export") {
+        var intervals = obj.intervals;
+        if (intervals && intervals[0] && intervals[0].payloads) {
+          var vals = intervals[0].payloads[0];
+          if (vals && vals.values && vals.values[0] != null) {
+            return Number(vals.values[0]).toFixed(1) + " kW";
+          }
+        }
+        return obj.event_name || obj.eventName || "";
       }
       return "";
     } catch (_) {

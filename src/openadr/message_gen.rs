@@ -6,7 +6,7 @@
 
 use bevy::prelude::*;
 
-use crate::resources::{GameClock, MultiSiteManager};
+use crate::resources::{GameClock, MultiSiteManager, SolarExportPolicy};
 
 use super::queue::{OpenAdrMessageQueue, TELEMETRY_INTERVAL_GAME_SECS};
 use super::types::*;
@@ -296,6 +296,7 @@ pub fn openadr_grid_telemetry_system(
                     payloads: vec![
                         values_map_f32("NET_IMPORT_KW", site_state.grid_import.current_kw),
                         values_map_f32("NET_IMPORT_KVA", site_state.grid_import.current_kva),
+                        values_map_f32("EXPORT_KW", site_state.grid_import.export_kw),
                         values_map_f32("PEAK_DEMAND_KW", site_state.utility_meter.peak_demand_kw),
                     ],
                 }],
@@ -383,6 +384,46 @@ pub fn openadr_event_system(
                     "Event",
                     "Price Signal",
                     json,
+                );
+
+                // Also emit an ExportPrice event with the buyback rate
+                let export_rate = site_state
+                    .site_energy_config
+                    .current_export_rate(game_clock.game_time);
+
+                let export_event = EventContent {
+                    program_id: program_id.clone(),
+                    event_name: Some(format!("TOU-Export-{}", current_tou.display_name())),
+                    priority: Priority::new(5),
+                    targets: None,
+                    report_descriptors: None,
+                    payload_descriptors: Some(vec![EventPayloadDescriptor {
+                        payload_type: EventType::ExportPrice,
+                        units: Some(Unit::Private("$/kWh".to_string())),
+                        currency: None,
+                    }]),
+                    interval_period: Some(IntervalPeriod {
+                        start: timestamp,
+                        duration: None,
+                        randomize_start: None,
+                    }),
+                    intervals: vec![EventInterval {
+                        id: 0,
+                        interval_period: None,
+                        payloads: vec![EventValuesMap {
+                            value_type: EventType::ExportPrice,
+                            values: vec![ovalue_f32(export_rate)],
+                        }],
+                    }],
+                };
+
+                let export_json = serialize_openadr(&export_event);
+                queue.push_log(
+                    vtn_name.clone(),
+                    ts_iso.clone(),
+                    "Event",
+                    "Solar Export Price",
+                    export_json,
                 );
             }
         }
@@ -516,5 +557,81 @@ pub fn openadr_event_response_system(
 
         let json = serialize_openadr(&report);
         queue.push_log(ven_name, ts_iso, "Report", "BESS DR Response", json);
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  7. Solar export event system
+// ─────────────────────────────────────────────────────
+
+/// Emit an `ExportCapacityAvailable` event when excess solar transitions
+/// from not-exporting to exporting (and clear when it stops).
+pub fn openadr_export_event_system(
+    multi_site: Res<MultiSiteManager>,
+    mut queue: ResMut<OpenAdrMessageQueue>,
+    game_clock: Res<GameClock>,
+) {
+    if !queue.is_active() {
+        return;
+    }
+
+    let program_id = match make_program_id(DR_PROGRAM_ID) {
+        Some(id) => id,
+        None => return,
+    };
+    let sim_start = queue.sim_start;
+
+    for (site_id, site_state) in &multi_site.owned_sites {
+        if site_state.service_strategy.solar_export_policy == SolarExportPolicy::Never {
+            continue;
+        }
+        if site_state.solar_state.installed_kw_peak <= 0.0 {
+            continue;
+        }
+
+        let export_kw = site_state.grid_import.export_kw;
+        let is_exporting = export_kw > 0.1;
+
+        let der_state = queue.get_or_create(*site_id);
+
+        if is_exporting && !der_state.export_active {
+            der_state.export_active = true;
+
+            let timestamp =
+                sim_start + chrono::Duration::seconds(game_clock.total_game_time as i64);
+            let ts_iso = timestamp.to_rfc3339();
+            let vtn_name = format!("grid-site-{}", site_id.0);
+
+            let event_content = EventContent {
+                program_id: program_id.clone(),
+                event_name: Some("Solar Export Active".to_string()),
+                priority: Priority::new(5),
+                targets: None,
+                report_descriptors: None,
+                payload_descriptors: Some(vec![EventPayloadDescriptor {
+                    payload_type: EventType::ExportCapacityAvailable,
+                    units: Some(Unit::KW),
+                    currency: None,
+                }]),
+                interval_period: Some(IntervalPeriod {
+                    start: timestamp,
+                    duration: None,
+                    randomize_start: None,
+                }),
+                intervals: vec![EventInterval {
+                    id: 0,
+                    interval_period: None,
+                    payloads: vec![EventValuesMap {
+                        value_type: EventType::ExportCapacityAvailable,
+                        values: vec![ovalue_f32(export_kw)],
+                    }],
+                }],
+            };
+
+            let json = serialize_openadr(&event_content);
+            queue.push_log(vtn_name, ts_iso, "Event", "Solar Export", json);
+        } else if !is_exporting && der_state.export_active {
+            der_state.export_active = false;
+        }
     }
 }
