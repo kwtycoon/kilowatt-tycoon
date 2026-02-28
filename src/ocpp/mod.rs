@@ -72,10 +72,13 @@ impl Plugin for OcppPlugin {
         // Startup: read OCPP_ENDPOINT env var
         app.add_systems(Startup, ocpp_config_from_env);
 
-        // Message generation systems — run during Playing state
+        // Message generation systems — run during Playing state.
+        // ocpp_reset_system runs before ocpp_boot_system so that cleared
+        // boot_sent is picked up in the same frame.
         app.add_systems(
             Update,
             (
+                ocpp_reset_system,
                 ocpp_boot_system,
                 ocpp_status_system,
                 ocpp_start_transaction_system,
@@ -83,6 +86,7 @@ impl Plugin for OcppPlugin {
                 ocpp_meter_values_system,
                 ocpp_heartbeat_system,
             )
+                .chain()
                 .run_if(in_state(AppState::Playing)),
         );
 

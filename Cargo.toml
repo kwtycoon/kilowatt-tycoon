@@ -6,7 +6,7 @@ description = "A 2D top-down simulation/tycoon game where the player operates an
 license = "MIT"
 
 [features]
-default = []
+default = ["ocpp"]
 # Use dynamic linking for faster native compilation (not supported for WASM)
 native = ["bevy/dynamic_linking"]
 # OCPP 1.6J WebSocket streaming (disabled by default)

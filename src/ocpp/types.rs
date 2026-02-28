@@ -15,6 +15,7 @@ pub use rust_ocpp::v1_6::messages::boot_notification::{
 };
 pub use rust_ocpp::v1_6::messages::heart_beat::{HeartbeatRequest, HeartbeatResponse};
 pub use rust_ocpp::v1_6::messages::meter_values::MeterValuesRequest;
+pub use rust_ocpp::v1_6::messages::reset::{ResetRequest, ResetResponse};
 pub use rust_ocpp::v1_6::messages::start_transaction::{
     StartTransactionRequest, StartTransactionResponse,
 };
@@ -25,8 +26,8 @@ pub use rust_ocpp::v1_6::messages::stop_transaction::StopTransactionRequest;
 
 pub use rust_ocpp::v1_6::types::{
     AuthorizationStatus, ChargePointErrorCode, ChargePointStatus, IdTagInfo, Location, Measurand,
-    MeterValue, ReadingContext, Reason, RegistrationStatus, SampledValue, UnitOfMeasure,
-    ValueFormat,
+    MeterValue, ReadingContext, Reason, RegistrationStatus, ResetRequestStatus,
+    ResetResponseStatus, SampledValue, UnitOfMeasure, ValueFormat,
 };
 
 // ─── OCPP 1.6J Call envelope ─────────────────────────────────────

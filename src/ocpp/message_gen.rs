@@ -10,9 +10,10 @@
 
 use bevy::prelude::*;
 
-use crate::components::charger::Charger;
+use crate::components::charger::{Charger, ChargerState, ChargerType, RemoteAction};
 use crate::components::driver::Driver;
 use crate::components::site::BelongsToSite;
+use crate::events::RemoteActionResultEvent;
 use crate::resources::GameClock;
 
 use super::ports_registry::{PortEntry, PortsRegistry};
@@ -117,9 +118,9 @@ pub fn ocpp_boot_system(
             error_code,
             status: ocpp_status.clone(),
             timestamp: Some(timestamp),
-            info: None,
-            vendor_id: None,
-            vendor_error_code: None,
+            info: charger.current_fault.map(|f| f.display_name().to_string()),
+            vendor_id: charger.current_fault.map(|_| "KilowattTycoon".to_string()),
+            vendor_error_code: charger.current_fault.map(|f| format!("{f:?}")),
         };
         queue.push_with_log(
             charger_id,
@@ -138,8 +139,41 @@ pub fn ocpp_boot_system(
 //  2. StatusNotification system (state change detection)
 // ─────────────────────────────────────────────────────
 
+/// Helper to push a `StatusNotification` and return the status that was sent.
+fn push_status_notif(
+    queue: &mut OcppMessageQueue,
+    charger_id: &str,
+    ts_iso: &str,
+    timestamp: chrono::DateTime<chrono::Utc>,
+    status: ChargePointStatus,
+    error_code: ChargePointErrorCode,
+    info: Option<String>,
+    vendor_id: Option<String>,
+    vendor_error_code: Option<String>,
+) {
+    let notif = StatusNotificationRequest {
+        connector_id: 1,
+        error_code,
+        status,
+        timestamp: Some(timestamp),
+        info,
+        vendor_id,
+        vendor_error_code,
+    };
+    queue.push_with_log(
+        charger_id.to_string(),
+        ts_iso.to_string(),
+        "StatusNotification",
+        serialize_call(&new_unique_id(), "StatusNotification", &notif),
+    );
+}
+
 /// Compare each charger's current state with the last sent status.
 /// If it changed, emit a `StatusNotification`.
+///
+/// Injects OCPP-standard intermediate states for session lifecycle:
+///   Available → **Preparing** → Charging   (vehicle plugs in)
+///   Charging  → **Finishing**  → Available  (session ends)
 pub fn ocpp_status_system(
     chargers: Query<(Entity, &Charger)>,
     mut queue: ResMut<OcppMessageQueue>,
@@ -152,19 +186,19 @@ pub fn ocpp_status_system(
     for (entity, charger) in chargers.iter() {
         let ocpp_status = charger_state_to_ocpp_status(charger.state());
 
-        let charger_id = {
+        let (charger_id, prev_status) = {
             let state = queue.get_or_create(entity);
             if !state.boot_sent {
-                continue; // Wait for boot
+                continue;
             }
 
-            // Check if status actually changed
             if state.last_status.as_ref() == Some(&ocpp_status) {
                 continue;
             }
 
+            let prev = state.last_status.clone();
             state.last_status = Some(ocpp_status.clone());
-            state.charger_id.clone()
+            (state.charger_id.clone(), prev)
         };
 
         let error_code = charger
@@ -173,24 +207,56 @@ pub fn ocpp_status_system(
             .unwrap_or(ChargePointErrorCode::NoError);
 
         let info = charger.current_fault.map(|f| f.display_name().to_string());
+        let vendor_id = charger.current_fault.map(|_| "KilowattTycoon".to_string());
+        let vendor_error_code = charger.current_fault.map(|f| format!("{f:?}"));
 
         let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
-
         let ts_iso = timestamp.to_rfc3339();
-        let notif = StatusNotificationRequest {
-            connector_id: 1,
+
+        // Available → Charging: inject Preparing before Charging
+        if prev_status.as_ref() == Some(&ChargePointStatus::Available)
+            && ocpp_status == ChargePointStatus::Charging
+        {
+            push_status_notif(
+                &mut queue,
+                &charger_id,
+                &ts_iso,
+                timestamp,
+                ChargePointStatus::Preparing,
+                ChargePointErrorCode::NoError,
+                None,
+                None,
+                None,
+            );
+        }
+
+        // Charging → Available: inject Finishing before Available
+        if prev_status.as_ref() == Some(&ChargePointStatus::Charging)
+            && ocpp_status == ChargePointStatus::Available
+        {
+            push_status_notif(
+                &mut queue,
+                &charger_id,
+                &ts_iso,
+                timestamp,
+                ChargePointStatus::Finishing,
+                ChargePointErrorCode::NoError,
+                None,
+                None,
+                None,
+            );
+        }
+
+        push_status_notif(
+            &mut queue,
+            &charger_id,
+            &ts_iso,
+            timestamp,
+            ocpp_status,
             error_code,
-            status: ocpp_status,
-            timestamp: Some(timestamp),
             info,
-            vendor_id: None,
-            vendor_error_code: None,
-        };
-        queue.push_with_log(
-            charger_id,
-            ts_iso,
-            "StatusNotification",
-            serialize_call(&new_unique_id(), "StatusNotification", &notif),
+            vendor_id,
+            vendor_error_code,
         );
     }
 }
@@ -385,8 +451,21 @@ pub fn ocpp_stop_transaction_system(
 //  5. MeterValues system (periodic sampling)
 // ─────────────────────────────────────────────────────
 
+/// Compute outlet voltage (V) for a charger given the vehicle's SOC.
+/// DCFC: models a 400V-class battery pack, 300 V at 0% rising to 400 V at 100%.
+/// L2 AC: fixed 240 V nominal.
+fn outlet_voltage(charger_type: ChargerType, soc_pct: Option<f32>) -> f32 {
+    match charger_type {
+        ChargerType::DcFast => {
+            let soc_frac = soc_pct.unwrap_or(50.0) / 100.0;
+            300.0 + soc_frac * 100.0
+        }
+        ChargerType::AcLevel2 => 240.0,
+    }
+}
+
 /// Periodically emit `MeterValues` for all actively charging connectors.
-/// Samples: energy (Wh), power (W), and SoC (%).
+/// Samples: energy (Wh), power (W), SoC (%), voltage (V), current (A).
 pub fn ocpp_meter_values_system(
     chargers: Query<(Entity, &Charger)>,
     drivers: Query<&Driver>,
@@ -400,7 +479,7 @@ pub fn ocpp_meter_values_system(
     let now = game_clock.total_game_time;
 
     // Collect what we need to avoid borrow conflicts
-    let to_send: Vec<(Entity, String, i32, f32, f32, Option<f32>)> = chargers
+    let to_send: Vec<(Entity, String, i32, f32, f32, Option<f32>, ChargerType)> = chargers
         .iter()
         .filter_map(|(entity, charger)| {
             if !charger.is_charging {
@@ -410,12 +489,10 @@ pub fn ocpp_meter_values_system(
             let state = queue.charger_state.get(&entity)?;
             let txn_id = state.transaction_id?;
 
-            // Check interval
             if now - state.last_meter_game_time < METER_VALUES_INTERVAL_GAME_SECS {
                 return None;
             }
 
-            // Look up driver SoC
             let soc = state
                 .active_driver
                 .and_then(|de| drivers.get(de).ok())
@@ -424,13 +501,28 @@ pub fn ocpp_meter_values_system(
             let energy_wh = charger.total_energy_delivered_kwh * 1000.0;
             let power_w = charger.current_power_kw * 1000.0;
 
-            Some((entity, charger.id.clone(), txn_id, energy_wh, power_w, soc))
+            Some((
+                entity,
+                charger.id.clone(),
+                txn_id,
+                energy_wh,
+                power_w,
+                soc,
+                charger.charger_type,
+            ))
         })
         .collect();
 
-    for (entity, charger_id, txn_id, energy_wh, power_w, soc) in to_send {
+    for (entity, charger_id, txn_id, energy_wh, power_w, soc, charger_type) in to_send {
         let timestamp = queue.game_time_to_utc(now);
         let ts_iso = timestamp.to_rfc3339();
+
+        let voltage_v = outlet_voltage(charger_type, soc);
+        let current_a = if voltage_v > 0.0 {
+            power_w / voltage_v
+        } else {
+            0.0
+        };
 
         let mut sampled = vec![
             SampledValue {
@@ -450,6 +542,24 @@ pub fn ocpp_meter_values_system(
                 phase: None,
                 location: Some(Location::Outlet),
                 unit: Some(UnitOfMeasure::W),
+            },
+            SampledValue {
+                value: format!("{:.1}", voltage_v),
+                context: Some(ReadingContext::SamplePeriodic),
+                format: Some(ValueFormat::Raw),
+                measurand: Some(Measurand::Voltage),
+                phase: None,
+                location: Some(Location::Outlet),
+                unit: Some(UnitOfMeasure::V),
+            },
+            SampledValue {
+                value: format!("{:.1}", current_a),
+                context: Some(ReadingContext::SamplePeriodic),
+                format: Some(ValueFormat::Raw),
+                measurand: Some(Measurand::CurrentImport),
+                phase: None,
+                location: Some(Location::Outlet),
+                unit: Some(UnitOfMeasure::A),
             },
         ];
 
@@ -480,7 +590,6 @@ pub fn ocpp_meter_values_system(
             serialize_call(&new_unique_id(), "MeterValues", &meter),
         );
 
-        // Update last meter time
         if let Some(state) = queue.charger_state.get_mut(&entity) {
             state.last_meter_game_time = now;
         }
@@ -519,6 +628,13 @@ pub fn ocpp_heartbeat_system(
             continue;
         }
 
+        if matches!(
+            charger.state(),
+            ChargerState::Offline | ChargerState::Disabled
+        ) {
+            continue;
+        }
+
         // Heartbeat Call
         let uid = new_unique_id();
         queue.push_with_log(
@@ -538,5 +654,71 @@ pub fn ocpp_heartbeat_system(
             "",
             serialize_callresult(&uid, &hb_resp),
         );
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  7. Reset system (reboot → re-boot sequence)
+// ─────────────────────────────────────────────────────
+
+/// When a successful `SoftReboot` or `HardReboot` action fires, emit a
+/// `Reset.req` + `Reset.conf` and clear `boot_sent` so the boot system
+/// replays the full BootNotification sequence on the next frame.
+pub fn ocpp_reset_system(
+    mut action_events: MessageReader<RemoteActionResultEvent>,
+    mut queue: ResMut<OcppMessageQueue>,
+    game_clock: Res<GameClock>,
+) {
+    if !queue.is_active() {
+        return;
+    }
+
+    for event in action_events.read() {
+        if !event.success {
+            continue;
+        }
+
+        let reset_type = match event.action {
+            RemoteAction::SoftReboot => ResetRequestStatus::Soft,
+            RemoteAction::HardReboot => ResetRequestStatus::Hard,
+            _ => continue,
+        };
+
+        let Some(state) = queue.charger_state.get(&event.charger_entity) else {
+            continue;
+        };
+        let charger_id = state.charger_id.clone();
+        if charger_id.is_empty() {
+            continue;
+        }
+
+        let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
+        let ts_iso = timestamp.to_rfc3339();
+
+        // Reset Call (CSMS → CP direction)
+        let uid = new_unique_id();
+        let reset_req = ResetRequest { kind: reset_type };
+        queue.push_with_log(
+            charger_id.clone(),
+            ts_iso.clone(),
+            "Reset",
+            serialize_call(&uid, "Reset", &reset_req),
+        );
+
+        // Reset CallResult (CP → CSMS)
+        let reset_resp = ResetResponse {
+            status: ResetResponseStatus::Accepted,
+        };
+        queue.push_with_log(
+            charger_id,
+            ts_iso,
+            "",
+            serialize_callresult(&uid, &reset_resp),
+        );
+
+        // Clear boot state so ocpp_boot_system replays the full sequence
+        let state = queue.get_or_create(event.charger_entity);
+        state.boot_sent = false;
+        state.last_status = None;
     }
 }
