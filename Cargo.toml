@@ -6,13 +6,15 @@ description = "A 2D top-down simulation/tycoon game where the player operates an
 license = "MIT"
 
 [features]
-default = ["ocpp", "openadr"]
+default = ["ocpp", "openadr", "ocpi"]
 # Use dynamic linking for faster native compilation (not supported for WASM)
 native = ["bevy/dynamic_linking"]
 # OCPP 1.6J WebSocket streaming (disabled by default)
 ocpp = ["dep:rust-ocpp", "dep:tokio-tungstenite", "dep:futures-util"]
 # OpenADR 3.0 DER message feed
 openadr = ["dep:openleadr-wire"]
+# OCPI 2.3.0 roaming message feed (types are hand-rolled, no external dep)
+ocpi = []
 
 [dependencies]
 bevy = { version = "0.17", default-features = false, features = [

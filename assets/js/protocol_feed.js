@@ -1,7 +1,8 @@
 // Protocol Feed Overlay
-// Tabbed overlay showing OCPP and OpenADR message feeds side by side.
+// Tabbed overlay showing OCPP, OpenADR, and OCPI message feeds.
 // Reads window.__kwtycoon_ocpp_feed, window.__kwtycoon_ocpp_ports,
-// and window.__kwtycoon_openadr_feed set by Bevy feed systems.
+// window.__kwtycoon_openadr_feed, and window.__kwtycoon_ocpi_feed
+// set by Bevy feed systems.
 // Toggle visibility via the "nerds" side tab or F6.
 
 (function () {
@@ -18,6 +19,7 @@
   var buffers = {
     ocpp: { messages: [], bytes: 0 },
     openadr: { messages: [], bytes: 0 },
+    ocpi: { messages: [], bytes: 0 },
   };
 
   function bufferPush(buf, entry) {
@@ -38,6 +40,7 @@
   var tabs = {
     ocpp: { body: null, badge: null, msgCount: 0 },
     openadr: { body: null, badge: null, msgCount: 0 },
+    ocpi: { body: null, badge: null, msgCount: 0 },
   };
 
   // OCPP action colors
@@ -62,6 +65,15 @@
     "BESS DR Response": "#4ade80",
     "Solar Export Price": "#fbbf24",
     "Solar Export": "#facc15",
+  };
+
+  // OCPI action colors
+  var OCPI_COLORS = {
+    "Location PUT": "#a78bfa",
+    "Session PUT": "#4ade80",
+    "Session PATCH": "#22d3ee",
+    "CDR POST": "#fb923c",
+    "EVSE Status": "#60a5fa",
   };
 
   // ─── OCPP detail extraction (unchanged from original) ───
@@ -195,6 +207,45 @@
     }
   }
 
+  // ─── OCPI detail extraction ───
+
+  function extractOcpiDetail(entry) {
+    try {
+      var obj = JSON.parse(entry.msg);
+      var action = entry.action || "";
+
+      if (action === "Location PUT") {
+        var name = obj.name || "";
+        var evseCount = (obj.evses && obj.evses.length) || 0;
+        return name + (evseCount ? " (" + evseCount + " EVSE)" : "");
+      }
+      if (action === "Session PUT") {
+        return "id=" + (obj.id || "?") + " evse=" + (obj.evse_uid || "?");
+      }
+      if (action === "Session PATCH") {
+        var kwh = obj.kwh != null ? Number(obj.kwh).toFixed(1) + "kWh" : "";
+        var cost = obj.total_cost && obj.total_cost.before_taxes != null
+          ? " $" + Number(obj.total_cost.before_taxes).toFixed(2)
+          : "";
+        return kwh + cost;
+      }
+      if (action === "CDR POST") {
+        var e = obj.total_energy != null ? Number(obj.total_energy).toFixed(1) + "kWh" : "";
+        var c = obj.total_cost && obj.total_cost.before_taxes != null
+          ? " $" + Number(obj.total_cost.before_taxes).toFixed(2)
+          : "";
+        var t = obj.total_time != null ? " " + Number(obj.total_time * 60).toFixed(0) + "min" : "";
+        return e + c + t;
+      }
+      if (action === "EVSE Status") {
+        return (obj.status || "") + " " + (obj.evse_uid || "");
+      }
+      return "";
+    } catch (_) {
+      return "";
+    }
+  }
+
   function formatTime(ts) {
     try {
       var d = new Date(ts);
@@ -278,8 +329,10 @@
 
     var ocppTab = makeTab("ocpp", "OCPP");
     var openadrTab = makeTab("openadr", "OpenADR");
+    var ocpiTab = makeTab("ocpi", "OCPI");
     tabBar.appendChild(ocppTab);
     tabBar.appendChild(openadrTab);
+    tabBar.appendChild(ocpiTab);
 
     // Badge containers inside tabs
     tabs.ocpp.badge = document.createElement("span");
@@ -326,6 +379,22 @@
     exportAdrBtn.addEventListener("click", function () { exportFeed("openadr"); });
     openadrTab.appendChild(exportAdrBtn);
 
+    tabs.ocpi.badge = document.createElement("span");
+    tabs.ocpi.badge.style.cssText =
+      "background:#1e293b;color:#94a3b8;padding:1px 6px;border-radius:4px;" +
+      "font-size:9px;margin-left:6px;";
+    tabs.ocpi.badge.textContent = "Roaming";
+    ocpiTab.appendChild(tabs.ocpi.badge);
+
+    var exportOcpiBtn = document.createElement("button");
+    exportOcpiBtn.textContent = "\u2913";
+    exportOcpiBtn.title = "Export OCPI data (CSV)";
+    exportOcpiBtn.style.cssText =
+      "background:#1e293b;color:#94a3b8;border:1px solid #334155;padding:1px 6px;" +
+      "border-radius:4px;font-size:11px;cursor:pointer;margin-left:4px;";
+    exportOcpiBtn.addEventListener("click", function () { exportFeed("ocpi"); });
+    ocpiTab.appendChild(exportOcpiBtn);
+
     // Message bodies
     function makeBody() {
       var body = document.createElement("div");
@@ -337,11 +406,13 @@
 
     tabs.ocpp.body = makeBody();
     tabs.openadr.body = makeBody();
+    tabs.ocpi.body = makeBody();
 
     container.appendChild(header);
     container.appendChild(tabBar);
     container.appendChild(tabs.ocpp.body);
     container.appendChild(tabs.openadr.body);
+    container.appendChild(tabs.ocpi.body);
     document.body.appendChild(container);
 
     switchTab("ocpp");
@@ -358,6 +429,7 @@
     }
     tabs.ocpp.body.style.display = id === "ocpp" ? "block" : "none";
     tabs.openadr.body.style.display = id === "openadr" ? "block" : "none";
+    tabs.ocpi.body.style.display = id === "ocpi" ? "block" : "none";
 
     var activeBody = tabs[id].body;
     activeBody.scrollTop = activeBody.scrollHeight;
@@ -448,6 +520,42 @@
     }
   }
 
+  function addOcpiMessage(entry) {
+    var el = document.createElement("div");
+    el.style.cssText =
+      "padding:1px 10px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+
+    var action = entry.action || "";
+    var color = OCPI_COLORS[action] || "#9ca3af";
+    var objType = entry.object_type || "";
+    var detail = extractOcpiDetail(entry);
+
+    el.innerHTML =
+      '<span style="color:#6b7280;">' +
+      formatTime(entry.timestamp) +
+      "</span> " +
+      '<span style="color:' +
+      color +
+      ';font-weight:bold;">' +
+      action +
+      "</span> " +
+      '<span style="color:#64748b;font-size:10px;">[' +
+      objType +
+      "]</span>" +
+      (detail
+        ? ' <span style="color:#cbd5e1;">' + detail + "</span>"
+        : "");
+
+    tabs.ocpi.body.appendChild(el);
+    tabs.ocpi.msgCount++;
+
+    while (tabs.ocpi.msgCount > MAX_MESSAGES) {
+      if (tabs.ocpi.body.firstChild)
+        tabs.ocpi.body.removeChild(tabs.ocpi.body.firstChild);
+      tabs.ocpi.msgCount--;
+    }
+  }
+
   // ─── Polling ───
 
   function poll() {
@@ -491,6 +599,20 @@
 
       if (visible && activeTab === "openadr") {
         tabs.openadr.body.scrollTop = tabs.openadr.body.scrollHeight;
+      }
+    }
+
+    // OCPI feed
+    var ocpiFeed = window.__kwtycoon_ocpi_feed;
+    if (ocpiFeed && Array.isArray(ocpiFeed) && ocpiFeed.length > 0) {
+      for (var k = 0; k < ocpiFeed.length; k++) {
+        addOcpiMessage(ocpiFeed[k]);
+        bufferPush(buffers.ocpi, ocpiFeed[k]);
+      }
+      window.__kwtycoon_ocpi_feed = null;
+
+      if (visible && activeTab === "ocpi") {
+        tabs.ocpi.body.scrollTop = tabs.ocpi.body.scrollHeight;
       }
     }
 
@@ -669,6 +791,12 @@
         ["timestamp", "ven_id", "message_type", "action", "msg"],
         buf.messages,
         function (m) { return [m.timestamp, m.ven_id, m.message_type, m.action, m.msg]; }
+      ), "text/csv");
+    } else if (tabId === "ocpi") {
+      downloadFile("ocpi_messages.csv", arrayToCsv(
+        ["timestamp", "party_id", "object_type", "action", "msg"],
+        buf.messages,
+        function (m) { return [m.timestamp, m.party_id, m.object_type, m.action, m.msg]; }
       ), "text/csv");
     }
   }

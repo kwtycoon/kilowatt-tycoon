@@ -51,6 +51,8 @@ pub mod events;
 pub mod helpers;
 pub mod hooks;
 pub mod observers;
+#[cfg(feature = "ocpi")]
+pub mod ocpi;
 #[cfg(feature = "ocpp")]
 pub mod ocpp;
 #[cfg(feature = "openadr")]
@@ -73,6 +75,8 @@ use events::EventsPlugin;
 use helpers::HelpersPlugin;
 use hooks::HooksPlugin;
 use observers::ObserversPlugin;
+#[cfg(feature = "ocpi")]
+use ocpi::OcpiPlugin;
 #[cfg(feature = "ocpp")]
 use ocpp::OcppPlugin;
 #[cfg(feature = "openadr")]
@@ -105,6 +109,8 @@ impl Plugin for ChargeOpsPlugin {
         ));
         app.add_plugins((
             ApiPlugin,
+            #[cfg(feature = "ocpi")]
+            OcpiPlugin,
             #[cfg(feature = "ocpp")]
             OcppPlugin,
             #[cfg(feature = "openadr")]
