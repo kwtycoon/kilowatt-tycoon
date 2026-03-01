@@ -30,14 +30,14 @@ flowchart TD
 
 ### Layer by layer
 
-#### 1a. Browser → winit
+#### 1a. Browser -> winit
 
 Safari fires `touchstart`, `touchmove`, `touchend` on the `<canvas>`.
 The winit web backend listens via the Pointer Events API, which unifies
 mouse, touch, and pen. It translates each event into a
 `winit::event::WindowEvent::Touch`.
 
-#### 1b. winit → Bevy (`bevy_winit`)
+#### 1b. winit -> Bevy (`bevy_winit`)
 
 `bevy_winit/src/state.rs` (around line 343) receives `WindowEvent::Touch`,
 converts the position to logical pixels via the window's scale factor, and
@@ -54,7 +54,7 @@ The `TouchInput` message is read by two independent systems:
 | `bevy_input::touch::touch_screen_input_system` | `PreUpdate` | Updates `Res<Touches>` (pressed, just_pressed, just_released sets) |
 | `bevy_picking::input::touch_pick_events` | `PreUpdate` | Spawns `PointerId::Touch(id)` entities, writes `PointerInput` (Press/Move/Release/Cancel) |
 
-#### 1d. `ui_focus_system` (legacy path — what buttons use)
+#### 1d. `ui_focus_system` (legacy path -- what buttons use)
 
 `bevy_ui/src/focus.rs` runs every frame and determines the `Interaction`
 component on each UI node:
@@ -71,7 +71,7 @@ component on each UI node:
 All game button handlers query `Changed<Interaction>`, so they respond
 identically to mouse clicks and finger taps.
 
-#### 1e. `ui_picking` (picking backend — parallel path)
+#### 1e. `ui_picking` (picking backend -- parallel path)
 
 `bevy_picking::input::touch_pick_events` creates `PointerInput` events that
 feed into `bevy_ui/src/picking_backend.rs` (`ui_picking`). This system
@@ -94,10 +94,10 @@ Downstream, `generate_hovermap` and `update_interactions` turn hits into
 
 Priority rules:
 
-1. **2+ fingers** — clear all state so two-finger camera gestures never
+1. **2+ fingers** -- clear all state so two-finger camera gestures never
    accidentally place tiles or press buttons.
-2. **Mouse cursor + left button** — desktop path.
-3. **Single finger** — mobile/tablet path; position comes from
+2. **Mouse cursor + left button** -- desktop path.
+3. **Single finger** -- mobile/tablet path; position comes from
    `Res<Touches>`.
 
 Systems that need raw world interaction (build placement, radial menu
@@ -105,8 +105,8 @@ dismiss) read `GamePointer` instead of querying mouse/touch separately.
 
 ### Touch-to-scroll (`ui_touch_scroll_system`)
 
-`src/states/mod.rs` (line 2280) converts single-finger drags over any
-container with `Overflow::scroll_y()` into `ScrollPosition` updates.
+`src/states/mod.rs` converts single-finger drags over any container with
+`Overflow::scroll_y()` into `ScrollPosition` updates.
 
 - On `just_pressed`, hit-tests scrollable containers and records the
   target entity.
@@ -118,16 +118,16 @@ container with `Overflow::scroll_y()` into `ScrollPosition` updates.
 
 ### Two-finger camera (`touch_camera_system`)
 
-`src/helpers/camera_controller.rs` (line 164) reads `Res<Touches>` directly
-and only activates when `touches.iter().count() >= 2`. Centroid delta drives
-camera translation; finger-distance ratio drives pinch-to-zoom. Because
+`src/helpers/camera_controller.rs` reads `Res<Touches>` directly and only
+activates when `touches.iter().count() >= 2`. Centroid delta drives camera
+translation; finger-distance ratio drives pinch-to-zoom. Because
 `GamePointer` suppresses during two-finger gestures, there is no conflict
 with UI.
 
 ### CSS `touch-action: none`
 
-`index.html` (line 103) sets `touch-action: none` on the game canvas. This
-prevents Safari from intercepting gestures for its own scroll, zoom, or
+`index.html` sets `touch-action: none` on the game canvas. This prevents
+Safari from intercepting gestures for its own scroll, zoom, or
 swipe-back-to-navigate behaviour. Without this, single-finger drags would
 cause the page to scroll instead of reaching winit.
 
@@ -207,38 +207,48 @@ removed.
 
 ### Read-only test bridge
 
-`src/systems/test_bridge.rs` runs every frame and writes a JSON snapshot to
-`window.__kwtycoon_bridge`. The snapshot contains:
+`src/systems/test_bridge.rs` runs every frame in `PostUpdate` and writes a
+JSON snapshot to `window.__kwtycoon_bridge`. The bridge is strictly
+read-only -- it never mutates game state or injects input events. All test
+interactions use real browser input (`page.mouse.move`, `page.mouse.down`,
+`page.mouse.up`, `page.keyboard.press`).
 
-- `app_state` — current `AppState` variant
-- `tutorial_step`, `day_number`, `cash`, `game_time`
-- `selected_build_tool`
-- `day_end_scroll_y` — current scroll offset of the day-end report
-- `elements` — a map of named UI elements to `{ x, y, width, height }`
-  rects in CSS pixels
-
-The bridge is strictly read-only. It never mutates game state or injects
-input events. All test interactions use real browser input
-(`page.mouse.move`, `page.mouse.down`, `page.mouse.up`,
-`page.keyboard.press`).
-
-### Element rect projection
+### Element rect projection (`to_rect`)
 
 For Bevy UI nodes (buttons, scroll bodies), the `to_rect` helper converts
-Bevy's internal coordinate spaces to CSS pixels that Playwright can target:
+Bevy's internal coordinate spaces to CSS pixels that Playwright can target.
+Both `UiGlobalTransform.translation` and `ComputedNode::size()` are in
+physical pixels; the bridge divides both by DPR
+(`camera.target_scaling_factor()`) to produce true CSS-pixel rects:
 
-- **Position**: `UiGlobalTransform.translation` is in physical pixels
-  (scaled by the window DPR). The bridge divides by DPR
-  (`camera.target_scaling_factor()`) to get CSS-pixel coordinates.
-- **Size**: `ComputedNode::size()` is in physical pixels scaled by
-  DPR * UiScale. The bridge multiplies by `inverse_scale_factor`
-  (1 / (DPR * UiScale)) to recover the original `Val::Px` value. This
-  is slightly larger than the rendered CSS size, but tests click at the
-  center so the exact width is inconsequential.
+```rust
+fn to_rect(ugt: &UiGlobalTransform, cn: &ComputedNode, dpr: f32) -> ElementRect {
+    let cx = ugt.translation.x / dpr;
+    let cy = ugt.translation.y / dpr;
+    let w = cn.size().x / dpr;
+    let h = cn.size().y / dpr;
+    ElementRect { x: cx - w / 2.0, y: cy - h / 2.0, width: w, height: h }
+}
+```
+
+It is important that **both** position and size divide by the same DPR
+value. An earlier version used `ComputedNode::inverse_scale_factor()`
+(which is `1 / (DPR * UiScale)`) for size. This produced `Val::Px` units
+instead of CSS pixels. The mismatch was invisible when `UiScale == 1.0`
+(desktop) but broke offset-based clicking on viewports where UiScale
+differs (phones, tablets, retina displays). Switching to `size() / dpr`
+produces a true CSS bounding box and makes proportional click offsets work
+identically across all viewports.
 
 For world-space placement hints (charger pads, transformer slots), the
 bridge uses `camera.world_to_viewport` which returns logical (CSS-pixel)
 coordinates via `logical_viewport_rect`. No additional scaling is needed.
+
+### SystemParam bundling
+
+Bevy limits system functions to 16 parameters. The bridge system uses a
+`#[derive(SystemParam)]` struct `UiElementQueries` to bundle 14 query
+parameters into one, keeping the total system parameter count at 10.
 
 ### Interaction helpers
 
@@ -254,16 +264,33 @@ Both use `page.mouse` (pointer events), not touch events. On the web,
 Chromium's pointer events flow into winit's canvas listener the same way
 real touch events do, so this exercises the full pipeline.
 
+### Scrolling
+
+`page.mouse.wheel` does **not** work for Bevy UI scroll containers. Bevy's
+`ui_touch_scroll_system` is driven by pointer/touch drag, not wheel events.
+Tests scroll via multi-step pointer drags:
+
+```typescript
+await page.mouse.move(cx, startY);
+await page.mouse.down();
+for (let i = 1; i <= 10; i++) {
+    await page.mouse.move(cx, startY + (endY - startY) * (i / 10));
+    await page.waitForTimeout(80);
+}
+await page.mouse.up();
+```
+
 ### Device profiles
 
-`tests/e2e/playwright.config.ts` defines four projects:
+`tests/e2e/playwright.config.ts` defines six projects:
 
 | Project | Viewport | DPR | Notes |
 |---------|----------|-----|-------|
+| `desktop-chromium` | 1440 x 900 | 1 | Fast iteration baseline |
 | `iphone-14-landscape` | 844 x 390 | 1 | Phone landscape |
 | `pixel-7-landscape` | 915 x 412 | 1 | Phone landscape |
 | `ipad-air-landscape` | 1180 x 820 | 1 | Tablet landscape |
-| `ipad-air-landscape-retina` | 1180 x 820 | 2 | Real iPad DPR; catches picking-pipeline scaling bugs |
+| `ipad-air-landscape-retina` | 1180 x 820 | 2 | Real iPad DPR; catches coordinate scaling bugs |
 | `iphone-14-portrait` | 390 x 844 | default | Portrait; verifies rotation prompt |
 
 Most landscape projects use `deviceScaleFactor: 1` to keep CI fast --
@@ -286,7 +313,7 @@ that shows the "Rotate Your Device" prompt.
 | Spec file | What it tests |
 |-----------|---------------|
 | `mobile-viewport.spec.ts` | Splash page visible, Play button present, rotation prompt in portrait, canvas fills viewport after Play |
-| `gameplay-flow.spec.ts` | Full gameplay loop: character setup, tutorial skip, place charger + transformer via placement hints, start day, 10x speed, wait for DayEnd, day-end summary/expand/scroll/clock, continue to day 2, navigate to Locations panel, carousel browse, buy location 2, switch sites |
+| `gameplay-flow.spec.ts` | Full gameplay loop: character setup, tutorial skip, place charger + transformer, start day, 10x speed, wait for DayEnd, day-end summary/expand/scroll/clock, continue to day 2, navigate to Locations panel, carousel browse, buy location 2, verify site switch |
 | `touch-scroll.spec.ts` | Reaches DayEnd on iPad viewport, expands KPI section, performs pointer drag on scroll body, asserts `ScrollPosition.y` increased |
 
 ### CI integration
@@ -304,13 +331,9 @@ with one retry.
 
 ---
 
-## 5. Bridge Element Inventory
+## 5. Bridge Snapshot Reference
 
-The test bridge exposes the following named elements via
-`window.__kwtycoon_bridge.elements`. Each entry is a CSS-pixel rect
-`{ x, y, width, height }`.
-
-### Snapshot scalar fields
+### Scalar fields
 
 | Field | Type | Source |
 |-------|------|--------|
@@ -323,8 +346,11 @@ The test bridge exposes the following named elements via
 | `day_end_scroll_y` | f32 or null | `ScrollPosition.y` of day-end body |
 | `num_owned_sites` | usize | `MultiSiteManager.owned_sites.len()` |
 | `viewed_site_id` | u32 or null | `MultiSiteManager.viewed_site_id` |
+| `carousel_index` | usize | `RentCarouselState.current_index` |
 
 ### Named UI elements
+
+Each entry is a CSS-pixel rect `{ x, y, width, height }`.
 
 | Element name | Component | When visible |
 |--------------|-----------|--------------|
@@ -344,86 +370,91 @@ The test bridge exposes the following named elements via
 | `NavButton_Build` | `PrimaryNavButton` | Playing (top nav bar) |
 | `NavButton_Strategy` | `PrimaryNavButton` | Playing (top nav bar) |
 | `NavButton_Stats` | `PrimaryNavButton` | Playing (top nav bar) |
-| `CarouselButton_Previous` | `CarouselButton` | Rent panel active |
-| `CarouselButton_Next` | `CarouselButton` | Rent panel active |
-| `RentSiteButton` | `RentSiteButton` | Rent panel active |
-| `RentPanel` | `RentPanel` | Rent panel (debug) |
-| `SiteTab_{n}` | `SiteTab` | Playing (sorted by SiteId) |
+| `CarouselButton_Previous` | `CarouselButton` | Rent panel active (zero-size, see section 6) |
+| `CarouselButton_Next` | `CarouselButton` | Rent panel active (zero-size, see section 6) |
+| `RentSiteButton` | `RentSiteButton` | Rent panel active (zero-size, see section 6) |
+| `RentPanel` | `RentPanel` | Rent panel active (container has valid size) |
+| `SiteTab_{n}` | `SiteTab` | Playing, sorted by SiteId (zero-size after rebuild, see section 6) |
 | `PlacementHint_Charger_{n}` | (world-space) | Valid charger positions |
 | `PlacementHint_Transformer_{n}` | (world-space) | Valid transformer positions |
 
-### SystemParam bundling
-
-Bevy limits system functions to 16 parameters. The bridge system uses a
-`#[derive(SystemParam)]` struct `UiElementQueries` to bundle 13 query
-parameters into one, keeping the system at 9 total parameters.
-
 ---
 
-## 6. Known Issue: Display::None Zero-Layout Bug
+## 6. Bevy Deferred-Command Zero-Layout Bug
 
 ### Symptom
 
-UI elements spawned as children of a panel with `Display::None` report
-`ComputedNode::size() == Vec2::ZERO` and
-`UiGlobalTransform::translation == Vec3::ZERO` **even after** the parent
-panel switches to `Display::Flex`. The zero layout persists indefinitely
-across many frames.
+UI entities created via deferred commands (`commands.entity(parent).with_children(...)`)
+report `ComputedNode::size() == Vec2::ZERO` and
+`UiGlobalTransform::translation == Vec3::ZERO` permanently, even though
+they render visually at the correct position. The zero layout persists
+indefinitely across many frames.
+
+This affects any UI element that is dynamically rebuilt at runtime via
+deferred commands, regardless of whether the parent has `Display::Flex` or
+`Display::None` at the time of creation.
+
+### Root cause
+
+Bevy's taffy-based layout system (`ui_layout_system`) runs in `PostUpdate`.
+Entities created via deferred commands within `Update` are flushed before
+`PostUpdate`, so they exist when layout runs. However, the layout system
+appears not to incorporate newly created entities into its taffy layout tree
+on the frame they appear. The `ComputedNode` is initialized to zero and
+never recomputed on subsequent frames because the layout system only
+recomputes nodes whose `Node` component is marked as changed.
+
+Continuously destroying and recreating entities (e.g. `update_site_tabs`
+rebuilds all tabs whenever `multi_site` changes) means the layout system
+always sees just-created entities with zero `ComputedNode`, never the
+ones that were laid out on the previous frame.
 
 ### Affected elements
 
-The rent panel (`RentPanel`) uses `Display::None` when inactive and
-`Display::Flex` when the user navigates to the Location tab. Its children
-(`CarouselButton`, `RentSiteButton`) are created by `update_rent_panel`
-which rebuilds content via deferred commands whenever `multi_site`,
-`carousel`, or `game_state` change.
+| System | Component | Behaviour |
+|--------|-----------|-----------|
+| `update_rent_panel` | `CarouselButton`, `RentSiteButton` | Rebuilt when `multi_site`, `carousel`, or `game_state` changes |
+| `update_site_tabs` | `SiteTab` | Rebuilt when `multi_site`, `game_state`, or `build_state` changes |
 
-On the day transition (DayEnd -> Playing day 2), `update_rent_panel` fires
-because `multi_site.is_changed()`. It despawns old children and spawns new
-ones (including `RentSiteButton`). At this point the panel has
-`Display::None`. The children are laid out with zero size.
+### Impact on E2E tests
 
-Later, when the test taps `NavButton_Rent`, the panel switches to
-`Display::Flex`. Despite being visible, the children remain at 0x0. The
-test bridge's `waitForElement` requires `width > 1 && height > 1`, so it
-times out.
+1. `waitForElement` checks `width > 1 && height > 1`, so zero-size
+   elements time out.
+2. `ui_focus_system` hit-tests against `ComputedNode` rects. A zero-size
+   node never matches any click position, so `Interaction::Pressed` is
+   never set. Clicking at the correct screen coordinates has no effect.
 
-### What we tried
+### Workarounds in place
 
-1. **Rebuilding children when the panel becomes visible** — added
-   `nav_state.is_changed()` check to `update_rent_panel` so it also
-   triggers on navigation changes. The children are destroyed and
-   recreated via deferred commands while the panel is `Display::Flex`.
-   Result: still 0x0 after 30+ seconds of polling.
+**Rent panel: dirty-flag deferred rebuild.** `update_rent_panel` uses a
+`RentPanelDirty` resource to track when content needs refreshing. It only
+spawns children when the panel has `Display::Flex` (checked via the
+panel's `Node` component). This avoids creating entities under an invisible
+parent, though the zero-layout bug still affects the created entities.
 
-2. **Pointer drag for scroll** — `page.mouse.wheel` does not work for
-   Bevy UI scroll containers (they use touch/pointer drag, not wheel
-   events). Changed to `pointerDrag` approach matching `touch-scroll.spec.ts`.
-   This works.
+**Proportional offset clicking.** Since the `RentPanel` container entity
+(created at startup, not via deferred commands) has valid `ComputedNode`
+layout, the test uses it as an anchor. Carousel and rent button clicks are
+placed at proportional CSS-pixel offsets from the panel rect:
 
-### Current status (WIP)
+- Carousel ">" button: 90% of panel width, 17% of panel height
+- Rent button: 50% of panel width, 90% of panel height
 
-Steps 1-13 of the gameplay flow test pass (through day-end summary,
-KPI expand, scroll, clock check, and continue to day 2). Step 14
-(navigate to Locations and interact with the rent panel) is blocked by
-the zero-layout bug.
+These proportional offsets work across all viewports because `to_rect`
+produces true CSS-pixel rects (both position and size divided by DPR).
 
-### Possible fixes to investigate
+**Site tab verification via bridge.** After buying a second location,
+the game auto-switches to the new site. The test verifies this via the
+bridge's `viewed_site_id` field rather than trying to click site tab
+buttons (which also have zero-size `ComputedNode`).
 
-- **Use `Visibility::Hidden` instead of `Display::None`** for sidebar
-  panels. `Visibility::Hidden` still computes layout but does not render,
-  so children would have valid `ComputedNode` sizes. Downside: all panels
-  participate in layout simultaneously, which could affect sidebar sizing.
+### Potential upstream fixes
 
-- **Explicitly mark children as changed** after the parent becomes visible
-  by touching each child's `Node` component. This might trigger Bevy's
-  taffy layout to recompute the subtree.
-
-- **Move panel content creation to the frame after Display::Flex** — split
-  `update_rent_panel` into two phases: first flip the display, then on the
-  next frame (detected via a local `Changed<Node>` filter) spawn children.
-
-- **File a Bevy upstream bug** — this may be a regression where taffy does
-  not invalidate child layout when a parent's `Display` changes. The
-  expected behavior is that switching from `Display::None` to
-  `Display::Flex` triggers a full subtree relayout.
+- File a Bevy bug: newly created UI entities should be added to the taffy
+  layout tree and computed on the same frame they appear, or at minimum
+  on the following frame.
+- Alternative: use `Visibility::Hidden` instead of `Display::None` for
+  panel toggling. `Visibility::Hidden` still computes layout. Downside:
+  all panels participate in layout simultaneously.
+- Alternative: stop destroying/recreating entities on every data change.
+  Update existing entities in place so their `ComputedNode` is never lost.
