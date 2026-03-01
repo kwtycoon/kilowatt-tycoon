@@ -5,7 +5,7 @@ use bevy::window::PrimaryWindow;
 
 use crate::components::charger::{Charger, ChargerSprite};
 use crate::helpers::GamePointer;
-use crate::resources::SelectedChargerEntity;
+use crate::resources::{BuildState, BuildTool, SelectedChargerEntity};
 use crate::systems::WorldCamera;
 use crate::ui::radial_menu::RadialMenuDismissLayer;
 
@@ -19,6 +19,7 @@ pub fn click_to_select_charger(
     charger_sprites: Query<(&ChargerSprite, &GlobalTransform, &Sprite)>,
     chargers: Query<Entity, With<Charger>>,
     mut selected: ResMut<SelectedChargerEntity>,
+    mut build_state: ResMut<BuildState>,
     // Exclude radial menu dismiss layer - it handles its own click-to-deselect
     ui_interactions: Query<&Interaction, Without<RadialMenuDismissLayer>>,
     images: Res<Assets<Image>>,
@@ -30,6 +31,11 @@ pub fn click_to_select_charger(
 
     if !is_pointer_tap && !is_right_click {
         return;
+    }
+
+    // Right-click dismisses build tool selection (chargers/infra/amenities/sell)
+    if is_right_click {
+        build_state.selected_tool = BuildTool::Select;
     }
 
     // Block taps if any UI element is being hovered/pressed.

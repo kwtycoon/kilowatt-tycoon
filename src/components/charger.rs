@@ -553,6 +553,11 @@ impl Charger {
     pub fn anti_theft_cable_refund(&self) -> i32 {
         self.anti_theft_cable_price() / 2
     }
+
+    /// Monthly warranty premium for this charger at the given tier.
+    pub fn warranty_premium(&self, tier: crate::resources::WarrantyTier) -> f32 {
+        tier.charger_monthly_premium(self.charger_type, self.rated_power_kw)
+    }
 }
 
 /// Marker component for the currently selected charger

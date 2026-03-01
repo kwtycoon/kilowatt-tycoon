@@ -3,6 +3,8 @@
 use bevy::math::ops;
 use bevy::prelude::*;
 
+use crate::components::charger::{ChargerType, FaultType};
+
 use super::{AmenityType, MultiSiteManager, SiteEnergyConfig, SiteGrid};
 
 /// Policy controlling when excess solar generation is exported to the grid.
@@ -39,6 +41,102 @@ impl SolarExportPolicy {
             SolarExportPolicy::Never => SolarExportPolicy::MaxExport,
             SolarExportPolicy::ExcessOnly => SolarExportPolicy::Never,
             SolarExportPolicy::MaxExport => SolarExportPolicy::ExcessOnly,
+        }
+    }
+}
+
+/// Extended warranty tier — controls how much of the parts cost is covered on dispatch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WarrantyTier {
+    /// No coverage, no premium.
+    #[default]
+    None,
+    /// Covers GroundFault and CableDamage parts at 100%. Does NOT cover CableTheft.
+    Standard,
+    /// Covers ALL fault parts at 100%, including CableTheft cable replacement.
+    Comprehensive,
+}
+
+impl WarrantyTier {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            WarrantyTier::None => "None",
+            WarrantyTier::Standard => "Standard",
+            WarrantyTier::Comprehensive => "Full",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            WarrantyTier::None => "No warranty coverage",
+            WarrantyTier::Standard => "Covers: Ground Fault, Cable Damage parts",
+            WarrantyTier::Comprehensive => "Covers: All fault parts incl. Cable Theft",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            WarrantyTier::None => WarrantyTier::Standard,
+            WarrantyTier::Standard => WarrantyTier::Comprehensive,
+            WarrantyTier::Comprehensive => WarrantyTier::None,
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            WarrantyTier::None => WarrantyTier::Comprehensive,
+            WarrantyTier::Standard => WarrantyTier::None,
+            WarrantyTier::Comprehensive => WarrantyTier::Standard,
+        }
+    }
+
+    /// Multiplier applied to parts cost at dispatch. 0.0 = fully covered, 1.0 = no coverage.
+    pub fn parts_cost_multiplier(&self, fault_type: FaultType) -> f32 {
+        match self {
+            WarrantyTier::None => 1.0,
+            WarrantyTier::Standard => match fault_type {
+                FaultType::GroundFault | FaultType::CableDamage => 0.0,
+                _ => 1.0,
+            },
+            WarrantyTier::Comprehensive => match fault_type {
+                FaultType::GroundFault | FaultType::CableDamage | FaultType::CableTheft => 0.0,
+                _ => 1.0,
+            },
+        }
+    }
+
+    /// Monthly premium for a single charger at this warranty tier.
+    pub fn charger_monthly_premium(&self, charger_type: ChargerType, rated_power_kw: f32) -> f32 {
+        match self {
+            WarrantyTier::None => 0.0,
+            WarrantyTier::Standard => match charger_type {
+                ChargerType::AcLevel2 => 40.0,
+                ChargerType::DcFast => {
+                    if rated_power_kw <= 50.0 {
+                        60.0
+                    } else if rated_power_kw <= 100.0 {
+                        75.0
+                    } else if rated_power_kw <= 150.0 {
+                        90.0
+                    } else {
+                        110.0
+                    }
+                }
+            },
+            WarrantyTier::Comprehensive => match charger_type {
+                ChargerType::AcLevel2 => 65.0,
+                ChargerType::DcFast => {
+                    if rated_power_kw <= 50.0 {
+                        175.0
+                    } else if rated_power_kw <= 100.0 {
+                        250.0
+                    } else if rated_power_kw <= 150.0 {
+                        325.0
+                    } else {
+                        500.0
+                    }
+                }
+            },
         }
     }
 }
@@ -250,6 +348,10 @@ pub struct ServiceStrategy {
     // === Solar Export ===
     /// Controls when excess solar generation is sold back to the grid.
     pub solar_export_policy: SolarExportPolicy,
+
+    // === Extended Warranty ===
+    /// Coverage tier for charger parts costs on dispatch.
+    pub warranty_tier: WarrantyTier,
 }
 
 impl Default for ServiceStrategy {
@@ -262,6 +364,7 @@ impl Default for ServiceStrategy {
             maintenance_investment: 10.0,
             amenity_counts: [0; 3],
             solar_export_policy: SolarExportPolicy::Never,
+            warranty_tier: WarrantyTier::None,
         }
     }
 }
@@ -313,6 +416,21 @@ impl ServiceStrategy {
     pub fn amenity_cost_per_hour(&self) -> f32 {
         let [wifi, lounge, restaurant] = self.amenity_counts;
         wifi as f32 * 5.0 + lounge as f32 * 15.0 + restaurant as f32 * 35.0
+    }
+
+    /// Compute the hourly warranty cost for this site given its charger inventory.
+    /// Converts each charger's monthly premium to an hourly rate (monthly / 720).
+    pub fn hourly_warranty_cost_for_chargers(
+        &self,
+        charger_types: impl Iterator<Item = (ChargerType, f32)>,
+    ) -> f32 {
+        if self.warranty_tier == WarrantyTier::None {
+            return 0.0;
+        }
+        let monthly: f32 = charger_types
+            .map(|(ct, kw)| self.warranty_tier.charger_monthly_premium(ct, kw))
+            .sum();
+        monthly / 720.0
     }
 
     /// Validate and clamp strategy values

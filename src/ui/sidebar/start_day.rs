@@ -1,7 +1,7 @@
 //! Start Day floating button
 
 use super::colors;
-use crate::resources::{BuildState, GameClock, ImageAssets, MultiSiteManager};
+use crate::resources::{BuildState, BuildTool, GameClock, ImageAssets, MultiSiteManager};
 use bevy::prelude::*;
 
 // ============ Components ============
@@ -89,6 +89,8 @@ pub fn handle_start_day_button(
 
     for interaction in &mut interaction_query {
         if *interaction == Interaction::Pressed {
+            // Dismiss build tool selection (chargers/infra/amenities/sell) when starting day or toggling pause
+            build_state.selected_tool = BuildTool::Select;
             if build_state.is_open {
                 // Day is running - toggle pause
                 game_clock.toggle_pause();

@@ -75,20 +75,27 @@ impl Plugin for OcppPlugin {
         // Message generation systems — run during Playing state.
         // ocpp_reset_system runs before ocpp_boot_system so that cleared
         // boot_sent is picked up in the same frame.
+        // start/stop_transaction run before status_system so they own the full
+        // session lifecycle (Preparing→Charging / Finishing→Available) and set
+        // last_status before status_system checks for changes.
         app.add_systems(
             Update,
             (
                 ocpp_reset_system,
                 ocpp_boot_system,
-                ocpp_status_system,
                 ocpp_start_transaction_system,
                 ocpp_stop_transaction_system,
+                ocpp_status_system,
                 ocpp_meter_values_system,
                 ocpp_heartbeat_system,
             )
                 .chain()
                 .run_if(in_state(AppState::Playing)),
         );
+
+        // Day-end cleanup: emit final status + heartbeat per charger so the
+        // analytics pipeline sees clean boundaries (no open-ended faults/offline).
+        app.add_systems(OnEnter(AppState::DayEnd), ocpp_day_end_system);
 
         // Connection send system — always runs (flushes queued messages even during pause)
         app.add_systems(Update, ocpp_send_system);

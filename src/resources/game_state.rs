@@ -53,6 +53,8 @@ pub struct DailyRecord {
     pub demand_charge: f32,    // Peak demand charge
     pub opex: f32,             // Technician dispatch, repairs, etc.
     pub cable_theft_cost: f32, // Cable replacement costs from theft
+    pub warranty_cost: f32,    // Extended warranty premium (amortized daily)
+    pub warranty_savings: f32, // Parts cost covered by warranty (informational, no cash impact)
     pub refunds: f32,          // Customer refunds
     pub penalties: f32,        // Ticket escalation penalties
 
@@ -75,6 +77,7 @@ impl DailyRecord {
             - self.demand_charge
             - self.opex
             - self.cable_theft_cost
+            - self.warranty_cost
             - self.refunds
             - self.penalties
     }
@@ -92,6 +95,8 @@ pub struct CurrentDayTracker {
     pub demand_charge: f32,
     pub opex: f32,
     pub cable_theft_cost: f32,
+    pub warranty_cost: f32,
+    pub warranty_savings: f32,
     pub refunds: f32,
     pub penalties: f32,
     pub sessions: i32,
@@ -245,6 +250,18 @@ impl GameState {
         self.net_revenue -= amount;
         self.cash -= amount;
         self.daily_history.current_day.cable_theft_cost += amount;
+    }
+
+    pub fn add_warranty_cost(&mut self, amount: f32) {
+        self.total_opex += amount;
+        self.net_revenue -= amount;
+        self.cash -= amount;
+        self.daily_history.current_day.warranty_cost += amount;
+    }
+
+    /// Record parts cost that warranty covered (informational only, no cash impact).
+    pub fn record_warranty_saving(&mut self, amount: f32) {
+        self.daily_history.current_day.warranty_savings += amount;
     }
 
     /// Record a technician dispatch (increment daily counter)

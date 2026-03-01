@@ -64,6 +64,7 @@ fn start_job(
     dispatch: &QueuedDispatch,
     fault_type: crate::components::charger::FaultType,
     cable_replacement_cost: f32,
+    warranty_tier: crate::resources::WarrantyTier,
 ) -> JobResult {
     let base_repair = fault_type.repair_duration_secs();
     let downtime_mult = match profile.active_perk() {
@@ -75,11 +76,17 @@ fn start_job(
     let repair_duration = base_repair * downtime_mult;
 
     let is_cable_theft = fault_type == crate::components::charger::FaultType::CableTheft;
-    let dispatch_cost = if is_cable_theft {
+    let original_cost = if is_cable_theft {
         cable_replacement_cost
     } else {
         fault_type.repair_cost()
     };
+    let dispatch_cost = original_cost * warranty_tier.parts_cost_multiplier(fault_type);
+
+    let covered = original_cost - dispatch_cost;
+    if covered > 0.0 {
+        game_state.record_warranty_saving(covered);
+    }
 
     if is_cable_theft {
         game_state.add_cable_theft_cost(dispatch_cost);
@@ -284,6 +291,11 @@ pub fn start_next_queued_job(
         BASE_TRAVEL_TIME
     };
 
+    let warranty_tier = multi_site
+        .get_site(destination_site_id)
+        .map(|s| s.service_strategy.warranty_tier)
+        .unwrap_or_default();
+
     let job = start_job(
         tech_state,
         game_state,
@@ -291,6 +303,7 @@ pub fn start_next_queued_job(
         &next_dispatch,
         fault_type,
         charger.cable_replacement_cost(),
+        warranty_tier,
     );
 
     tech_state.status = TechStatus::EnRoute;
@@ -762,6 +775,12 @@ pub fn technician_repair_system(
                     (None, next_fault_type.repair_cost())
                 };
 
+            let chain_warranty_tier = tech_state
+                .destination_site_id
+                .and_then(|sid| multi_site.get_site(sid))
+                .map(|s| s.service_strategy.warranty_tier)
+                .unwrap_or_default();
+
             let job = start_job(
                 &mut tech_state,
                 &mut game_state,
@@ -769,6 +788,7 @@ pub fn technician_repair_system(
                 &next_dispatch,
                 next_fault_type,
                 cable_cost,
+                chain_warranty_tier,
             );
             tech_state.status = TechStatus::WalkingOnSite;
 

@@ -9,6 +9,8 @@
 
 use bevy::prelude::*;
 
+use crate::components::BelongsToSite;
+use crate::components::charger::Charger;
 use crate::resources::{
     CharacterPerk, EnvironmentState, GameClock, GameState, MultiSiteManager, PlayerProfile,
 };
@@ -66,6 +68,7 @@ pub fn utility_billing_system(
     time: Res<Time>,
     mut game_state: ResMut<GameState>,
     profile: Res<PlayerProfile>,
+    chargers: Query<(&Charger, &BelongsToSite)>,
 ) {
     if game_clock.is_paused() {
         return;
@@ -159,6 +162,21 @@ pub fn utility_billing_system(
         let opex_this_tick = hourly_opex * (delta_game_seconds / 3600.0);
         if opex_this_tick > 0.0 {
             game_state.add_opex(opex_this_tick);
+        }
+
+        // Warranty premium — tracked separately from opex so the player can
+        // see fixed insurance cost vs variable repair cost in the daily report.
+        let warranty_hourly = site_state
+            .service_strategy
+            .hourly_warranty_cost_for_chargers(
+                chargers
+                    .iter()
+                    .filter(|(_, b)| b.site_id == *_site_id)
+                    .map(|(c, _)| (c.charger_type, c.rated_power_kw)),
+            );
+        let warranty_this_tick = warranty_hourly * (delta_game_seconds / 3600.0);
+        if warranty_this_tick > 0.0 {
+            game_state.add_warranty_cost(warranty_this_tick);
         }
     }
 }

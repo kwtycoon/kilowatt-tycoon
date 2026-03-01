@@ -48,6 +48,15 @@ pub struct AmenityLevelLabel;
 pub struct HourlyOpexLabel;
 
 #[derive(Component)]
+pub struct WarrantyTierLabel;
+
+#[derive(Component)]
+pub struct WarrantyPremiumLabel;
+
+#[derive(Component)]
+pub struct WarrantyCoverageLabel;
+
+#[derive(Component)]
 pub struct BessDischargeThresholdLabel;
 
 #[derive(Component)]
@@ -454,6 +463,20 @@ fn spawn_opex_panel(parent: &mut ChildSpawnerCommands, image_assets: &ImageAsset
             // Maintenance
             spawn_slider_control(panel, "Maintenance $/hr:", "$10", StrategyControl::Maintenance, MaintenanceLabel, image_assets);
 
+            // Warranty tier selector
+            spawn_slider_control(panel, "Warranty:", "None", StrategyControl::WarrantyTier, WarrantyTierLabel, image_assets);
+
+            // Warranty premium (read-only)
+            spawn_labeled_row(panel, "Warranty Premium:", "$0/mo", WarrantyPremiumLabel);
+
+            // Warranty coverage description
+            panel.spawn((
+                Text::new("No warranty coverage"),
+                TextFont { font_size: 11.0, ..default() },
+                TextColor(colors::TEXT_SECONDARY),
+                WarrantyCoverageLabel,
+            ));
+
             spawn_separator(panel);
 
             // Hourly OPEX summary
@@ -632,6 +655,61 @@ pub fn update_strategy_panel_values(
             .service_strategy
             .solar_export_policy
             .display_name()
+            .to_string();
+    }
+}
+
+/// Update warranty-related labels (separate system to avoid query filter explosion in
+/// `update_strategy_panel_values`).
+pub fn update_warranty_labels(
+    multi_site: Res<crate::resources::MultiSiteManager>,
+    mut tier_label: Query<&mut Text, With<WarrantyTierLabel>>,
+    mut premium_label: Query<&mut Text, (With<WarrantyPremiumLabel>, Without<WarrantyTierLabel>)>,
+    mut coverage_label: Query<
+        &mut Text,
+        (
+            With<WarrantyCoverageLabel>,
+            Without<WarrantyTierLabel>,
+            Without<WarrantyPremiumLabel>,
+        ),
+    >,
+    chargers: Query<(
+        &crate::components::charger::Charger,
+        &crate::components::BelongsToSite,
+    )>,
+) {
+    let Some(site_state) = multi_site.active_site() else {
+        return;
+    };
+
+    for mut text in &mut tier_label {
+        **text = site_state
+            .service_strategy
+            .warranty_tier
+            .display_name()
+            .to_string();
+    }
+
+    let viewed_site_id = multi_site.viewed_site_id;
+    let monthly_premium: f32 =
+        if site_state.service_strategy.warranty_tier != crate::resources::WarrantyTier::None {
+            chargers
+                .iter()
+                .filter(|(_, b)| Some(b.site_id) == viewed_site_id)
+                .map(|(c, _)| c.warranty_premium(site_state.service_strategy.warranty_tier))
+                .sum()
+        } else {
+            0.0
+        };
+    for mut text in &mut premium_label {
+        **text = format!("${:.0}/mo", monthly_premium);
+    }
+
+    for mut text in &mut coverage_label {
+        **text = site_state
+            .service_strategy
+            .warranty_tier
+            .description()
             .to_string();
     }
 }
@@ -833,6 +911,16 @@ pub fn handle_strategy_panel_buttons(
                 site_state.service_strategy.maintenance_investment =
                     (site_state.service_strategy.maintenance_investment + maint_delta)
                         .clamp(0.0, 50.0);
+            }
+            StrategyControl::WarrantyTier => {
+                if !has_oem {
+                    continue;
+                }
+                site_state.service_strategy.warranty_tier = if is_minus.is_some() {
+                    site_state.service_strategy.warranty_tier.prev()
+                } else {
+                    site_state.service_strategy.warranty_tier.next()
+                };
             }
             StrategyControl::BessDischargeThreshold => {
                 // Requires Advanced Power Management upgrade
@@ -1047,6 +1135,14 @@ pub fn update_slider_fill_widths(
                     SolarExportPolicy::Never => 0.0,
                     SolarExportPolicy::ExcessOnly => 50.0,
                     SolarExportPolicy::MaxExport => 100.0,
+                }
+            }
+            StrategyControl::WarrantyTier => {
+                use crate::resources::WarrantyTier;
+                match site_state.service_strategy.warranty_tier {
+                    WarrantyTier::None => 0.0,
+                    WarrantyTier::Standard => 50.0,
+                    WarrantyTier::Comprehensive => 100.0,
                 }
             }
         };

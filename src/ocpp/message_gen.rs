@@ -171,9 +171,11 @@ fn push_status_notif(
 /// Compare each charger's current state with the last sent status.
 /// If it changed, emit a `StatusNotification`.
 ///
-/// Injects OCPP-standard intermediate states for session lifecycle:
-///   Available → **Preparing** → Charging   (vehicle plugs in)
-///   Charging  → **Finishing**  → Available  (session ends)
+/// Session lifecycle transitions (Preparing/Finishing) are handled by the
+/// transaction systems: `ocpp_start_transaction_system` owns
+/// Preparing → StartTx → Charging and `ocpp_stop_transaction_system` owns
+/// StopTx → Finishing → Available. This system only emits non-transaction
+/// state changes (Faulted, Unavailable, reboots, etc.).
 pub fn ocpp_status_system(
     chargers: Query<(Entity, &Charger)>,
     mut queue: ResMut<OcppMessageQueue>,
@@ -186,7 +188,7 @@ pub fn ocpp_status_system(
     for (entity, charger) in chargers.iter() {
         let ocpp_status = charger_state_to_ocpp_status(charger.state());
 
-        let (charger_id, prev_status) = {
+        let charger_id = {
             let state = queue.get_or_create(entity);
             if !state.boot_sent {
                 continue;
@@ -196,9 +198,8 @@ pub fn ocpp_status_system(
                 continue;
             }
 
-            let prev = state.last_status.clone();
             state.last_status = Some(ocpp_status.clone());
-            (state.charger_id.clone(), prev)
+            state.charger_id.clone()
         };
 
         let error_code = charger
@@ -212,40 +213,6 @@ pub fn ocpp_status_system(
 
         let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
         let ts_iso = timestamp.to_rfc3339();
-
-        // Available → Charging: inject Preparing before Charging
-        if prev_status.as_ref() == Some(&ChargePointStatus::Available)
-            && ocpp_status == ChargePointStatus::Charging
-        {
-            push_status_notif(
-                &mut queue,
-                &charger_id,
-                &ts_iso,
-                timestamp,
-                ChargePointStatus::Preparing,
-                ChargePointErrorCode::NoError,
-                None,
-                None,
-                None,
-            );
-        }
-
-        // Charging → Available: inject Finishing before Available
-        if prev_status.as_ref() == Some(&ChargePointStatus::Charging)
-            && ocpp_status == ChargePointStatus::Available
-        {
-            push_status_notif(
-                &mut queue,
-                &charger_id,
-                &ts_iso,
-                timestamp,
-                ChargePointStatus::Finishing,
-                ChargePointErrorCode::NoError,
-                None,
-                None,
-                None,
-            );
-        }
 
         push_status_notif(
             &mut queue,
@@ -415,23 +382,32 @@ pub fn ocpp_stop_transaction_system(
         return;
     }
 
-    // Collect entities that need StopTransaction to avoid borrow conflicts
-    let to_stop: Vec<(Entity, String, i32, i32, Option<Reason>, Option<String>)> = chargers
+    // Collect entities that need StopTransaction to avoid borrow conflicts.
+    // Track whether the stop is fault-induced so we can emit the right status lifecycle.
+    let to_stop: Vec<(
+        Entity,
+        String,
+        i32,
+        i32,
+        Option<Reason>,
+        Option<String>,
+        bool,
+    )> = chargers
         .iter()
         .filter_map(|(entity, charger)| {
             let state = queue.charger_state.get(&entity)?;
             let txn_id = state.transaction_id?;
 
-            // Charger is no longer charging but has an active transaction
             if charger.is_charging {
                 return None;
             }
 
             let meter_stop_wh = (charger.total_energy_delivered_kwh * 1000.0) as i32;
-            let reason = if charger.current_fault.is_some() {
+            let is_fault = charger.current_fault.is_some();
+            let reason = if is_fault {
                 Some(Reason::PowerLoss)
             } else {
-                Some(Reason::Local) // Normal completion
+                Some(Reason::Local)
             };
 
             Some((
@@ -441,13 +417,16 @@ pub fn ocpp_stop_transaction_system(
                 meter_stop_wh,
                 reason,
                 state.active_id_tag.clone(),
+                is_fault,
             ))
         })
         .collect();
 
-    for (entity, charger_id, txn_id, meter_stop_wh, reason, id_tag) in to_stop {
+    for (entity, charger_id, txn_id, meter_stop_wh, reason, id_tag, is_fault) in to_stop {
         let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
-        let ts_iso = timestamp.to_rfc3339();
+        let ts_stop = timestamp.to_rfc3339();
+        let ts_finishing = (timestamp + chrono::Duration::seconds(1)).to_rfc3339();
+        let ts_available = (timestamp + chrono::Duration::seconds(2)).to_rfc3339();
 
         // Final meter reading
         let final_meter = MeterValue {
@@ -463,6 +442,7 @@ pub fn ocpp_stop_transaction_system(
             }],
         };
 
+        // 1. StopTransaction
         let stop_tx = StopTransactionRequest {
             id_tag,
             meter_stop: meter_stop_wh,
@@ -473,12 +453,43 @@ pub fn ocpp_stop_transaction_system(
         };
         queue.push_with_log(
             charger_id.clone(),
-            ts_iso,
+            ts_stop,
             "StopTransaction",
             serialize_call(&new_unique_id(), "StopTransaction", &stop_tx),
         );
 
-        // Clear transaction state
+        // 2. Finishing + Available (normal completion only).
+        // Fault-induced stops skip this — ocpp_status_system will emit
+        // the Faulted StatusNotification instead.
+        let final_status = if is_fault {
+            None
+        } else {
+            push_status_notif(
+                &mut queue,
+                &charger_id,
+                &ts_finishing,
+                timestamp + chrono::Duration::seconds(1),
+                ChargePointStatus::Finishing,
+                ChargePointErrorCode::NoError,
+                None,
+                None,
+                None,
+            );
+            push_status_notif(
+                &mut queue,
+                &charger_id,
+                &ts_available,
+                timestamp + chrono::Duration::seconds(2),
+                ChargePointStatus::Available,
+                ChargePointErrorCode::NoError,
+                None,
+                None,
+                None,
+            );
+            Some(ChargePointStatus::Available)
+        };
+
+        // Clear transaction state and update last_status
         if let Some(state) = queue.charger_state.get_mut(&entity) {
             info!(
                 "OCPP StopTransaction: charger={}, txn={}",
@@ -487,6 +498,9 @@ pub fn ocpp_stop_transaction_system(
             state.transaction_id = None;
             state.active_driver = None;
             state.active_id_tag = None;
+            if let Some(status) = final_status {
+                state.last_status = Some(status);
+            }
         }
     }
 }
@@ -764,5 +778,66 @@ pub fn ocpp_reset_system(
         let state = queue.get_or_create(event.charger_entity);
         state.boot_sent = false;
         state.last_status = None;
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  8. Day-end cleanup system
+// ─────────────────────────────────────────────────────
+
+/// Emit a final `StatusNotification` and `Heartbeat` for every charger when
+/// entering the `DayEnd` state. This closes any open fault or offline periods
+/// in the analytics so the kwwhat pipeline doesn't extend them indefinitely.
+pub fn ocpp_day_end_system(
+    chargers: Query<(Entity, &Charger)>,
+    mut queue: ResMut<OcppMessageQueue>,
+    game_clock: Res<GameClock>,
+) {
+    if !queue.is_active() {
+        return;
+    }
+
+    for (entity, charger) in chargers.iter() {
+        let state = queue.get_or_create(entity);
+        if !state.boot_sent {
+            continue;
+        }
+
+        let charger_id = state.charger_id.clone();
+        let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
+        let ts_iso = timestamp.to_rfc3339();
+
+        // Final StatusNotification with the charger's current state
+        let ocpp_status = charger_state_to_ocpp_status(charger.state());
+        let error_code = charger
+            .current_fault
+            .map(fault_to_ocpp_error)
+            .unwrap_or(ChargePointErrorCode::NoError);
+
+        push_status_notif(
+            &mut queue,
+            &charger_id,
+            &ts_iso,
+            timestamp,
+            ocpp_status,
+            error_code,
+            charger.current_fault.map(|f| f.display_name().to_string()),
+            charger.current_fault.map(|_| "KilowattTycoon".to_string()),
+            charger.current_fault.map(|f| format!("{f:?}")),
+        );
+
+        // Final Heartbeat so offline-gap detection sees activity at the boundary
+        let uid = new_unique_id();
+        let heartbeat = HeartbeatRequest {};
+        queue.push_with_log(
+            charger_id.clone(),
+            ts_iso.clone(),
+            "Heartbeat",
+            serialize_call(&uid, "Heartbeat", &heartbeat),
+        );
+        let hb_resp = HeartbeatResponse {
+            current_time: timestamp,
+        };
+        queue.push_with_log(charger_id, ts_iso, "", serialize_callresult(&uid, &hb_resp));
     }
 }

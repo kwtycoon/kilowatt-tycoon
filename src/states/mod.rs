@@ -518,6 +518,8 @@ fn on_enter_day_end(
         demand_charge: game_state.daily_history.current_day.demand_charge,
         opex: game_state.daily_history.current_day.opex,
         cable_theft_cost: game_state.daily_history.current_day.cable_theft_cost,
+        warranty_cost: game_state.daily_history.current_day.warranty_cost,
+        warranty_savings: game_state.daily_history.current_day.warranty_savings,
         refunds: game_state.daily_history.current_day.refunds,
         penalties: game_state.daily_history.current_day.penalties,
         sessions: game_state.daily_history.current_day.sessions,
@@ -536,6 +538,8 @@ fn on_enter_day_end(
     let demand_charge = daily_record.demand_charge;
     let opex = daily_record.opex;
     let cable_theft_cost = daily_record.cable_theft_cost;
+    let warranty_cost = daily_record.warranty_cost;
+    let warranty_savings = daily_record.warranty_savings;
     let refunds = daily_record.refunds;
     let penalties = daily_record.penalties;
     let net_profit = daily_record.net_profit();
@@ -631,7 +635,7 @@ fn on_enter_day_end(
 
     // Precompute values for both KPI views
     let total_energy = energy_cost + demand_charge;
-    let total_opex = opex + cable_theft_cost + refunds + penalties;
+    let total_opex = opex + cable_theft_cost + warranty_cost + refunds + penalties;
     let total_expenses = total_energy + total_opex;
 
     let profit_color = if net_profit >= 0.0 {
@@ -654,6 +658,8 @@ fn on_enter_day_end(
         charging_revenue,
         energy_cost,
         opex,
+        warranty_cost,
+        warranty_savings,
     );
     let pro_tip_text = generate_pro_tip(
         char_name,
@@ -663,6 +669,8 @@ fn on_enter_day_end(
         energy_cost,
         opex,
         reputation_delta,
+        warranty_cost,
+        warranty_savings,
     );
 
     // Compute per-kWh pricing for expanded view
@@ -1027,6 +1035,22 @@ fn on_enter_day_end(
                                                     Color::srgb(1.0, 0.4, 0.1),
                                                 );
                                             }
+                                            if warranty_cost > 0.01 {
+                                                spawn_indented_row(
+                                                    section,
+                                                    "  Warranty Premium",
+                                                    &format!("-${:.2}", warranty_cost),
+                                                    ops_color,
+                                                );
+                                            }
+                                            if warranty_savings > 0.01 {
+                                                spawn_indented_row(
+                                                    section,
+                                                    "  Warranty Savings",
+                                                    &format!("+${:.2}", warranty_savings),
+                                                    Color::srgb(0.4, 0.9, 0.4),
+                                                );
+                                            }
                                             if refunds > 0.01 {
                                                 spawn_indented_row(
                                                     section,
@@ -1052,7 +1076,7 @@ fn on_enter_day_end(
                                             );
                                             spawn_insight_row(
                                                 section,
-                                                operations_insight(opex, cable_theft_cost, dispatches_delta),
+                                                operations_insight(opex, cable_theft_cost, dispatches_delta, warranty_savings),
                                             );
 
                                             // ===== C. Reputation =====
@@ -1584,6 +1608,8 @@ fn day_title(
     charging_revenue: f32,
     energy_cost: f32,
     opex: f32,
+    warranty_cost: f32,
+    warranty_savings: f32,
 ) -> (&'static str, &'static str) {
     if day == 1 {
         return ("Day One", "Every empire starts somewhere.");
@@ -1592,6 +1618,12 @@ fn day_title(
         return ("Ghost Town", "Not a single EV in sight.");
     }
     if net_profit >= 0.0 && reputation_delta >= 0 {
+        if warranty_savings > warranty_cost * 5.0 && warranty_savings > 500.0 {
+            return (
+                "Insurance Payday",
+                "The warranty just earned its keep \u{2014} and then some.",
+            );
+        }
         return ("Smooth Operations", "A good day at the station.");
     }
     if net_profit >= 0.0 && reputation_delta < 0 {
@@ -1607,6 +1639,12 @@ fn day_title(
     if charging_revenue < energy_cost && energy_cost > 0.01 {
         return ("The Pricing Trap", "Selling electrons below cost.");
     }
+    if warranty_cost > 0.01 && warranty_savings < 0.01 && opex < 1.0 {
+        return (
+            "Quiet Shift",
+            "Nothing broke. The warranty company sends their thanks.",
+        );
+    }
     ("A Rough Start", "Room for improvement...")
 }
 
@@ -1621,13 +1659,21 @@ fn generate_pro_tip(
     energy_cost: f32,
     opex: f32,
     reputation_delta: i32,
+    warranty_cost: f32,
+    warranty_savings: f32,
 ) -> String {
     let tip = if sessions == 0 {
         "Zero sessions today. The tumbleweeds are charging for free though."
     } else if charging_revenue < energy_cost && energy_cost > 0.01 {
         "We're losing money on every electron we sell, but at least the technician bought a new boat with our repair fees!"
+    } else if warranty_savings > warranty_cost && warranty_savings > 0.01 {
+        "The extended warranty covered more than its premium today. Rare W for insurance."
+    } else if opex > charging_revenue && opex > 0.01 && warranty_cost < 0.01 {
+        "Our repair budget could fund a small space program. Ever heard of an extended warranty?"
     } else if opex > charging_revenue && opex > 0.01 {
         "Our repair budget could fund a small space program."
+    } else if warranty_cost > 0.01 && opex > warranty_savings && opex > 0.01 {
+        "Warranty covers parts, not labor. That technician's hourly rate is still brutal."
     } else if reputation_delta < -20 {
         "The local EV forum has created a dedicated thread about us. It's not flattering."
     } else if reputation_delta < -5 {
@@ -1774,8 +1820,15 @@ fn energy_margin_insight(charging_revenue: f32, energy_cost: f32) -> &'static st
 }
 
 /// Generate an operations insight string based on what broke.
-fn operations_insight(opex: f32, cable_theft_cost: f32, dispatches: i32) -> &'static str {
-    if cable_theft_cost > 0.01 && opex > 0.01 {
+fn operations_insight(
+    opex: f32,
+    cable_theft_cost: f32,
+    dispatches: i32,
+    warranty_savings: f32,
+) -> &'static str {
+    if warranty_savings > 500.0 {
+        "The warranty just paid for itself. Sometimes insurance actually works out."
+    } else if cable_theft_cost > 0.01 && opex > 0.01 {
         "Between the thieves and the breakdowns, it's been an eventful day."
     } else if cable_theft_cost > 0.01 {
         "Cable thieves struck again. Maybe invest in some security cameras?"
