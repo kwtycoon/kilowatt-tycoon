@@ -456,6 +456,8 @@ impl Plugin for SidebarPlugin {
                 update_summary_panel_values,
                 handle_upgrade_purchases,
                 update_upgrade_button_states,
+                // BESS mode label
+                update_bess_mode_label,
                 // Warranty labels
                 update_warranty_labels,
                 // Dynamic pricing

@@ -57,6 +57,9 @@ pub struct WarrantyPremiumLabel;
 pub struct WarrantyCoverageLabel;
 
 #[derive(Component)]
+pub struct BessModeLabel;
+
+#[derive(Component)]
 pub struct BessDischargeThresholdLabel;
 
 #[derive(Component)]
@@ -387,6 +390,15 @@ fn spawn_power_strategy_panel(parent: &mut ChildSpawnerCommands, image_assets: &
                 TextColor(colors::TEXT_SECONDARY),
             ));
 
+            // BESS operating mode
+            spawn_slider_control(panel, "BESS Mode:", "Peak Shaving", StrategyControl::BessMode, BessModeLabel, image_assets);
+
+            panel.spawn((
+                Text::new("Peak Shaving: prevent demand spikes and store solar. TOU Arbitrage: charge off-peak, discharge on-peak. Backup: reserve for outages. Manual: battery idle."),
+                TextFont { font_size: 10.0, ..default() },
+                TextColor(colors::TEXT_SECONDARY),
+            ));
+
             // Discharge threshold
             spawn_slider_control(panel, "Discharge @:", "65%", StrategyControl::BessDischargeThreshold, BessDischargeThresholdLabel, image_assets);
 
@@ -656,6 +668,20 @@ pub fn update_strategy_panel_values(
             .solar_export_policy
             .display_name()
             .to_string();
+    }
+}
+
+/// Update BESS mode label (separate system to avoid query filter explosion in
+/// `update_strategy_panel_values`).
+pub fn update_bess_mode_label(
+    multi_site: Res<crate::resources::MultiSiteManager>,
+    mut label: Query<&mut Text, With<BessModeLabel>>,
+) {
+    let Some(site_state) = multi_site.active_site() else {
+        return;
+    };
+    for mut text in &mut label {
+        **text = site_state.bess_state.mode.display_name().to_string();
     }
 }
 
@@ -940,6 +966,16 @@ pub fn handle_strategy_panel_buttons(
                 site_state.bess_state.charge_threshold =
                     (site_state.bess_state.charge_threshold + delta).clamp(0.20, 0.50);
             }
+            StrategyControl::BessMode => {
+                if !has_power_management {
+                    continue;
+                }
+                site_state.bess_state.mode = if is_minus.is_some() {
+                    site_state.bess_state.mode.prev()
+                } else {
+                    site_state.bess_state.mode.next()
+                };
+            }
             StrategyControl::SolarExportPolicy => {
                 if !has_power_management {
                     continue;
@@ -1144,6 +1180,15 @@ pub fn update_slider_fill_widths(
                     WarrantyTier::Standard => 33.0,
                     WarrantyTier::Comprehensive => 66.0,
                     WarrantyTier::Premium => 100.0,
+                }
+            }
+            StrategyControl::BessMode => {
+                use crate::resources::site_energy::BessMode;
+                match site_state.bess_state.mode {
+                    BessMode::PeakShaving => 0.0,
+                    BessMode::TouArbitrage => 33.0,
+                    BessMode::Backup => 66.0,
+                    BessMode::Manual => 100.0,
                 }
             }
         };
@@ -1401,6 +1446,18 @@ pub fn update_power_control_visual_state(
         (
             With<PowerDensityLabel>,
             Without<SliderLabelText>,
+            Without<BessModeLabel>,
+            Without<BessDischargeThresholdLabel>,
+            Without<BessChargeThresholdLabel>,
+            Without<SolarExportPolicyLabel>,
+        ),
+    >,
+    mut bess_mode_value: Query<
+        &mut TextColor,
+        (
+            With<BessModeLabel>,
+            Without<SliderLabelText>,
+            Without<PowerDensityLabel>,
             Without<BessDischargeThresholdLabel>,
             Without<BessChargeThresholdLabel>,
             Without<SolarExportPolicyLabel>,
@@ -1412,6 +1469,7 @@ pub fn update_power_control_visual_state(
             With<BessDischargeThresholdLabel>,
             Without<SliderLabelText>,
             Without<PowerDensityLabel>,
+            Without<BessModeLabel>,
             Without<BessChargeThresholdLabel>,
             Without<SolarExportPolicyLabel>,
         ),
@@ -1422,6 +1480,7 @@ pub fn update_power_control_visual_state(
             With<BessChargeThresholdLabel>,
             Without<SliderLabelText>,
             Without<PowerDensityLabel>,
+            Without<BessModeLabel>,
             Without<BessDischargeThresholdLabel>,
             Without<SolarExportPolicyLabel>,
         ),
@@ -1432,6 +1491,7 @@ pub fn update_power_control_visual_state(
             With<SolarExportPolicyLabel>,
             Without<SliderLabelText>,
             Without<PowerDensityLabel>,
+            Without<BessModeLabel>,
             Without<BessDischargeThresholdLabel>,
             Without<BessChargeThresholdLabel>,
         ),
@@ -1445,6 +1505,7 @@ pub fn update_power_control_visual_state(
         matches!(
             control,
             StrategyControl::PowerDensity
+                | StrategyControl::BessMode
                 | StrategyControl::BessDischargeThreshold
                 | StrategyControl::BessChargeThreshold
                 | StrategyControl::SolarExportPolicy
@@ -1503,6 +1564,9 @@ pub fn update_power_control_visual_state(
     };
 
     for mut text_color in &mut power_density_value {
+        *text_color = value_color;
+    }
+    for mut text_color in &mut bess_mode_value {
         *text_color = value_color;
     }
     for mut text_color in &mut discharge_threshold_value {

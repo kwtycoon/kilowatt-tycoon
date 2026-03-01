@@ -94,6 +94,7 @@ pub enum StrategyControl {
     SurgeMultiplier,
     SurgeThreshold,
     WarrantyTier,
+    BessMode,
 }
 
 /// Marker for minus buttons
