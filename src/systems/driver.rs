@@ -60,197 +60,125 @@ pub fn driver_spawn_system(
         return;
     }
 
-    // Process each site independently
-    for (site_id, site_state) in multi_site.owned_sites.iter_mut() {
-        // Get bays that have chargers - drivers only spawn if a charger bay is available
-        let charger_bays = site_state.grid.get_charger_bays();
-        if charger_bays.is_empty() {
-            continue; // No charger bays available at this site
-        }
+    let Some(viewed_id) = multi_site.viewed_site_id else {
+        return;
+    };
+    let Some(site_state) = multi_site.owned_sites.get_mut(&viewed_id) else {
+        return;
+    };
+    let site_id = &viewed_id;
 
-        // Count current drivers at this site - cap to site's max_vehicles limit
-        let current_driver_count = existing_drivers
-            .iter()
-            .filter(|(_, b, _)| b.site_id == *site_id)
-            .count();
+    let charger_bays = site_state.grid.get_charger_bays();
+    if charger_bays.is_empty() {
+        return;
+    }
 
-        if current_driver_count >= site_state.max_vehicles {
-            continue;
-        }
+    // Count current drivers at this site - cap to site's max_vehicles limit
+    let current_driver_count = existing_drivers
+        .iter()
+        .filter(|(_, b, _)| b.site_id == *site_id)
+        .count();
 
-        // Check if entry is occupied using BlockingMap
-        // This checks both the entry tile and adjacent tiles that vehicles path through
-        let entry_pos = site_state.grid.entry_pos;
-        let entry_uvec = UVec3::new(entry_pos.0 as u32, entry_pos.1 as u32, 0);
+    if current_driver_count >= site_state.max_vehicles {
+        return;
+    }
 
-        // Check entry tile and the tile immediately inside the lot (y-1 since entry is at top)
-        let entry_blocked = blocking_map.0.contains_key(&entry_uvec)
-            || (entry_pos.1 > 0
-                && blocking_map.0.contains_key(&UVec3::new(
-                    entry_pos.0 as u32,
-                    (entry_pos.1 - 1) as u32,
-                    0,
-                )));
+    // Check if entry is occupied using BlockingMap
+    // This checks both the entry tile and adjacent tiles that vehicles path through
+    let entry_pos = site_state.grid.entry_pos;
+    let entry_uvec = UVec3::new(entry_pos.0 as u32, entry_pos.1 as u32, 0);
 
-        if entry_blocked {
-            continue; // Skip spawning this frame, will retry when entry clears
-        }
+    // Check entry tile and the tile immediately inside the lot (y-1 since entry is at top)
+    let entry_blocked = blocking_map.0.contains_key(&entry_uvec)
+        || (entry_pos.1 > 0
+            && blocking_map.0.contains_key(&UVec3::new(
+                entry_pos.0 as u32,
+                (entry_pos.1 - 1) as u32,
+                0,
+            )));
 
-        // Compute occupied bays (bays with drivers already assigned)
-        let mut occupied_bays: Vec<(i32, i32)> = existing_drivers
-            .iter()
-            .filter(|(_, b, _)| b.site_id == *site_id)
-            .filter(|(d, _, _)| {
-                !matches!(
-                    d.state,
-                    DriverState::Leaving | DriverState::LeftAngry | DriverState::Complete
-                )
-            })
-            .filter_map(|(d, _, _)| d.assigned_bay)
-            .collect();
+    if entry_blocked {
+        return;
+    }
 
-        // IMPORTANT: limit spawning to at most 1 vehicle per site per frame.
-        //
-        // Bevy queries won't "see" entities spawned earlier in this same system run,
-        // so without this guard multiple vehicles can be spawned onto the entry tile
-        // in a single frame (scheduled while-loop + procedural), causing immediate
-        // gridlock and reroute failures.
-        let mut spawned_vehicle_this_frame = false;
+    // Compute occupied bays (bays with drivers already assigned)
+    let mut occupied_bays: Vec<(i32, i32)> = existing_drivers
+        .iter()
+        .filter(|(_, b, _)| b.site_id == *site_id)
+        .filter(|(d, _, _)| {
+            !matches!(
+                d.state,
+                DriverState::Leaving | DriverState::LeftAngry | DriverState::Complete
+            )
+        })
+        .filter_map(|(d, _, _)| d.assigned_bay)
+        .collect();
 
-        // Process scheduled drivers
-        while site_state.driver_schedule.next_driver_index
-            < site_state.driver_schedule.drivers.len()
-        {
-            let driver_data =
-                &site_state.driver_schedule.drivers[site_state.driver_schedule.next_driver_index];
+    // IMPORTANT: limit spawning to at most 1 vehicle per site per frame.
+    //
+    // Bevy queries won't "see" entities spawned earlier in this same system run,
+    // so without this guard multiple vehicles can be spawned onto the entry tile
+    // in a single frame (scheduled while-loop + procedural), causing immediate
+    // gridlock and reroute failures.
+    let mut spawned_vehicle_this_frame = false;
 
-            if game_clock.game_time >= driver_data.arrival_time {
-                // Filter bays to those compatible with this vehicle type
-                let compatible_bays: Vec<_> = charger_bays
-                    .iter()
-                    .filter(|(_, _, pad_type)| {
-                        driver_data
-                            .vehicle
-                            .is_compatible_with(pad_type.to_charger_type())
-                    })
-                    .collect();
+    // Process scheduled drivers
+    while site_state.driver_schedule.next_driver_index < site_state.driver_schedule.drivers.len() {
+        let driver_data =
+            &site_state.driver_schedule.drivers[site_state.driver_schedule.next_driver_index];
 
-                // No compatible chargers - skip this driver
-                if compatible_bays.is_empty() {
-                    info!(
-                        "No compatible chargers for {} ({:?}) - skipping",
-                        driver_data.id, driver_data.vehicle
-                    );
-                    site_state.driver_schedule.next_driver_index += 1;
-                    continue;
-                }
+        if game_clock.game_time >= driver_data.arrival_time {
+            // Filter bays to those compatible with this vehicle type
+            let compatible_bays: Vec<_> = charger_bays
+                .iter()
+                .filter(|(_, _, pad_type)| {
+                    driver_data
+                        .vehicle
+                        .is_compatible_with(pad_type.to_charger_type())
+                })
+                .collect();
 
-                // Check for available (unoccupied) bays
-                let available_compatible: Vec<_> = compatible_bays
-                    .iter()
-                    .filter(|(x, y, _)| !occupied_bays.contains(&(*x, *y)))
-                    .collect();
+            // No compatible chargers - skip this driver
+            if compatible_bays.is_empty() {
+                info!(
+                    "No compatible chargers for {} ({:?}) - skipping",
+                    driver_data.id, driver_data.vehicle
+                );
+                site_state.driver_schedule.next_driver_index += 1;
+                continue;
+            }
 
-                // Get site root entity
-                let Some(root_entity) = site_state.root_entity else {
-                    warn!("Site {:?} has no root entity, cannot spawn driver", site_id);
-                    continue;
-                };
+            // Check for available (unoccupied) bays
+            let available_compatible: Vec<_> = compatible_bays
+                .iter()
+                .filter(|(x, y, _)| !occupied_bays.contains(&(*x, *y)))
+                .collect();
 
-                let entry_pos = site_state.grid.entry_pos;
-                let exit_pos = site_state.grid.exit_pos;
-                let world_pos = SiteGrid::grid_to_world(entry_pos.0, entry_pos.1);
-                let pos = Vec3::new(world_pos.x, world_pos.y, 1.0);
+            // Get site root entity
+            let Some(root_entity) = site_state.root_entity else {
+                warn!("Site {:?} has no root entity, cannot spawn driver", site_id);
+                continue;
+            };
 
-                // No free bays - spawn as drive-through
-                if available_compatible.is_empty() {
-                    // 20% chance to leave angry, otherwise neutral
-                    let is_angry = rand::random::<f32>() < 0.2;
-                    let (state, mood) = if is_angry {
-                        (DriverState::LeftAngry, DriverMood::Angry)
-                    } else {
-                        (DriverState::Leaving, DriverMood::Neutral)
-                    };
+            let entry_pos = site_state.grid.entry_pos;
+            let exit_pos = site_state.grid.exit_pos;
+            let world_pos = SiteGrid::grid_to_world(entry_pos.0, entry_pos.1);
+            let pos = Vec3::new(world_pos.x, world_pos.y, 1.0);
 
-                    let speed = 100.0 + (driver_data.id.len() as f32 * 5.0);
-                    let movement = VehicleMovement {
-                        speed,
-                        phase: MovementPhase::DepartingHappy, // Use departing phase
-                        waypoints: vec![world_pos],
-                        ..default()
-                    };
-
-                    let footprint = VehicleFootprint {
-                        length_tiles: driver_data.vehicle.footprint_length_tiles(),
-                    };
-
-                    let evcc_id = driver_data
-                        .evcc_id
-                        .clone()
-                        .unwrap_or_else(|| generate_evcc_mac(&mut rand::rng()));
-
-                    let driver = Driver {
-                        id: driver_data.id.clone(),
-                        evcc_id,
-                        vehicle_name: driver_data.vehicle_name.clone(),
-                        vehicle_type: driver_data.vehicle,
-                        patience_level: driver_data.patience,
-                        patience: driver_data.patience.initial_patience(),
-                        charge_needed_kwh: driver_data.charge_needed_kwh,
-                        target_charger_id: driver_data.target_charger.clone(),
-                        assigned_charger: None,
-                        assigned_bay: None, // No bay - driving through
-                        state,
-                        mood,
-                        ..default()
-                    };
-
-                    let driver_id = driver.id.clone();
-                    let agent_pos = AgentPos(UVec3::new(entry_pos.0 as u32, entry_pos.1 as u32, 0));
-                    let pathfind = Pathfind::new_2d(exit_pos.0 as u32, exit_pos.1 as u32);
-
-                    commands.entity(root_entity).with_children(|parent| {
-                        parent.spawn((
-                            driver,
-                            movement,
-                            footprint,
-                            agent_pos,
-                            pathfind,
-                            // No Blocking: drive-throughs navigate via the static grid only,
-                            // like ambient vehicles. This prevents them from getting stuck in
-                            // collision-avoidance deadlocks at the entrance when the lot is full.
-                            Transform::from_translation(pos),
-                            GlobalTransform::default(),
-                            Visibility::default(),
-                            crate::components::BelongsToSite::new(*site_id),
-                        ));
-                    });
-
-                    info!(
-                        "Driver {} couldn't find a bay, driving through ({})",
-                        driver_id,
-                        if is_angry { "angry" } else { "neutral" }
-                    );
-
-                    site_state.driver_schedule.next_driver_index += 1;
-                    spawned_vehicle_this_frame = true;
-                    break;
-                }
-
-                // Normal spawn with available bay
-                let selected_bay = available_compatible
-                    .choose(&mut rand::rng())
-                    .copied()
-                    .copied();
-
-                let Some(&(bay_x, bay_y, _charger_type)) = selected_bay else {
-                    break;
+            // No free bays - spawn as drive-through
+            if available_compatible.is_empty() {
+                // 20% chance to leave angry, otherwise neutral
+                let is_angry = rand::random::<f32>() < 0.2;
+                let (state, mood) = if is_angry {
+                    (DriverState::LeftAngry, DriverMood::Angry)
+                } else {
+                    (DriverState::Leaving, DriverMood::Neutral)
                 };
 
                 let speed = 100.0 + (driver_data.id.len() as f32 * 5.0);
                 let movement = VehicleMovement {
                     speed,
-                    phase: MovementPhase::Arriving,
+                    phase: MovementPhase::DepartingHappy, // Use departing phase
                     waypoints: vec![world_pos],
                     ..default()
                 };
@@ -274,230 +202,231 @@ pub fn driver_spawn_system(
                     charge_needed_kwh: driver_data.charge_needed_kwh,
                     target_charger_id: driver_data.target_charger.clone(),
                     assigned_charger: None,
-                    assigned_bay: Some((bay_x, bay_y)),
-                    state: DriverState::Arriving,
+                    assigned_bay: None, // No bay - driving through
+                    state,
+                    mood,
                     ..default()
                 };
 
                 let driver_id = driver.id.clone();
-
-                // bevy_northstar components for pathfinding
                 let agent_pos = AgentPos(UVec3::new(entry_pos.0 as u32, entry_pos.1 as u32, 0));
-                let pathfind = Pathfind::new_2d(bay_x as u32, bay_y as u32);
+                let pathfind = Pathfind::new_2d(exit_pos.0 as u32, exit_pos.1 as u32);
 
-                let mut entity = Entity::PLACEHOLDER;
                 commands.entity(root_entity).with_children(|parent| {
-                    entity = parent
-                        .spawn((
-                            driver,
-                            movement,
-                            footprint,
-                            agent_pos,
-                            pathfind,
-                            Blocking, // Enable collision avoidance from spawn
-                            Transform::from_translation(pos),
-                            GlobalTransform::default(),
-                            Visibility::default(),
-                            crate::components::BelongsToSite::new(*site_id),
-                        ))
-                        .id();
+                    parent.spawn((
+                        driver,
+                        movement,
+                        footprint,
+                        agent_pos,
+                        pathfind,
+                        // No Blocking: drive-throughs navigate via the static grid only,
+                        // like ambient vehicles. This prevents them from getting stuck in
+                        // collision-avoidance deadlocks at the entrance when the lot is full.
+                        Transform::from_translation(pos),
+                        GlobalTransform::default(),
+                        Visibility::default(),
+                        crate::components::BelongsToSite::new(*site_id),
+                    ));
                 });
 
                 info!(
-                    "Driver {} arrived at site {:?}, pathfinding to bay ({}, {})",
-                    driver_id, site_id, bay_x, bay_y
+                    "Driver {} couldn't find a bay, driving through ({})",
+                    driver_id,
+                    if is_angry { "angry" } else { "neutral" }
                 );
 
-                arrived_events.write(DriverArrivedEvent {
-                    driver_entity: entity,
-                    driver_id,
-                    target_charger_id: None,
-                });
-
-                occupied_bays.push((bay_x, bay_y));
                 site_state.driver_schedule.next_driver_index += 1;
                 spawned_vehicle_this_frame = true;
-                break; // Only spawn one vehicle per site per frame
-            } else {
                 break;
             }
+
+            // Normal spawn with available bay
+            let selected_bay = available_compatible
+                .choose(&mut rand::rng())
+                .copied()
+                .copied();
+
+            let Some(&(bay_x, bay_y, _charger_type)) = selected_bay else {
+                break;
+            };
+
+            let speed = 100.0 + (driver_data.id.len() as f32 * 5.0);
+            let movement = VehicleMovement {
+                speed,
+                phase: MovementPhase::Arriving,
+                waypoints: vec![world_pos],
+                ..default()
+            };
+
+            let footprint = VehicleFootprint {
+                length_tiles: driver_data.vehicle.footprint_length_tiles(),
+            };
+
+            let evcc_id = driver_data
+                .evcc_id
+                .clone()
+                .unwrap_or_else(|| generate_evcc_mac(&mut rand::rng()));
+
+            let driver = Driver {
+                id: driver_data.id.clone(),
+                evcc_id,
+                vehicle_name: driver_data.vehicle_name.clone(),
+                vehicle_type: driver_data.vehicle,
+                patience_level: driver_data.patience,
+                patience: driver_data.patience.initial_patience(),
+                charge_needed_kwh: driver_data.charge_needed_kwh,
+                target_charger_id: driver_data.target_charger.clone(),
+                assigned_charger: None,
+                assigned_bay: Some((bay_x, bay_y)),
+                state: DriverState::Arriving,
+                ..default()
+            };
+
+            let driver_id = driver.id.clone();
+
+            // bevy_northstar components for pathfinding
+            let agent_pos = AgentPos(UVec3::new(entry_pos.0 as u32, entry_pos.1 as u32, 0));
+            let pathfind = Pathfind::new_2d(bay_x as u32, bay_y as u32);
+
+            let mut entity = Entity::PLACEHOLDER;
+            commands.entity(root_entity).with_children(|parent| {
+                entity = parent
+                    .spawn((
+                        driver,
+                        movement,
+                        footprint,
+                        agent_pos,
+                        pathfind,
+                        Blocking, // Enable collision avoidance from spawn
+                        Transform::from_translation(pos),
+                        GlobalTransform::default(),
+                        Visibility::default(),
+                        crate::components::BelongsToSite::new(*site_id),
+                    ))
+                    .id();
+            });
+
+            info!(
+                "Driver {} arrived at site {:?}, pathfinding to bay ({}, {})",
+                driver_id, site_id, bay_x, bay_y
+            );
+
+            arrived_events.write(DriverArrivedEvent {
+                driver_entity: entity,
+                driver_id,
+                target_charger_id: None,
+            });
+
+            occupied_bays.push((bay_x, bay_y));
+            site_state.driver_schedule.next_driver_index += 1;
+            spawned_vehicle_this_frame = true;
+            break; // Only spawn one vehicle per site per frame
+        } else {
+            break;
         }
+    }
 
-        // === PROCEDURAL DRIVER GENERATION ===
-        if site_state.driver_schedule.next_driver_index >= site_state.driver_schedule.drivers.len()
-            && site_state.demand_state.enabled
-        {
-            let delta_game_seconds = time.delta_secs() * game_clock.speed.multiplier();
-            site_state.demand_state.tick(delta_game_seconds);
+    // === PROCEDURAL DRIVER GENERATION ===
+    if site_state.driver_schedule.next_driver_index >= site_state.driver_schedule.drivers.len()
+        && site_state.demand_state.enabled
+    {
+        let delta_game_seconds = time.delta_secs() * game_clock.speed.multiplier();
+        site_state.demand_state.tick(delta_game_seconds);
 
-            // If we already spawned a scheduled driver this frame, don't also spawn
-            // a procedural driver onto the same entry tile.
-            if !spawned_vehicle_this_frame && site_state.demand_state.should_spawn() {
-                let hour = game_clock.hour();
-                let effective_price = site_state.service_strategy.pricing.effective_price(
-                    game_clock.game_time,
-                    &site_state.site_energy_config,
-                    site_state.charger_utilization,
-                );
-                let base_demand = site_state.demand_state.calculate_effective_demand(
-                    game_state.reputation,
-                    environment.current_weather.demand_multiplier(),
-                    environment.news_demand_multiplier,
-                    site_state.site_upgrades.demand_multiplier(),
-                    hour,
-                    crate::resources::demand::price_elasticity_factor(effective_price),
-                );
+        // If we already spawned a scheduled driver this frame, don't also spawn
+        // a procedural driver onto the same entry tile.
+        if !spawned_vehicle_this_frame && site_state.demand_state.should_spawn() {
+            let hour = game_clock.hour();
+            let effective_price = site_state.service_strategy.pricing.effective_price(
+                game_clock.game_time,
+                &site_state.site_energy_config,
+                site_state.charger_utilization,
+            );
+            let base_demand = site_state.demand_state.calculate_effective_demand(
+                game_state.reputation,
+                environment.current_weather.demand_multiplier(),
+                environment.news_demand_multiplier,
+                site_state.site_upgrades.demand_multiplier(),
+                hour,
+                crate::resources::demand::price_elasticity_factor(effective_price),
+            );
 
-                // Apply average charger reliability as a demand multiplier.
-                // Drivers prefer sites with reliable chargers - word gets around.
-                // Calculate average session_attraction across all site chargers.
-                let mut total_attraction = 0.0f32;
-                let mut charger_count = 0u32;
-                for (_, charger, charger_belongs) in &chargers {
-                    if charger_belongs.site_id == *site_id && !charger.is_disabled {
-                        total_attraction += charger.session_attraction();
-                        charger_count += 1;
-                    }
+            // Apply average charger reliability as a demand multiplier.
+            // Drivers prefer sites with reliable chargers - word gets around.
+            // Calculate average session_attraction across all site chargers.
+            let mut total_attraction = 0.0f32;
+            let mut charger_count = 0u32;
+            for (_, charger, charger_belongs) in &chargers {
+                if charger_belongs.site_id == *site_id && !charger.is_disabled {
+                    total_attraction += charger.session_attraction();
+                    charger_count += 1;
                 }
-                let reliability_multiplier = if charger_count > 0 {
-                    total_attraction / charger_count as f32
+            }
+            let reliability_multiplier = if charger_count > 0 {
+                total_attraction / charger_count as f32
+            } else {
+                1.0
+            };
+
+            // Apply character perk multiplier if CustomerMagnet is active
+            let customer_perk_multiplier = match profile.active_perk() {
+                Some(crate::resources::CharacterPerk::CustomerMagnet { demand_multiplier }) => {
+                    demand_multiplier
+                }
+                _ => 1.0,
+            };
+            let effective_demand = base_demand * reliability_multiplier * customer_perk_multiplier;
+
+            let next_interval = site_state
+                .demand_state
+                .calculate_spawn_interval(effective_demand);
+            site_state.demand_state.reset_timer(next_interval);
+
+            let mut rng = rand::rng();
+            let id_counter = site_state.demand_state.next_id();
+            let driver_data = generate_procedural_driver(&mut rng, id_counter);
+
+            let compatible_bays: Vec<_> = charger_bays
+                .iter()
+                .filter(|(_, _, pad_type)| {
+                    driver_data
+                        .vehicle
+                        .is_compatible_with(pad_type.to_charger_type())
+                })
+                .collect();
+
+            if compatible_bays.is_empty() {
+                return;
+            }
+
+            let available_compatible: Vec<_> = compatible_bays
+                .iter()
+                .filter(|(x, y, _)| !occupied_bays.contains(&(*x, *y)))
+                .collect();
+
+            let Some(root_entity) = site_state.root_entity else {
+                return;
+            };
+
+            let entry_pos = site_state.grid.entry_pos;
+            let exit_pos = site_state.grid.exit_pos;
+            let world_pos = SiteGrid::grid_to_world(entry_pos.0, entry_pos.1);
+            let pos = Vec3::new(world_pos.x, world_pos.y, 1.0);
+
+            // No free bays - spawn as drive-through
+            if available_compatible.is_empty() {
+                // 20% chance to leave angry, otherwise neutral
+                let is_angry = rand::random::<f32>() < 0.2;
+                let (state, mood) = if is_angry {
+                    (DriverState::LeftAngry, DriverMood::Angry)
                 } else {
-                    1.0
-                };
-
-                // Apply character perk multiplier if CustomerMagnet is active
-                let customer_perk_multiplier = match profile.active_perk() {
-                    Some(crate::resources::CharacterPerk::CustomerMagnet { demand_multiplier }) => {
-                        demand_multiplier
-                    }
-                    _ => 1.0,
-                };
-                let effective_demand =
-                    base_demand * reliability_multiplier * customer_perk_multiplier;
-
-                let next_interval = site_state
-                    .demand_state
-                    .calculate_spawn_interval(effective_demand);
-                site_state.demand_state.reset_timer(next_interval);
-
-                let mut rng = rand::rng();
-                let id_counter = site_state.demand_state.next_id();
-                let driver_data = generate_procedural_driver(&mut rng, id_counter);
-
-                let compatible_bays: Vec<_> = charger_bays
-                    .iter()
-                    .filter(|(_, _, pad_type)| {
-                        driver_data
-                            .vehicle
-                            .is_compatible_with(pad_type.to_charger_type())
-                    })
-                    .collect();
-
-                if compatible_bays.is_empty() {
-                    continue;
-                }
-
-                let available_compatible: Vec<_> = compatible_bays
-                    .iter()
-                    .filter(|(x, y, _)| !occupied_bays.contains(&(*x, *y)))
-                    .collect();
-
-                let Some(root_entity) = site_state.root_entity else {
-                    continue;
-                };
-
-                let entry_pos = site_state.grid.entry_pos;
-                let exit_pos = site_state.grid.exit_pos;
-                let world_pos = SiteGrid::grid_to_world(entry_pos.0, entry_pos.1);
-                let pos = Vec3::new(world_pos.x, world_pos.y, 1.0);
-
-                // No free bays - spawn as drive-through
-                if available_compatible.is_empty() {
-                    // 20% chance to leave angry, otherwise neutral
-                    let is_angry = rand::random::<f32>() < 0.2;
-                    let (state, mood) = if is_angry {
-                        (DriverState::LeftAngry, DriverMood::Angry)
-                    } else {
-                        (DriverState::Leaving, DriverMood::Neutral)
-                    };
-
-                    let speed = 100.0 + (driver_data.id.len() as f32 * 5.0);
-                    let movement = VehicleMovement {
-                        speed,
-                        phase: MovementPhase::DepartingHappy,
-                        waypoints: vec![world_pos],
-                        ..default()
-                    };
-
-                    let footprint = VehicleFootprint {
-                        length_tiles: driver_data.vehicle.footprint_length_tiles(),
-                    };
-
-                    let evcc_id = driver_data
-                        .evcc_id
-                        .clone()
-                        .unwrap_or_else(|| generate_evcc_mac(&mut rand::rng()));
-
-                    let driver = Driver {
-                        id: driver_data.id.clone(),
-                        evcc_id,
-                        vehicle_name: driver_data.vehicle_name.clone(),
-                        vehicle_type: driver_data.vehicle,
-                        patience_level: driver_data.patience,
-                        patience: driver_data.patience.initial_patience(),
-                        charge_needed_kwh: driver_data.charge_needed_kwh,
-                        target_charger_id: driver_data.target_charger.clone(),
-                        assigned_charger: None,
-                        assigned_bay: None,
-                        state,
-                        mood,
-                        ..default()
-                    };
-
-                    let driver_id = driver.id.clone();
-                    let agent_pos = AgentPos(UVec3::new(entry_pos.0 as u32, entry_pos.1 as u32, 0));
-                    let pathfind = Pathfind::new_2d(exit_pos.0 as u32, exit_pos.1 as u32);
-
-                    commands.entity(root_entity).with_children(|parent| {
-                        parent.spawn((
-                            driver,
-                            movement,
-                            footprint,
-                            agent_pos,
-                            pathfind,
-                            // No Blocking: drive-throughs navigate via the static grid only,
-                            // like ambient vehicles. This prevents them from getting stuck in
-                            // collision-avoidance deadlocks at the entrance when the lot is full.
-                            Transform::from_translation(pos),
-                            GlobalTransform::default(),
-                            Visibility::default(),
-                            crate::components::BelongsToSite::new(*site_id),
-                        ));
-                    });
-
-                    info!(
-                        "Procedural driver {} couldn't find a bay, driving through ({})",
-                        driver_id,
-                        if is_angry { "angry" } else { "neutral" }
-                    );
-
-                    continue;
-                }
-
-                // Normal spawn with available bay
-                let selected_bay = available_compatible
-                    .choose(&mut rand::rng())
-                    .copied()
-                    .copied();
-
-                let Some(&(bay_x, bay_y, _charger_type)) = selected_bay else {
-                    continue;
+                    (DriverState::Leaving, DriverMood::Neutral)
                 };
 
                 let speed = 100.0 + (driver_data.id.len() as f32 * 5.0);
                 let movement = VehicleMovement {
                     speed,
-                    phase: MovementPhase::Arriving,
+                    phase: MovementPhase::DepartingHappy,
                     waypoints: vec![world_pos],
                     ..default()
                 };
@@ -521,46 +450,118 @@ pub fn driver_spawn_system(
                     charge_needed_kwh: driver_data.charge_needed_kwh,
                     target_charger_id: driver_data.target_charger.clone(),
                     assigned_charger: None,
-                    assigned_bay: Some((bay_x, bay_y)),
-                    state: DriverState::Arriving,
+                    assigned_bay: None,
+                    state,
+                    mood,
                     ..default()
                 };
 
                 let driver_id = driver.id.clone();
                 let agent_pos = AgentPos(UVec3::new(entry_pos.0 as u32, entry_pos.1 as u32, 0));
-                let pathfind = Pathfind::new_2d(bay_x as u32, bay_y as u32);
+                let pathfind = Pathfind::new_2d(exit_pos.0 as u32, exit_pos.1 as u32);
 
-                let mut entity = Entity::PLACEHOLDER;
                 commands.entity(root_entity).with_children(|parent| {
-                    entity = parent
-                        .spawn((
-                            driver,
-                            movement,
-                            footprint,
-                            agent_pos,
-                            pathfind,
-                            Blocking, // Enable collision avoidance from spawn
-                            Transform::from_translation(pos),
-                            GlobalTransform::default(),
-                            Visibility::default(),
-                            crate::components::BelongsToSite::new(*site_id),
-                        ))
-                        .id();
+                    parent.spawn((
+                        driver,
+                        movement,
+                        footprint,
+                        agent_pos,
+                        pathfind,
+                        // No Blocking: drive-throughs navigate via the static grid only,
+                        // like ambient vehicles. This prevents them from getting stuck in
+                        // collision-avoidance deadlocks at the entrance when the lot is full.
+                        Transform::from_translation(pos),
+                        GlobalTransform::default(),
+                        Visibility::default(),
+                        crate::components::BelongsToSite::new(*site_id),
+                    ));
                 });
 
                 info!(
-                    "Procedural driver {} arrived (demand: {:.2}x), pathfinding to bay ({}, {})",
-                    driver_id, effective_demand, bay_x, bay_y
+                    "Procedural driver {} couldn't find a bay, driving through ({})",
+                    driver_id,
+                    if is_angry { "angry" } else { "neutral" }
                 );
 
-                arrived_events.write(DriverArrivedEvent {
-                    driver_entity: entity,
-                    driver_id,
-                    target_charger_id: None,
-                });
-
-                occupied_bays.push((bay_x, bay_y));
+                return;
             }
+
+            // Normal spawn with available bay
+            let selected_bay = available_compatible
+                .choose(&mut rand::rng())
+                .copied()
+                .copied();
+
+            let Some(&(bay_x, bay_y, _charger_type)) = selected_bay else {
+                return;
+            };
+
+            let speed = 100.0 + (driver_data.id.len() as f32 * 5.0);
+            let movement = VehicleMovement {
+                speed,
+                phase: MovementPhase::Arriving,
+                waypoints: vec![world_pos],
+                ..default()
+            };
+
+            let footprint = VehicleFootprint {
+                length_tiles: driver_data.vehicle.footprint_length_tiles(),
+            };
+
+            let evcc_id = driver_data
+                .evcc_id
+                .clone()
+                .unwrap_or_else(|| generate_evcc_mac(&mut rand::rng()));
+
+            let driver = Driver {
+                id: driver_data.id.clone(),
+                evcc_id,
+                vehicle_name: driver_data.vehicle_name.clone(),
+                vehicle_type: driver_data.vehicle,
+                patience_level: driver_data.patience,
+                patience: driver_data.patience.initial_patience(),
+                charge_needed_kwh: driver_data.charge_needed_kwh,
+                target_charger_id: driver_data.target_charger.clone(),
+                assigned_charger: None,
+                assigned_bay: Some((bay_x, bay_y)),
+                state: DriverState::Arriving,
+                ..default()
+            };
+
+            let driver_id = driver.id.clone();
+            let agent_pos = AgentPos(UVec3::new(entry_pos.0 as u32, entry_pos.1 as u32, 0));
+            let pathfind = Pathfind::new_2d(bay_x as u32, bay_y as u32);
+
+            let mut entity = Entity::PLACEHOLDER;
+            commands.entity(root_entity).with_children(|parent| {
+                entity = parent
+                    .spawn((
+                        driver,
+                        movement,
+                        footprint,
+                        agent_pos,
+                        pathfind,
+                        Blocking, // Enable collision avoidance from spawn
+                        Transform::from_translation(pos),
+                        GlobalTransform::default(),
+                        Visibility::default(),
+                        crate::components::BelongsToSite::new(*site_id),
+                    ))
+                    .id();
+            });
+
+            info!(
+                "Procedural driver {} arrived (demand: {:.2}x), pathfinding to bay ({}, {})",
+                driver_id, effective_demand, bay_x, bay_y
+            );
+
+            arrived_events.write(DriverArrivedEvent {
+                driver_entity: entity,
+                driver_id,
+                target_charger_id: None,
+            });
+
+            occupied_bays.push((bay_x, bay_y));
         }
     }
 }
@@ -737,72 +738,75 @@ pub fn queue_assignment_system(
         return;
     }
 
-    // Process each site independently
-    for (site_id, site_state) in multi_site.owned_sites.iter_mut() {
-        // Find available chargers at this site and assign queued drivers
-        for (charger_entity, mut charger, charger_belongs) in &mut chargers {
-            if charger_belongs.site_id != *site_id {
-                continue;
-            }
+    let Some(viewed_id) = multi_site.viewed_site_id else {
+        return;
+    };
+    let Some(site_state) = multi_site.owned_sites.get_mut(&viewed_id) else {
+        return;
+    };
+    let site_id = &viewed_id;
+    for (charger_entity, mut charger, charger_belongs) in &mut chargers {
+        if charger_belongs.site_id != *site_id {
+            continue;
+        }
 
-            if charger.state() != ChargerState::Available || charger.is_disabled {
-                continue;
-            }
+        if charger.state() != ChargerState::Available || charger.is_disabled {
+            continue;
+        }
 
-            // Skip if technician is active on this charger
-            if is_technician_active_on_charger(&tech_state, charger_entity) {
-                continue;
-            }
+        // Skip if technician is active on this charger
+        if is_technician_active_on_charger(&tech_state, charger_entity) {
+            continue;
+        }
 
-            // Find the first compatible driver in either queue
-            // Check the queue matching this charger type first for efficiency
-            let charger_type = charger.charger_type;
-            let queue_driver = match charger_type {
-                ChargerType::DcFast => site_state.charger_queue.peek_dcfc().and_then(|e| {
-                    // Verify the driver is compatible with this charger type
-                    if let Ok((_, driver, _)) = drivers.get(e) {
-                        if driver.vehicle_type.is_compatible_with(charger_type) {
-                            Some(e)
-                        } else {
-                            None
-                        }
+        // Find the first compatible driver in either queue
+        // Check the queue matching this charger type first for efficiency
+        let charger_type = charger.charger_type;
+        let queue_driver = match charger_type {
+            ChargerType::DcFast => site_state.charger_queue.peek_dcfc().and_then(|e| {
+                // Verify the driver is compatible with this charger type
+                if let Ok((_, driver, _)) = drivers.get(e) {
+                    if driver.vehicle_type.is_compatible_with(charger_type) {
+                        Some(e)
                     } else {
                         None
                     }
-                }),
-                ChargerType::AcLevel2 => site_state.charger_queue.peek_l2().and_then(|e| {
-                    if let Ok((_, driver, _)) = drivers.get(e) {
-                        if driver.vehicle_type.is_compatible_with(charger_type) {
-                            Some(e)
-                        } else {
-                            None
-                        }
+                } else {
+                    None
+                }
+            }),
+            ChargerType::AcLevel2 => site_state.charger_queue.peek_l2().and_then(|e| {
+                if let Ok((_, driver, _)) = drivers.get(e) {
+                    if driver.vehicle_type.is_compatible_with(charger_type) {
+                        Some(e)
                     } else {
                         None
                     }
-                }),
-            };
+                } else {
+                    None
+                }
+            }),
+        };
 
-            if let Some(driver_entity) = queue_driver
-                && let Ok((_, mut driver, _)) = drivers.get_mut(driver_entity)
-                && driver.state == DriverState::Queued
-            {
-                // Assign driver to this charger
-                driver.assigned_charger = Some(charger_entity);
-                driver.state = DriverState::Charging;
-                charger.is_charging = true;
-                charger.session_start_game_time = Some(game_clock.game_time);
-                // Set requested power so dispatch can allocate on next frame
-                charger.requested_power_kw = charger.get_derated_power();
+        if let Some(driver_entity) = queue_driver
+            && let Ok((_, mut driver, _)) = drivers.get_mut(driver_entity)
+            && driver.state == DriverState::Queued
+        {
+            // Assign driver to this charger
+            driver.assigned_charger = Some(charger_entity);
+            driver.state = DriverState::Charging;
+            charger.is_charging = true;
+            charger.session_start_game_time = Some(game_clock.game_time);
+            // Set requested power so dispatch can allocate on next frame
+            charger.requested_power_kw = charger.get_derated_power();
 
-                // Remove from ALL queues (driver may be in multiple queues)
-                site_state.charger_queue.leave_all_queues(driver_entity);
+            // Remove from ALL queues (driver may be in multiple queues)
+            site_state.charger_queue.leave_all_queues(driver_entity);
 
-                info!(
-                    "Assigned queued driver {} to charger {}",
-                    driver.id, charger.id
-                );
-            }
+            info!(
+                "Assigned queued driver {} to charger {}",
+                driver.id, charger.id
+            );
         }
     }
 }

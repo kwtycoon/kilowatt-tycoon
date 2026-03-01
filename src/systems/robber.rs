@@ -114,125 +114,126 @@ pub fn cable_theft_system(
 
     let mut rng = rand::rng();
 
-    for site_state in multi_site.owned_sites.values() {
-        let site_id = site_state.id;
+    let Some(viewed_id) = multi_site.viewed_site_id else {
+        return;
+    };
+    let Some(site_state) = multi_site.owned_sites.get(&viewed_id) else {
+        return;
+    };
+    let site_id = site_state.id;
 
-        // Only one active robber globally at a time
-        if existing_robbers.iter().next().is_some() {
-            continue;
-        }
-
-        // Scale by challenge level: level 1 = 0.25x, level 3 = 1.0x, level 5 = 1.5x
-        let challenge_mult = match site_state.challenge_level {
-            0..=1 => 0.25,
-            2 => 0.6,
-            3 => 1.0,
-            4 => 1.25,
-            _ => 1.5,
-        };
-
-        let mut site_chance = base_chance * challenge_mult;
-
-        // Each security system multiplies spawn chance by 0.25 (diminishing returns)
-        let cam_count = site_state.grid.security_system_count();
-        if cam_count > 0 {
-            site_chance *= 0.25_f32.powi(cam_count as i32);
-        }
-
-        // If ALL chargers at this site have anti-theft cables, further deter (0.5x)
-        let site_chargers: Vec<&Charger> = chargers
-            .iter()
-            .filter(|(_, _, _, b)| b.site_id == site_id)
-            .map(|(_, c, _, _)| c)
-            .collect();
-        if !site_chargers.is_empty() && site_chargers.iter().all(|c| c.anti_theft_cable) {
-            site_chance *= 0.5;
-        }
-
-        // Day 1 guarantee: force a robber unless there's a security system
-        let force_spawn =
-            game_clock.day == 1 && !robbery_tracker.robbery_triggered_today && cam_count == 0;
-
-        if !force_spawn && rng.random::<f32>() >= site_chance {
-            continue;
-        }
-
-        // Find eligible chargers at this site (not faulted, not disabled, not actively charging)
-        let eligible: Vec<(Entity, &Charger, Vec3)> = chargers
-            .iter()
-            .filter(|(_, c, _, belongs)| {
-                belongs.site_id == site_id
-                    && c.current_fault.is_none()
-                    && !c.is_disabled
-                    && !c.is_charging
-            })
-            .map(|(e, c, gt, _)| (e, c, gt.translation()))
-            .collect();
-
-        if eligible.is_empty() {
-            continue;
-        }
-
-        // Pick a random charger
-        let idx = rng.random_range(0..eligible.len());
-        let (target_entity, target_charger, charger_world_pos) = eligible[idx];
-        let charger_target = charger_world_pos.truncate();
-
-        // Pick random variant, name
-        let variant = if rng.random::<bool>() {
-            RobberVariant::Black
-        } else {
-            RobberVariant::Pink
-        };
-        let name = ROBBER_NAMES[rng.random_range(0..ROBBER_NAMES.len())];
-
-        // Walking sprite for this variant
-        let walking_image = match variant {
-            RobberVariant::Black => image_assets.character_robber_walking.clone(),
-            RobberVariant::Pink => image_assets.character_robber_walking_pink.clone(),
-        };
-
-        let robber_size = crate::resources::sprite_metadata::robber_world_size();
-        let scale = if let Some(image) = images.get(&walking_image) {
-            robber_size.scale_for_image(image)
-        } else {
-            0.35
-        };
-
-        let steal_duration = rng.random_range(STEAL_DURATION_MIN..=STEAL_DURATION_MAX);
-
-        // Random spawn position on a map edge
-        let spawn_pos =
-            random_edge_position(&mut rng, site_state.grid.width, site_state.grid.height);
-
-        // Spawn robber (NOT as child of site root — free-floating in world space)
-        let charger_id = target_charger.id.clone();
-        commands.spawn((
-            Robber {
-                target_charger: target_entity,
-                phase: RobberPhase::WalkingToCharger,
-                steal_timer: steal_duration,
-                move_target: charger_target,
-                name,
-                variant,
-                anim_timer: 0.0,
-                base_y: spawn_pos.y,
-            },
-            Sprite::from_image(walking_image),
-            Transform::from_xyz(spawn_pos.x, spawn_pos.y, 15.0).with_scale(Vec3::splat(scale)),
-            GlobalTransform::default(),
-            BelongsToSite { site_id },
-        ));
-
-        robbery_tracker.robbery_triggered_today = true;
-
-        info!(
-            "\"{}\" ({:?}) spawned at ({:.0},{:.0}), targeting charger {} at ({:.0},{:.0})",
-            name, variant, spawn_pos.x, spawn_pos.y, charger_id, charger_target.x, charger_target.y,
-        );
-
-        break;
+    // Only one active robber globally at a time
+    if existing_robbers.iter().next().is_some() {
+        return;
     }
+
+    // Scale by challenge level: level 1 = 0.25x, level 3 = 1.0x, level 5 = 1.5x
+    let challenge_mult = match site_state.challenge_level {
+        0..=1 => 0.25,
+        2 => 0.6,
+        3 => 1.0,
+        4 => 1.25,
+        _ => 1.5,
+    };
+
+    let mut site_chance = base_chance * challenge_mult;
+
+    // Each security system multiplies spawn chance by 0.25 (diminishing returns)
+    let cam_count = site_state.grid.security_system_count();
+    if cam_count > 0 {
+        site_chance *= 0.25_f32.powi(cam_count as i32);
+    }
+
+    // If ALL chargers at this site have anti-theft cables, further deter (0.5x)
+    let site_chargers: Vec<&Charger> = chargers
+        .iter()
+        .filter(|(_, _, _, b)| b.site_id == site_id)
+        .map(|(_, c, _, _)| c)
+        .collect();
+    if !site_chargers.is_empty() && site_chargers.iter().all(|c| c.anti_theft_cable) {
+        site_chance *= 0.5;
+    }
+
+    // Day 1 guarantee: force a robber unless there's a security system
+    let force_spawn =
+        game_clock.day == 1 && !robbery_tracker.robbery_triggered_today && cam_count == 0;
+
+    if !force_spawn && rng.random::<f32>() >= site_chance {
+        return;
+    }
+
+    // Find eligible chargers at this site (not faulted, not disabled, not actively charging)
+    let eligible: Vec<(Entity, &Charger, Vec3)> = chargers
+        .iter()
+        .filter(|(_, c, _, belongs)| {
+            belongs.site_id == site_id
+                && c.current_fault.is_none()
+                && !c.is_disabled
+                && !c.is_charging
+        })
+        .map(|(e, c, gt, _)| (e, c, gt.translation()))
+        .collect();
+
+    if eligible.is_empty() {
+        return;
+    }
+
+    // Pick a random charger
+    let idx = rng.random_range(0..eligible.len());
+    let (target_entity, target_charger, charger_world_pos) = eligible[idx];
+    let charger_target = charger_world_pos.truncate();
+
+    // Pick random variant, name
+    let variant = if rng.random::<bool>() {
+        RobberVariant::Black
+    } else {
+        RobberVariant::Pink
+    };
+    let name = ROBBER_NAMES[rng.random_range(0..ROBBER_NAMES.len())];
+
+    // Walking sprite for this variant
+    let walking_image = match variant {
+        RobberVariant::Black => image_assets.character_robber_walking.clone(),
+        RobberVariant::Pink => image_assets.character_robber_walking_pink.clone(),
+    };
+
+    let robber_size = crate::resources::sprite_metadata::robber_world_size();
+    let scale = if let Some(image) = images.get(&walking_image) {
+        robber_size.scale_for_image(image)
+    } else {
+        0.35
+    };
+
+    let steal_duration = rng.random_range(STEAL_DURATION_MIN..=STEAL_DURATION_MAX);
+
+    // Random spawn position on a map edge
+    let spawn_pos = random_edge_position(&mut rng, site_state.grid.width, site_state.grid.height);
+
+    // Spawn robber (NOT as child of site root — free-floating in world space)
+    let charger_id = target_charger.id.clone();
+    commands.spawn((
+        Robber {
+            target_charger: target_entity,
+            phase: RobberPhase::WalkingToCharger,
+            steal_timer: steal_duration,
+            move_target: charger_target,
+            name,
+            variant,
+            anim_timer: 0.0,
+            base_y: spawn_pos.y,
+        },
+        Sprite::from_image(walking_image),
+        Transform::from_xyz(spawn_pos.x, spawn_pos.y, 15.0).with_scale(Vec3::splat(scale)),
+        GlobalTransform::default(),
+        BelongsToSite { site_id },
+    ));
+
+    robbery_tracker.robbery_triggered_today = true;
+
+    info!(
+        "\"{}\" ({:?}) spawned at ({:.0},{:.0}), targeting charger {} at ({:.0},{:.0})",
+        name, variant, spawn_pos.x, spawn_pos.y, charger_id, charger_target.x, charger_target.y,
+    );
 }
 
 // ─────────────────────────────────────────────────────

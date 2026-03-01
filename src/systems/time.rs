@@ -179,8 +179,7 @@ pub fn day_ending_system(
         }
     }
 
-    // Clear charger queues so the queue assignment system doesn't re-assign kicked drivers
-    for site in multi_site.owned_sites.values_mut() {
+    if let Some(site) = multi_site.active_site_mut() {
         site.charger_queue.clear();
     }
 

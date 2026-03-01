@@ -54,15 +54,17 @@ pub fn spawn_site_tabs(parent: &mut ChildSpawnerCommands) {
 pub fn update_site_tabs(
     multi_site: Res<MultiSiteManager>,
     game_state: Res<crate::resources::GameState>,
+    build_state: Res<crate::resources::BuildState>,
     mut commands: Commands,
     tabs_container: Query<Entity, With<SiteTabsContainer>>,
     _existing_tabs: Query<Entity, With<SiteTab>>,
     children_query: Query<&Children>,
 ) {
-    // Only update when multi_site or game_state changes
-    if !multi_site.is_changed() && !game_state.is_changed() {
+    if !multi_site.is_changed() && !game_state.is_changed() && !build_state.is_changed() {
         return;
     }
+
+    let day_running = build_state.is_open;
 
     for container_entity in &tabs_container {
         // Clear existing tabs
@@ -103,7 +105,20 @@ pub fn update_site_tabs(
                         ..default()
                     })
                     .with_children(|tab_row| {
-                        // Site tab button
+                        let locked = day_running && !is_active;
+                        let bg = if is_active {
+                            archetype_color
+                        } else if locked {
+                            Color::srgba(0.15, 0.15, 0.15, 0.5)
+                        } else {
+                            Color::srgb(0.2, 0.2, 0.2)
+                        };
+                        let text_color = if locked {
+                            Color::srgba(1.0, 1.0, 1.0, 0.35)
+                        } else {
+                            Color::WHITE
+                        };
+
                         tab_row
                             .spawn((
                                 Button,
@@ -114,22 +129,17 @@ pub fn update_site_tabs(
                                     align_items: AlignItems::Center,
                                     ..default()
                                 },
-                                BackgroundColor(if is_active {
-                                    archetype_color
-                                } else {
-                                    Color::srgb(0.2, 0.2, 0.2)
-                                }),
+                                BackgroundColor(bg),
                                 BorderRadius::all(Val::Px(6.0)),
                             ))
                             .with_children(|tab| {
-                                // Site name
                                 tab.spawn((
                                     Text::new(&site_state.name),
                                     TextFont {
                                         font_size: 13.0,
                                         ..default()
                                     },
-                                    TextColor(Color::WHITE),
+                                    TextColor(text_color),
                                 ));
 
                                 // Revenue indicator (small) - only show for current day's site
@@ -200,11 +210,15 @@ fn get_archetype_color(archetype: SiteArchetype) -> Color {
     }
 }
 
-/// Handle site tab clicks
+/// Handle site tab clicks (disabled while the day is running)
 pub fn handle_site_tab_clicks(
+    build_state: Res<crate::resources::BuildState>,
     interaction_query: Query<(&Interaction, &SiteTab), (Changed<Interaction>, With<Button>)>,
     mut switch_events: MessageWriter<crate::events::SiteSwitchEvent>,
 ) {
+    if build_state.is_open {
+        return;
+    }
     for (interaction, tab) in &interaction_query {
         if *interaction == Interaction::Pressed {
             info!("Switching to site {:?}", tab.site_id);

@@ -7,11 +7,16 @@ use crate::events::{SiteSoldEvent, SiteSwitchEvent};
 use crate::resources::{GRID_OFFSET_X, GRID_OFFSET_Y, MultiSiteManager, TILE_SIZE};
 use crate::systems::WorldCamera;
 
-/// System to handle site switching events
+/// System to handle site switching events (disabled while the day is running)
 pub fn handle_site_switch(
+    build_state: Res<crate::resources::BuildState>,
     mut switch_events: MessageReader<SiteSwitchEvent>,
     mut multi_site: ResMut<MultiSiteManager>,
 ) {
+    if build_state.is_open {
+        switch_events.read().for_each(drop);
+        return;
+    }
     for event in switch_events.read() {
         info!("Switching to site {:?}", event.target_site_id);
 

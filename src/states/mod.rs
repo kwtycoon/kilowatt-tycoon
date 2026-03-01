@@ -457,25 +457,23 @@ fn on_enter_day_end(
 ) {
     info!("Day {} complete!", game_clock.day);
 
-    // Calculate carbon credits from energy delivered to EVs across all sites
+    // Calculate carbon credits from energy delivered at the active site
     let rate_per_kwh = carbon_market.rate_per_kwh();
-    let mut total_carbon_credits = 0.0;
-    for site_state in multi_site.owned_sites.values_mut() {
+    let total_carbon_credits = if let Some(site_state) = multi_site.active_site_mut() {
         let carbon_credit_revenue = site_state.energy_delivered_kwh_today * rate_per_kwh;
-        total_carbon_credits += carbon_credit_revenue;
 
-        // Achievement tracking: check for zero-grid-import day (HamsterWheelTech)
-        // Site must have delivered energy but imported nothing from the grid
         if site_state.energy_delivered_kwh_today > 0.0
             && site_state.utility_meter.total_imported_kwh() == 0.0
         {
             game_state.zero_grid_day_achieved = true;
         }
 
-        // Reset daily counters
         site_state.energy_delivered_kwh_today = 0.0;
         site_state.sessions_today = 0;
-    }
+        carbon_credit_revenue
+    } else {
+        0.0
+    };
 
     // Flush all accumulated per-site costs to the ledger before verification
     game_state.flush_site_costs(&mut multi_site.owned_sites);
@@ -2032,18 +2030,11 @@ fn on_exit_day_end(
         charger.energy_delivered_kwh_today = 0.0;
     }
 
-    // Reset per-site resources for all sites
-    for site in multi_site.owned_sites.values_mut() {
-        // Clear charger queue
+    // Reset per-site resources for the active site
+    if let Some(site) = multi_site.active_site_mut() {
         site.charger_queue.clear();
-
-        // Reset utility meter for new day
         site.utility_meter.reset();
-
-        // Reset spot market daily tracking (24h high/low, events)
         site.spot_market.reset_daily();
-
-        // Reset driver schedule for new day
         site.driver_schedule.next_driver_index = 0;
         site.driver_schedule.next_event_index = 0;
     }

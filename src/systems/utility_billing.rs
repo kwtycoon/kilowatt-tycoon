@@ -46,11 +46,13 @@ pub fn spot_market_system(
 
     let mut rng = rand::rng();
 
-    for (_site_id, site_state) in multi_site.owned_sites.iter_mut() {
-        if site_state.challenge_level < SPOT_MARKET_MIN_CHALLENGE_LEVEL {
-            continue;
-        }
-
+    let Some(viewed_id) = multi_site.viewed_site_id else {
+        return;
+    };
+    let Some(site_state) = multi_site.owned_sites.get_mut(&viewed_id) else {
+        return;
+    };
+    if site_state.challenge_level >= SPOT_MARKET_MIN_CHALLENGE_LEVEL {
         site_state.spot_market.tick(
             day_fraction,
             weather_multiplier,
@@ -80,85 +82,90 @@ pub fn utility_billing_system(
         return;
     }
 
-    // Process each site independently
-    for (_site_id, site_state) in multi_site.owned_sites.iter_mut() {
-        let grid_kw = site_state.grid_import.current_kw;
+    let Some(viewed_id) = multi_site.viewed_site_id else {
+        return;
+    };
+    let Some(site_state) = multi_site.owned_sites.get_mut(&viewed_id) else {
+        return;
+    };
+    let _site_id = &viewed_id;
 
-        // Update current grid import on meter
-        site_state.utility_meter.current_grid_import_kw = grid_kw;
+    let grid_kw = site_state.grid_import.current_kw;
 
-        // Add demand sample for rolling average
-        site_state.utility_meter.add_sample(
-            game_clock.game_time,
-            grid_kw,
-            site_state.site_energy_config.demand_window_seconds,
-        );
+    // Update current grid import on meter
+    site_state.utility_meter.current_grid_import_kw = grid_kw;
 
-        // Calculate energy imported this tick
-        let energy_kwh = grid_kw * (delta_game_seconds / 3600.0);
+    // Add demand sample for rolling average
+    site_state.utility_meter.add_sample(
+        game_clock.game_time,
+        grid_kw,
+        site_state.site_energy_config.demand_window_seconds,
+    );
 
-        if energy_kwh > 0.0 {
-            // Determine TOU period and rate
-            let tou_period = site_state
-                .site_energy_config
-                .current_tou_period(game_clock.game_time);
-            let rate = site_state
-                .site_energy_config
-                .current_rate(game_clock.game_time);
+    // Calculate energy imported this tick
+    let energy_kwh = grid_kw * (delta_game_seconds / 3600.0);
 
-            // Accumulate on meter (dollar total flushed to ledger at day-end)
+    if energy_kwh > 0.0 {
+        // Determine TOU period and rate
+        let tou_period = site_state
+            .site_energy_config
+            .current_tou_period(game_clock.game_time);
+        let rate = site_state
+            .site_energy_config
+            .current_rate(game_clock.game_time);
+
+        // Accumulate on meter (dollar total flushed to ledger at day-end)
+        site_state
+            .utility_meter
+            .add_energy(energy_kwh, tou_period, rate);
+    }
+
+    // Solar export: accumulate on meter (flushed to ledger at day-end)
+    let export_kw = site_state.grid_import.export_kw;
+    if export_kw > 0.0 {
+        let export_kwh = export_kw * (delta_game_seconds / 3600.0);
+        let export_rate = if site_state.challenge_level >= SPOT_MARKET_MIN_CHALLENGE_LEVEL {
+            site_state.spot_market.current_price_per_kwh
+        } else {
             site_state
-                .utility_meter
-                .add_energy(energy_kwh, tou_period, rate);
-        }
-
-        // Solar export: accumulate on meter (flushed to ledger at day-end)
-        let export_kw = site_state.grid_import.export_kw;
-        if export_kw > 0.0 {
-            let export_kwh = export_kw * (delta_game_seconds / 3600.0);
-            let export_rate = if site_state.challenge_level >= SPOT_MARKET_MIN_CHALLENGE_LEVEL {
-                site_state.spot_market.current_price_per_kwh
-            } else {
-                site_state
-                    .site_energy_config
-                    .current_export_rate(game_clock.game_time)
-            };
-
-            site_state.utility_meter.add_export(export_kwh, export_rate);
-        }
-
-        // Update demand charge based on current peak
-        let demand_perk_multiplier = match profile.active_perk() {
-            Some(CharacterPerk::UtilityInsider {
-                demand_charge_multiplier,
-            }) => demand_charge_multiplier,
-            _ => 1.0,
+                .site_energy_config
+                .current_export_rate(game_clock.game_time)
         };
-        site_state.utility_meter.update_demand_charge(
-            site_state.site_energy_config.demand_rate_per_kw,
-            demand_perk_multiplier,
+
+        site_state.utility_meter.add_export(export_kwh, export_rate);
+    }
+
+    // Update demand charge based on current peak
+    let demand_perk_multiplier = match profile.active_perk() {
+        Some(CharacterPerk::UtilityInsider {
+            demand_charge_multiplier,
+        }) => demand_charge_multiplier,
+        _ => 1.0,
+    };
+    site_state.utility_meter.update_demand_charge(
+        site_state.site_energy_config.demand_rate_per_kw,
+        demand_perk_multiplier,
+    );
+
+    // Accumulate opex on site (flushed to ledger at day-end)
+    let hourly_opex = site_state.service_strategy.hourly_maintenance_cost()
+        + site_state.service_strategy.amenity_cost_per_hour();
+    let opex_this_tick = hourly_opex * (delta_game_seconds / 3600.0);
+    if opex_this_tick > 0.0 {
+        site_state.pending_opex += opex_this_tick;
+    }
+
+    // Accumulate warranty on site (flushed to ledger at day-end)
+    let warranty_hourly = site_state
+        .service_strategy
+        .hourly_warranty_cost_for_chargers(
+            chargers
+                .iter()
+                .filter(|(_, b)| b.site_id == *_site_id)
+                .map(|(c, _)| (c.charger_type, c.rated_power_kw)),
         );
-
-        // Accumulate opex on site (flushed to ledger at day-end)
-        let hourly_opex = site_state.service_strategy.hourly_maintenance_cost()
-            + site_state.service_strategy.amenity_cost_per_hour();
-        let opex_this_tick = hourly_opex * (delta_game_seconds / 3600.0);
-        if opex_this_tick > 0.0 {
-            site_state.pending_opex += opex_this_tick;
-        }
-
-        // Accumulate warranty on site (flushed to ledger at day-end)
-        let warranty_hourly = site_state
-            .service_strategy
-            .hourly_warranty_cost_for_chargers(
-                chargers
-                    .iter()
-                    .filter(|(_, b)| b.site_id == *_site_id)
-                    .map(|(c, _)| (c.charger_type, c.rated_power_kw)),
-            );
-        let warranty_this_tick = warranty_hourly * (delta_game_seconds / 3600.0);
-        if warranty_this_tick > 0.0 {
-            site_state.pending_warranty += warranty_this_tick;
-        }
+    let warranty_this_tick = warranty_hourly * (delta_game_seconds / 3600.0);
+    if warranty_this_tick > 0.0 {
+        site_state.pending_warranty += warranty_this_tick;
     }
 }
