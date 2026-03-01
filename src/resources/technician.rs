@@ -2,6 +2,24 @@
 
 use bevy::prelude::*;
 
+/// Randomly assigned at game start to select which sprite set to use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TechnicianGender {
+    Male,
+    Female,
+}
+
+impl TechnicianGender {
+    /// 50/50 coin flip.
+    pub fn random() -> Self {
+        if rand::random::<bool>() {
+            Self::Female
+        } else {
+            Self::Male
+        }
+    }
+}
+
 /// Technician hourly rate for OpEx calculations
 pub const TECHNICIAN_HOURLY_RATE: f32 = 150.0; // $/hour
 
@@ -37,6 +55,8 @@ pub enum TechStatus {
 pub struct TechnicianState {
     /// Current status
     pub status: TechStatus,
+    /// Randomly chosen at game start; selects the sprite set.
+    pub gender: TechnicianGender,
     /// Target charger being repaired (if any)
     pub target_charger: Option<Entity>,
     /// Current site location (None = not at any site yet)
@@ -59,6 +79,7 @@ impl Default for TechnicianState {
     fn default() -> Self {
         Self {
             status: TechStatus::Idle,
+            gender: TechnicianGender::random(),
             target_charger: None,
             current_site_id: None,
             destination_site_id: None,

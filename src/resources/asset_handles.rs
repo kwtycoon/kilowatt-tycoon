@@ -107,9 +107,12 @@ pub struct ImageAssets {
     pub icon_mood_impatient: Handle<Image>,
     pub icon_mood_angry: Handle<Image>,
 
-    // Characters - Technician
+    // Characters - Technician (male)
     pub character_technician_idle: Handle<Image>,
     pub character_technician_working: Handle<Image>,
+    // Characters - Technician (female)
+    pub character_technician_female_idle: Handle<Image>,
+    pub character_technician_female_working: Handle<Image>,
 
     // Characters - Main (player-selectable)
     pub character_main_ant: Handle<Image>,
@@ -338,10 +341,15 @@ pub fn load_image_assets(mut commands: Commands, asset_server: Res<AssetServer>)
         icon_mood_impatient: asset_server.load("ui/icons/icon_mood_impatient.png"),
         icon_mood_angry: asset_server.load("ui/icons/icon_mood_angry.png"),
 
-        // Characters - Technician
+        // Characters - Technician (male)
         character_technician_idle: asset_server.load("characters/character_technician_idle.png"),
         character_technician_working: asset_server
             .load("characters/character_technician_working.png"),
+        // Characters - Technician (female)
+        character_technician_female_idle: asset_server
+            .load("characters/character_technician_female_idle.png"),
+        character_technician_female_working: asset_server
+            .load("characters/character_technician_female_working.png"),
 
         // Characters - Main (player-selectable)
         character_main_ant: asset_server.load("characters/Main/Ant.png"),
@@ -435,4 +443,24 @@ pub fn load_image_assets(mut commands: Commands, asset_server: Res<AssetServer>)
     };
 
     commands.insert_resource(assets);
+}
+
+impl ImageAssets {
+    pub fn technician_idle(&self, gender: crate::resources::TechnicianGender) -> Handle<Image> {
+        match gender {
+            crate::resources::TechnicianGender::Male => self.character_technician_idle.clone(),
+            crate::resources::TechnicianGender::Female => {
+                self.character_technician_female_idle.clone()
+            }
+        }
+    }
+
+    pub fn technician_working(&self, gender: crate::resources::TechnicianGender) -> Handle<Image> {
+        match gender {
+            crate::resources::TechnicianGender::Male => self.character_technician_working.clone(),
+            crate::resources::TechnicianGender::Female => {
+                self.character_technician_female_working.clone()
+            }
+        }
+    }
 }

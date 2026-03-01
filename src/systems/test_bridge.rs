@@ -60,17 +60,18 @@ fn push_to_window(json: &str) {
 
 /// Convert a UI node's `UiGlobalTransform` + `ComputedNode` into a CSS-pixel rect.
 ///
-/// `UiGlobalTransform.translation` is the node center in logical (CSS) pixels.
-/// `ComputedNode::size()` is in physical pixels; divide by scale factor to get logical.
+/// Both `UiGlobalTransform.translation` and `ComputedNode::size()` are in physical
+/// pixels. Multiply by `inverse_scale_factor` (1/DPR) to get CSS-pixel coordinates
+/// that Playwright can target with `page.mouse.move`.
 fn to_rect(ugt: &UiGlobalTransform, cn: &ComputedNode) -> ElementRect {
-    let center = ugt.translation;
-    let phys_size = cn.size();
     let isf = cn.inverse_scale_factor();
-    let w = phys_size.x * isf;
-    let h = phys_size.y * isf;
+    let cx = ugt.translation.x * isf;
+    let cy = ugt.translation.y * isf;
+    let w = cn.size().x * isf;
+    let h = cn.size().y * isf;
     ElementRect {
-        x: center.x - w / 2.0,
-        y: center.y - h / 2.0,
+        x: cx - w / 2.0,
+        y: cy - h / 2.0,
         width: w,
         height: h,
     }

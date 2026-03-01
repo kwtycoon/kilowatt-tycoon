@@ -2256,6 +2256,16 @@
         "id": 10,
         "name": "StolenCable",
         "filename": "stolen_cable.png"
+      },
+      {
+        "id": 11,
+        "name": "TechnicianFemaleIdle",
+        "filename": "character_technician_female_idle.png"
+      },
+      {
+        "id": 12,
+        "name": "TechnicianFemaleWorking",
+        "filename": "character_technician_female_working.png"
       }
     ]
   },

@@ -1288,8 +1288,9 @@ pub fn spawn_technician_sprite(
     >,
     image_assets: Res<ImageAssets>,
     images: Res<Assets<Image>>,
+    tech_state: Res<crate::resources::TechnicianState>,
 ) {
-    let tech_image = image_assets.character_technician_idle.clone();
+    let tech_image = image_assets.technician_idle(tech_state.gender);
     let tech_size = sprite_metadata::technician_world_size();
     let tech_scale = if let Some(image) = images.get(&tech_image) {
         tech_size.scale_for_image(image)
@@ -1298,12 +1299,9 @@ pub fn spawn_technician_sprite(
     };
 
     for (tech_entity, _technician, _transform, belongs) in technicians.iter() {
-        // Spawn sprite as child of technician entity - always use idle sprite
         commands.entity(tech_entity).with_children(|parent| {
             parent.spawn((
                 Sprite::from_image(tech_image.clone()),
-                // Z = 4.0 to render above vehicles (Z = 2.0) and driver mood icons (Z = 3.0)
-                // Scale for better visibility
                 Transform::from_xyz(0.0, 0.0, 4.0).with_scale(Vec3::splat(tech_scale)),
                 TechnicianSprite {
                     technician_entity: tech_entity,
@@ -1322,16 +1320,16 @@ pub fn update_technician_sprite(
     >,
     mut sprites: Query<(&TechnicianSprite, &mut Sprite)>,
     image_assets: Res<ImageAssets>,
+    tech_state: Res<crate::resources::TechnicianState>,
 ) {
     for (tech_entity, technician) in technicians.iter() {
-        // Find sprite that belongs to this technician and update image based on phase
         for (tech_sprite, mut sprite) in sprites.iter_mut() {
             if tech_sprite.technician_entity == tech_entity {
                 let new_image = match technician.phase {
                     crate::components::technician::TechnicianPhase::Working => {
-                        image_assets.character_technician_working.clone()
+                        image_assets.technician_working(tech_state.gender)
                     }
-                    _ => image_assets.character_technician_idle.clone(),
+                    _ => image_assets.technician_idle(tech_state.gender),
                 };
                 sprite.image = new_image;
             }
