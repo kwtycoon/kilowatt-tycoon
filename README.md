@@ -80,4 +80,4 @@ Anyone and everyone is welcome to contribute! Please review the [CONTRIBUTING.md
 
 ## License
 
-MIT
+GNU General Public License version 3 (GPL-3.0-only)
