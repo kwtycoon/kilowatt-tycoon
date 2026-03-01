@@ -33,6 +33,16 @@ export default defineConfig({
   },
 
   projects: [
+    // --- Desktop (fast iteration, no device emulation) ---
+    {
+      name: "desktop-chromium",
+      use: {
+        browserName: "chromium",
+        viewport: { width: 1440, height: 900 },
+        deviceScaleFactor: 1,
+      },
+    },
+
     // --- Phones (landscape) ---
     {
       name: "iphone-14-landscape",

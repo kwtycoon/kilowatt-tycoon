@@ -64,6 +64,7 @@ impl Plugin for UiPlugin {
         app.init_resource::<ActivePanel>()
             .init_resource::<PowerPanelState>()
             .init_resource::<RentCarouselState>()
+            .init_resource::<rent_panel::RentPanelDirty>()
             .init_resource::<TutorialFaultInjected>()
             .init_resource::<GifAnimationFrames>()
             .init_resource::<LeaderboardModalState>()

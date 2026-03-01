@@ -52,41 +52,45 @@ pub fn spawn_rent_panel(parent: &mut ChildSpawnerCommands) {
     });
 }
 
-/// Update the rent panel content when data changes or panel becomes visible.
+/// Track whether the rent panel content is stale and needs a rebuild
+/// the next time the panel becomes visible.
+#[derive(Resource, Default)]
+pub struct RentPanelDirty(pub bool);
+
+/// Update the rent panel content when data changes and the panel is visible.
 ///
-/// Also triggers on `NavigationState` changes so that children are rebuilt
-/// after the panel switches from `Display::None` to `Display::Flex`.
-/// Bevy's taffy layout may report zero-size for nodes first laid out
-/// under an invisible parent; rebuilding when visible fixes that.
+/// Children are only spawned while the panel has `Display::Flex`.
+/// Bevy's taffy layout reports zero-size for nodes first created under a
+/// `Display::None` parent and never recomputes them, so we defer content
+/// creation until the panel is actually visible. When data changes while
+/// hidden, we set a dirty flag and rebuild on the next frame the panel
+/// is shown.
 pub fn update_rent_panel(
     multi_site: Res<MultiSiteManager>,
     carousel: Res<RentCarouselState>,
     game_state: Res<GameState>,
-    nav_state: Res<super::NavigationState>,
     image_assets: Res<ImageAssets>,
     panel_query: Query<Entity, With<RentPanel>>,
     children_query: Query<&Children>,
+    mut dirty: ResMut<RentPanelDirty>,
     mut commands: Commands,
 ) {
-    let nav_switched_to_rent =
-        nav_state.is_changed() && nav_state.primary == super::PrimaryNav::Rent;
-    if !nav_switched_to_rent
-        && !multi_site.is_changed()
-        && !carousel.is_changed()
-        && !game_state.is_changed()
-    {
-        return;
+    if multi_site.is_changed() || carousel.is_changed() || game_state.is_changed() {
+        dirty.0 = true;
     }
 
+    if !dirty.0 {
+        return;
+    }
+    dirty.0 = false;
+
     for entity in &panel_query {
-        // Despawn all children
         if let Ok(children) = children_query.get(entity) {
             for child in children.iter() {
                 commands.entity(child).try_despawn();
             }
         }
 
-        // Recreate content
         commands.entity(entity).with_children(|panel| {
             render_rent_panel_content(panel, &multi_site, &carousel, &game_state, &image_assets);
         });

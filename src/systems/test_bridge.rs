@@ -21,7 +21,7 @@ use crate::resources::{
 use crate::states::{AppState, DayEndScrollBody, KpiToggleButton};
 use crate::systems::WorldCamera;
 use crate::ui::hud::SpeedButton;
-use crate::ui::sidebar::rent_panel::{CarouselButton, RentSiteButton};
+use crate::ui::sidebar::rent_panel::{CarouselButton, RentCarouselState, RentSiteButton};
 use crate::ui::sidebar::{BuildToolButton, PrimaryNav, StartDayButton};
 use crate::ui::site_tabs::SiteTab;
 use crate::ui::top_nav::PrimaryNavButton;
@@ -46,6 +46,7 @@ struct BridgeSnapshot {
     day_end_scroll_y: Option<f32>,
     num_owned_sites: usize,
     viewed_site_id: Option<u32>,
+    carousel_index: usize,
     elements: HashMap<String, ElementRect>,
 }
 
@@ -66,19 +67,20 @@ fn push_to_window(json: &str) {
 
 /// Convert a UI node's `UiGlobalTransform` + `ComputedNode` into a CSS-pixel rect.
 ///
-/// `UiGlobalTransform.translation` is in physical pixels (scaled by the window DPR).
-/// `ComputedNode::size()` is in physical pixels scaled by DPR * UiScale.
+/// Both `UiGlobalTransform.translation` and `ComputedNode::size()` are in
+/// physical pixels. Playwright operates in CSS pixels, so we divide both by
+/// the window DPR (`camera.target_scaling_factor()`).
 ///
-/// Playwright operates in CSS pixels, so we divide positions by the window DPR.
-/// For size we use `inverse_scale_factor` (1 / (DPR * UiScale)) which gives us the
-/// original `Val::Px` value -- slightly larger than the rendered CSS size, but
-/// inconsequential because tests click at the center.
+/// This ensures the rect is a true CSS bounding box, which matters when
+/// tests click at OFFSETS within a container (e.g. carousel buttons within
+/// the rent panel). Using `inverse_scale_factor` (1 / (DPR * UiScale))
+/// for size would produce Val::Px units -- correct for center clicks but
+/// wrong for offset calculations on viewports with UiScale != 1.
 fn to_rect(ugt: &UiGlobalTransform, cn: &ComputedNode, dpr: f32) -> ElementRect {
     let cx = ugt.translation.x / dpr;
     let cy = ugt.translation.y / dpr;
-    let isf = cn.inverse_scale_factor();
-    let w = cn.size().x * isf;
-    let h = cn.size().y * isf;
+    let w = cn.size().x / dpr;
+    let h = cn.size().y / dpr;
     ElementRect {
         x: cx - w / 2.0,
         y: cy - h / 2.0,
@@ -203,6 +205,7 @@ pub fn update_test_bridge(
     game_state: Res<GameState>,
     build_state: Res<BuildState>,
     multi_site: Res<MultiSiteManager>,
+    carousel: Res<RentCarouselState>,
     mut bridge: ResMut<TestBridgeState>,
     ui: UiElementQueries,
     world_camera: Query<(&Camera, &GlobalTransform), With<WorldCamera>>,
@@ -226,6 +229,7 @@ pub fn update_test_bridge(
         day_end_scroll_y: None,
         num_owned_sites: multi_site.owned_sites.len(),
         viewed_site_id: multi_site.viewed_site_id.map(|id| id.0),
+        carousel_index: carousel.current_index,
         elements: HashMap::new(),
     };
 
