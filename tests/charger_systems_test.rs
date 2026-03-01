@@ -1112,7 +1112,7 @@ fn test_om_auto_redispatch_on_repair_failure() {
     );
 
     // Run the system multiple times to trigger repair completion
-    // Due to probabilistic failure (20% with O&M), we need many iterations
+    // Due to probabilistic failure (20% at default $10/hr maintenance), we need many iterations
     let mut auto_redispatch_occurred = false;
     let mut repair_failed_at_least_once = false;
 
@@ -1165,7 +1165,7 @@ fn test_om_auto_redispatch_on_repair_failure() {
 
     assert!(
         repair_failed_at_least_once,
-        "Expected at least one repair failure in 50 iterations (20% failure rate with O&M)"
+        "Expected at least one repair failure in 200 iterations (20% failure rate at default maintenance)"
     );
     assert!(
         auto_redispatch_occurred,
@@ -1240,7 +1240,7 @@ fn test_no_auto_redispatch_without_om_software() {
     );
 
     // Run the system multiple times to trigger repair completion
-    // Due to probabilistic failure (50% without O&M), we run multiple iterations
+    // Due to probabilistic failure (20% at default $10/hr maintenance), we run multiple iterations
     let mut repair_failed_at_least_once = false;
     let mut incorrectly_dispatched = false;
 
@@ -1293,7 +1293,7 @@ fn test_no_auto_redispatch_without_om_software() {
 
     assert!(
         repair_failed_at_least_once,
-        "Expected at least one repair failure in 50 iterations (50% failure rate without O&M)"
+        "Expected at least one repair failure in 50 iterations (20% failure rate at default maintenance)"
     );
     assert!(
         !incorrectly_dispatched,

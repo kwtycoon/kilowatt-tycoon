@@ -155,7 +155,10 @@ impl Plugin for SystemsPlugin {
         );
 
         // Add systems to their sets (all gated by Playing state via set config)
-        app.add_systems(Update, time_system.in_set(GameSystemSet::TimeUpdate));
+        app.add_systems(
+            Update,
+            (time_system, tick_demand_boosts).in_set(GameSystemSet::TimeUpdate),
+        );
 
         // Environment systems
         app.add_systems(

@@ -567,7 +567,7 @@ pub fn handle_upgrade_purchases(
         if game_state.cash < cost {
             continue;
         }
-        game_state.cash -= cost;
+        game_state.spend_upgrade(cost);
         site_state.site_upgrades.purchase(upgrade_btn.upgrade_id);
 
         if matches!(
@@ -605,9 +605,12 @@ pub fn update_upgrade_button_states(
     };
     let upgrades = &site_state.site_upgrades;
 
+    let boost_active = upgrades.is_demand_boost_active();
+
     for (upgrade_btn, mut bg_color) in &mut button_colors {
         let id = upgrade_btn.upgrade_id;
-        if upgrades.is_purchased(id) {
+        let is_active = upgrades.is_purchased(id) || (id == UpgradeId::DemandBoost && boost_active);
+        if is_active {
             *bg_color = BackgroundColor(UPGRADE_ACTIVE_BG);
         } else if !upgrades.can_purchase_oem(id) {
             *bg_color = BackgroundColor(colors::BUTTON_DISABLED);
@@ -618,7 +621,8 @@ pub fn update_upgrade_button_states(
 
     for (status_icon, mut visibility) in &mut status_icons {
         let id = status_icon.upgrade_id;
-        *visibility = if upgrades.is_purchased(id) {
+        let is_active = upgrades.is_purchased(id) || (id == UpgradeId::DemandBoost && boost_active);
+        *visibility = if is_active {
             Visibility::Inherited
         } else {
             Visibility::Hidden
@@ -627,7 +631,10 @@ pub fn update_upgrade_button_states(
 
     for (status_text, mut text, mut text_color) in &mut status_texts {
         let id = status_text.upgrade_id;
-        if upgrades.is_purchased(id) {
+        if id == UpgradeId::DemandBoost && boost_active {
+            **text = upgrades.demand_boost_time_remaining_display();
+            *text_color = TextColor(UPGRADE_ACTIVE_TEXT);
+        } else if upgrades.is_purchased(id) {
             **text = "ACTIVE".to_string();
             *text_color = TextColor(UPGRADE_ACTIVE_TEXT);
         } else if !upgrades.can_purchase_oem(id) {
@@ -646,7 +653,8 @@ pub fn update_upgrade_button_states(
 
     for (name_text, mut text_color) in &mut name_texts {
         let id = name_text.upgrade_id;
-        if upgrades.is_purchased(id) {
+        let is_active = upgrades.is_purchased(id) || (id == UpgradeId::DemandBoost && boost_active);
+        if is_active {
             *text_color = TextColor(UPGRADE_ACTIVE_TEXT);
         } else if !upgrades.can_purchase_oem(id) {
             *text_color = TextColor(colors::TEXT_DISABLED);
@@ -657,7 +665,8 @@ pub fn update_upgrade_button_states(
 
     for (desc_text, mut text_color) in &mut desc_texts {
         let id = desc_text.upgrade_id;
-        if upgrades.is_purchased(id) {
+        let is_active = upgrades.is_purchased(id) || (id == UpgradeId::DemandBoost && boost_active);
+        if is_active {
             *text_color = TextColor(colors::TEXT_SECONDARY);
         } else if !upgrades.can_purchase_oem(id) {
             *text_color = TextColor(colors::TEXT_DISABLED);

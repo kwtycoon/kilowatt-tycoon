@@ -82,16 +82,15 @@ fn start_job(
         fault_type.repair_cost()
     };
     let dispatch_cost = original_cost * warranty_tier.parts_cost_multiplier(fault_type);
-
     let covered = original_cost - dispatch_cost;
-    if covered > 0.0 {
-        game_state.record_warranty_saving(covered);
-    }
 
     if is_cable_theft {
-        game_state.add_cable_theft_cost(dispatch_cost);
+        game_state.add_cable_theft_cost(original_cost);
     } else {
-        game_state.add_opex(dispatch_cost);
+        game_state.add_opex(original_cost);
+    }
+    if covered > 0.0 {
+        game_state.add_warranty_recovery(covered);
     }
     game_state.record_dispatch();
 
@@ -629,8 +628,10 @@ pub fn technician_repair_system(
             game_state.add_opex(labor_cost);
         }
 
-        // Repair failure chance — only preventive maintenance spend affects this
-        let failure_chance = 0.50;
+        let failure_chance = multi_site
+            .get_site(belongs.site_id)
+            .map(|s| s.service_strategy.repair_failure_chance())
+            .unwrap_or(0.20);
 
         let mut rng = rand::rng();
         let repair_failed = rng.random::<f32>() < failure_chance;

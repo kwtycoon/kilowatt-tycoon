@@ -483,6 +483,7 @@ impl Plugin for SidebarPlugin {
                 // Operations panel updates
                 update_operations_panel,
                 handle_fault_row_clicks,
+                operations_panel::handle_view_ledger_button,
                 // Rent panel updates
                 update_rent_panel,
                 // Start Day

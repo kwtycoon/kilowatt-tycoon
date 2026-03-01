@@ -895,18 +895,17 @@ pub fn charging_system(
         charger.current_power_kw = power_kw;
         driver.charge_received_kwh += energy_kwh;
 
-        // Accumulate video ad revenue if enabled (only while actively charging with power > 0)
+        // Accumulate video ad revenue if enabled (only while actively charging with power > 0).
+        // Revenue is flushed to the ledger at session completion, not per-frame.
         if charger.video_ad_enabled && power_kw > 0.0 {
-            // Get ad rate from service strategy (player-set price per hour)
             let ad_rate_per_second = multi_site
                 .get_site(belongs.site_id)
                 .map(|s| s.service_strategy.ad_space_price_per_hour / 3600.0)
                 .unwrap_or(0.0);
             let ad_revenue_this_frame = ad_rate_per_second * delta_game_seconds;
             charger.total_ad_revenue += ad_revenue_this_frame;
-            game_state.add_ad_revenue(ad_revenue_this_frame);
+            charger.pending_ad_revenue += ad_revenue_this_frame;
 
-            // Also track per-site revenue
             if let Some(site_state) = multi_site.get_site_mut(belongs.site_id) {
                 site_state.total_revenue += ad_revenue_this_frame;
             }
@@ -1033,6 +1032,12 @@ pub fn charging_system(
             // Add charging revenue to game state (global)
             game_state.add_charging_revenue(revenue);
             game_state.sessions_completed += 1;
+
+            // Flush accumulated ad revenue for this session
+            if charger.pending_ad_revenue > 0.0 {
+                game_state.add_ad_revenue(charger.pending_ad_revenue);
+                charger.pending_ad_revenue = 0.0;
+            }
 
             // Successful session improves reputation
             game_state.change_reputation(2);

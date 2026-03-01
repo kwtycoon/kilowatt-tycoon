@@ -9,7 +9,10 @@
     (from_timestamp + cast(-30 as bigint) * interval 1 minute) as buffer_from_timestamp,
             
 
-    (from_timestamp + cast(3 as bigint) * interval 1 month) as to_timestamp
+    least(
+        (from_timestamp + cast(3 as bigint) * interval 1 month),
+        (select max(ingested_timestamp) from "memory"."main"."stg_ocpp_logs")
+    ) as to_timestamp
         from
             (
                     select

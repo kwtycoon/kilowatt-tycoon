@@ -149,8 +149,11 @@ pub fn cable_theft_system(
             site_chance *= 0.5;
         }
 
-        // Probabilistic roll only — no forced spawn
-        if rng.random::<f32>() >= site_chance {
+        // Day 1 guarantee: force a robber unless there's a security system
+        let force_spawn =
+            game_clock.day == 1 && !robbery_tracker.robbery_triggered_today && cam_count == 0;
+
+        if !force_spawn && rng.random::<f32>() >= site_chance {
             continue;
         }
 

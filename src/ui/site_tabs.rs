@@ -230,8 +230,7 @@ pub fn handle_sell_site_clicks(
                 Ok(refund_amount) => {
                     info!("Site {:?} sold for ${:.0}", sell_btn.site_id, refund_amount);
 
-                    // Add cash to player
-                    game_state.cash += refund_amount;
+                    game_state.refund_site_sale(refund_amount);
 
                     // Trigger sold event for entity cleanup
                     sold_events.write(crate::events::SiteSoldEvent {

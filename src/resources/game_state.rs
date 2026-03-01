@@ -2,7 +2,10 @@
 
 use bevy::prelude::*;
 
-use crate::resources::multi_site::SiteId;
+use std::collections::HashMap;
+
+use crate::resources::ledger::{self, Account, Ledger};
+use crate::resources::multi_site::{SiteId, SiteState};
 
 /// Constants from MVP spec
 pub const STARTING_CASH: f32 = 1_000_000.0;
@@ -42,25 +45,12 @@ pub struct DailyRecord {
     pub year: u32,
     pub site_id: SiteId,
 
-    // Income (detailed breakdown)
-    pub charging_revenue: f32, // Revenue from charging sessions (kWh * price)
-    pub ad_revenue: f32,       // Revenue from video advertisements
-    pub carbon_credits: f32,   // Carbon credit revenue
-    pub solar_export_revenue: f32, // Revenue from selling solar back to the grid
+    // All financial data comes from the ledger
+    pub financials: ledger::DailyFinancials,
 
-    // Expenses
-    pub energy_cost: f32,      // TOU energy costs
-    pub demand_charge: f32,    // Peak demand charge
-    pub opex: f32,             // Technician dispatch, repairs, etc.
-    pub cable_theft_cost: f32, // Cable replacement costs from theft
-    pub warranty_cost: f32,    // Extended warranty premium (amortized daily)
-    pub warranty_savings: f32, // Parts cost covered by warranty (informational, no cash impact)
-    pub refunds: f32,          // Customer refunds
-    pub penalties: f32,        // Ticket escalation penalties
-
-    // Stats
+    // Stats (not tracked by ledger)
     pub sessions: i32,
-    pub sessions_failed_today: i32, // Daily session failures (angry drivers)
+    pub sessions_failed_today: i32,
     pub dispatches: i32,
     pub reputation_change: i32,
 }
@@ -68,45 +58,74 @@ pub struct DailyRecord {
 impl DailyRecord {
     /// Total revenue (charging + ads + solar export)
     pub fn total_revenue(&self) -> f32 {
-        self.charging_revenue + self.ad_revenue + self.solar_export_revenue
+        self.financials.charging_revenue
+            + self.financials.ad_revenue
+            + self.financials.solar_export_revenue
     }
 
     pub fn net_profit(&self) -> f32 {
-        self.total_revenue() + self.carbon_credits
-            - self.energy_cost
-            - self.demand_charge
-            - self.opex
-            - self.cable_theft_cost
-            - self.warranty_cost
-            - self.refunds
-            - self.penalties
+        self.total_revenue() + self.financials.carbon_credits
+            - self.financials.energy_cost
+            - self.financials.demand_charge
+            - self.financials.opex
+            - self.financials.cable_theft_cost
+            - self.financials.warranty_cost
+            + self.financials.warranty_recovery
+            - self.financials.refunds
+            - self.financials.penalties
+            - self.financials.rent
+            - self.financials.upgrades
+    }
+
+    /// Build a DailyRecord from ledger financials + tracker non-financial stats.
+    pub fn from_ledger(
+        financials: &ledger::DailyFinancials,
+        day: u32,
+        month: u32,
+        year: u32,
+        site_id: SiteId,
+        sessions: i32,
+        sessions_failed_today: i32,
+        dispatches: i32,
+        reputation_change: i32,
+    ) -> Self {
+        Self {
+            day,
+            month,
+            year,
+            site_id,
+            financials: financials.clone(),
+            sessions,
+            sessions_failed_today,
+            dispatches,
+            reputation_change,
+        }
     }
 }
 
-/// Tracks the current in-progress day
+/// Tracks the current in-progress day.
+///
+/// Financial fields that appear here are only those needed for real-time
+/// display during the day. All other financial data lives exclusively in
+/// the ledger and is queried via `ledger.daily_totals()` at day-end.
 #[derive(Debug, Clone, Default)]
 pub struct CurrentDayTracker {
     pub site_id: Option<SiteId>,
-    pub charging_revenue: f32, // Revenue from charging sessions
-    pub ad_revenue: f32,       // Revenue from video advertisements
-    pub carbon_credits: f32,
-    pub solar_export_revenue: f32, // Revenue from selling solar back to the grid
-    pub energy_cost: f32,
-    pub demand_charge: f32,
-    pub opex: f32,
-    pub cable_theft_cost: f32,
-    pub warranty_cost: f32,
-    pub warranty_savings: f32,
-    pub refunds: f32,
-    pub penalties: f32,
+
+    // Revenue fields kept for real-time `total_revenue()` display
+    pub charging_revenue: f32,
+    pub ad_revenue: f32,
+    pub solar_export_revenue: f32,
+
+    // Non-financial stats (not tracked by ledger)
     pub sessions: i32,
-    pub sessions_failed_today: i32, // Daily session failures (angry drivers)
+    pub sessions_failed_today: i32,
     pub dispatches: i32,
     pub starting_reputation: i32,
 }
 
 impl CurrentDayTracker {
-    /// Total revenue (charging + ads + solar export)
+    /// Total revenue (charging + ads + solar export) for real-time display.
     pub fn total_revenue(&self) -> f32 {
         self.charging_revenue + self.ad_revenue + self.solar_export_revenue
     }
@@ -122,13 +141,8 @@ pub struct DailyHistory {
 /// Central game state resource
 #[derive(Resource, Debug, Clone)]
 pub struct GameState {
-    // Economy
+    // Economy — cash is a real-time f32 cache verified against ledger at day-end
     pub cash: f32,
-    pub net_revenue: f32,
-    pub gross_revenue: f32,
-    pub total_refunds: f32,
-    pub total_penalties: f32,
-    pub total_opex: f32,
 
     // Reputation
     pub reputation: i32,
@@ -146,34 +160,26 @@ pub struct GameState {
     pub first_fault_seen: bool,
     pub first_ticket_seen: bool,
     pub first_session_completed: bool,
-    /// Whether the guaranteed day 1 technician fault has been injected
     pub first_technician_fault_injected: bool,
-    /// Random session count target for day 1 fault (None = not yet determined)
     pub day1_fault_target_session: Option<i32>,
 
     // Achievement tracking
-    /// Total energy delivered across all chargers (kWh) -- for 1.21 Gigawatts achievement
     pub total_energy_delivered_kwh: f32,
-    /// Consecutive commercial fleet sessions completed without a charger fault
     pub fleet_sessions_without_fault: u32,
-    /// Whether demand ever exceeded grid capacity (before throttling)
     pub grid_overload_triggered: bool,
-    /// Whether any site ran a full day on solar+battery with zero grid import
     pub zero_grid_day_achieved: bool,
 
     // Daily financial history
     pub daily_history: DailyHistory,
+
+    // Double-entry accounting ledger (authoritative source of truth)
+    pub ledger: Ledger,
 }
 
 impl Default for GameState {
     fn default() -> Self {
         Self {
             cash: STARTING_CASH,
-            net_revenue: 0.0,
-            gross_revenue: 0.0,
-            total_refunds: 0.0,
-            total_penalties: 0.0,
-            total_opex: 0.0,
             reputation: STARTING_REPUTATION,
             sessions_completed: 0,
             sessions_failed: 0,
@@ -190,78 +196,93 @@ impl Default for GameState {
             grid_overload_triggered: false,
             zero_grid_day_achieved: false,
             daily_history: DailyHistory::default(),
+            ledger: Ledger::with_opening_balance(STARTING_CASH),
         }
     }
 }
 
 impl GameState {
+    // ============ Revenue ============
+
     /// Add charging revenue from a completed session
     pub fn add_charging_revenue(&mut self, amount: f32) {
-        self.gross_revenue += amount;
-        self.net_revenue += amount;
-        self.cash += amount;
         self.daily_history.current_day.charging_revenue += amount;
         self.daily_history.current_day.sessions += 1;
+        self.ledger
+            .record_revenue(amount, Account::Charging, "Charging session");
+        self.cash = self.ledger.cash_balance_f32();
     }
 
-    /// Add ad revenue (accumulated during charging, no session increment)
+    /// Add ad revenue (flushed at session end, not per-frame)
     pub fn add_ad_revenue(&mut self, amount: f32) {
-        self.gross_revenue += amount;
-        self.net_revenue += amount;
-        self.cash += amount;
         self.daily_history.current_day.ad_revenue += amount;
+        self.ledger
+            .record_revenue(amount, Account::Ads, "Video ad revenue");
+        self.cash = self.ledger.cash_balance_f32();
     }
+
+    pub fn add_carbon_credit_revenue(&mut self, amount: f32) {
+        self.ledger
+            .record_revenue(amount, Account::CarbonCredits, "Carbon credits");
+        self.cash = self.ledger.cash_balance_f32();
+    }
+
+    pub fn add_solar_export_revenue(&mut self, amount: f32) {
+        self.daily_history.current_day.solar_export_revenue += amount;
+        self.ledger
+            .record_revenue(amount, Account::SolarExport, "Solar grid export");
+        self.cash = self.ledger.cash_balance_f32();
+    }
+
+    // ============ Expenses ============
 
     pub fn add_refund(&mut self, amount: f32) {
-        self.total_refunds += amount;
-        self.net_revenue -= amount;
-        self.cash -= amount;
-        self.daily_history.current_day.refunds += amount;
+        self.ledger
+            .record_expense(amount, Account::Refunds, "Customer refund");
+        self.cash = self.ledger.cash_balance_f32();
     }
 
     pub fn add_penalty(&mut self, amount: f32) {
-        self.total_penalties += amount;
-        self.net_revenue -= amount;
-        self.cash -= amount;
-        self.daily_history.current_day.penalties += amount;
+        self.ledger
+            .record_expense(amount, Account::Penalties, "Ticket escalation penalty");
+        self.cash = self.ledger.cash_balance_f32();
     }
 
     pub fn add_energy_cost(&mut self, amount: f32) {
-        self.net_revenue -= amount;
-        self.cash -= amount;
-        self.daily_history.current_day.energy_cost += amount;
+        self.ledger
+            .record_expense(amount, Account::Energy, "Grid electricity");
+        self.cash = self.ledger.cash_balance_f32();
     }
 
     pub fn add_demand_charge(&mut self, amount: f32) {
-        self.net_revenue -= amount;
-        self.cash -= amount;
-        self.daily_history.current_day.demand_charge += amount;
+        self.ledger
+            .record_expense(amount, Account::DemandCharge, "Peak demand charge");
+        self.cash = self.ledger.cash_balance_f32();
     }
 
     pub fn add_opex(&mut self, amount: f32) {
-        self.total_opex += amount;
-        self.net_revenue -= amount;
-        self.cash -= amount;
-        self.daily_history.current_day.opex += amount;
+        self.ledger
+            .record_expense(amount, Account::Opex, "Operating expense");
+        self.cash = self.ledger.cash_balance_f32();
     }
 
     pub fn add_cable_theft_cost(&mut self, amount: f32) {
-        self.total_opex += amount;
-        self.net_revenue -= amount;
-        self.cash -= amount;
-        self.daily_history.current_day.cable_theft_cost += amount;
+        self.ledger
+            .record_expense(amount, Account::CableTheft, "Cable theft replacement");
+        self.cash = self.ledger.cash_balance_f32();
     }
 
     pub fn add_warranty_cost(&mut self, amount: f32) {
-        self.total_opex += amount;
-        self.net_revenue -= amount;
-        self.cash -= amount;
-        self.daily_history.current_day.warranty_cost += amount;
+        self.ledger
+            .record_expense(amount, Account::Warranty, "Warranty premium");
+        self.cash = self.ledger.cash_balance_f32();
     }
 
-    /// Record parts cost that warranty covered (informational only, no cash impact).
-    pub fn record_warranty_saving(&mut self, amount: f32) {
-        self.daily_history.current_day.warranty_savings += amount;
+    /// Record warranty recovery (reduces OPEX via the ledger as a contra-expense).
+    pub fn add_warranty_recovery(&mut self, amount: f32) {
+        self.ledger
+            .record_contra_expense(amount, Account::WarrantyRecovery, "Warranty coverage");
+        self.cash = self.ledger.cash_balance_f32();
     }
 
     /// Record a technician dispatch (increment daily counter)
@@ -269,17 +290,29 @@ impl GameState {
         self.daily_history.current_day.dispatches += 1;
     }
 
-    pub fn add_carbon_credit_revenue(&mut self, amount: f32) {
-        self.net_revenue += amount;
-        self.cash += amount;
-        self.daily_history.current_day.carbon_credits += amount;
+    // ============ Previously untracked mutations ============
+
+    /// Spend money on site rent.
+    pub fn spend_rent(&mut self, amount: f32) {
+        self.ledger
+            .record_expense(amount, Account::Rent, "Site rent");
+        self.cash = self.ledger.cash_balance_f32();
     }
 
-    pub fn add_solar_export_revenue(&mut self, amount: f32) {
-        self.net_revenue += amount;
-        self.cash += amount;
-        self.daily_history.current_day.solar_export_revenue += amount;
+    /// Spend money on a site upgrade (non-equipment).
+    pub fn spend_upgrade(&mut self, amount: f32) {
+        self.ledger
+            .record_expense(amount, Account::Upgrades, "Site upgrade");
+        self.cash = self.ledger.cash_balance_f32();
     }
+
+    /// Refund from selling a site.
+    pub fn refund_site_sale(&mut self, amount: f32) {
+        self.ledger.record_capex_refund(amount, "Site sale refund");
+        self.cash = self.ledger.cash_balance_f32();
+    }
+
+    // ============ Reputation ============
 
     pub fn change_reputation(&mut self, delta: i32) {
         self.reputation = (self.reputation + delta).clamp(0, 100);
@@ -289,13 +322,23 @@ impl GameState {
         *self = Self::default();
     }
 
+    /// Reset with a specific starting cash amount (used by template picker).
+    pub fn reset_with_cash(&mut self, starting_cash: f32) {
+        *self = Self {
+            cash: starting_cash,
+            ledger: Ledger::with_opening_balance(starting_cash),
+            ..Self::default()
+        };
+    }
+
     // ============ Build Phase Economy ============
 
     /// Try to spend money on building, returns true if successful
     pub fn try_spend_build(&mut self, amount: i32) -> bool {
         let cost = amount as f32;
         if self.cash >= cost {
-            self.cash -= cost;
+            self.ledger.record_capex(cost, "Equipment purchase");
+            self.cash = self.ledger.cash_balance_f32();
             true
         } else {
             false
@@ -304,7 +347,9 @@ impl GameState {
 
     /// Refund money when bulldozing (50% of original cost)
     pub fn refund_build(&mut self, amount: i32) {
-        self.cash += (amount / 2) as f32;
+        let refund = (amount / 2) as f32;
+        self.ledger.record_capex_refund(refund, "Equipment sale");
+        self.cash = self.ledger.cash_balance_f32();
     }
 
     /// Check if can afford a build cost
@@ -312,12 +357,56 @@ impl GameState {
         self.cash >= amount as f32
     }
 
+    // ============ Day-End: Flush Accumulated Site Costs ============
+
+    /// Flush all per-site costs accumulated during the day to the ledger.
+    /// Called once at day-end before `verify_cash` and `daily_totals`.
+    pub fn flush_site_costs(&mut self, sites: &mut HashMap<SiteId, SiteState>) {
+        for site in sites.values_mut() {
+            let meter = &site.utility_meter;
+            if meter.total_energy_cost > 0.0 {
+                self.ledger.record_expense(
+                    meter.total_energy_cost,
+                    Account::Energy,
+                    "Grid electricity",
+                );
+            }
+            if meter.demand_charge > 0.0 {
+                self.ledger.record_expense(
+                    meter.demand_charge,
+                    Account::DemandCharge,
+                    "Peak demand charge",
+                );
+            }
+            if meter.total_export_revenue > 0.0 {
+                self.daily_history.current_day.solar_export_revenue += meter.total_export_revenue;
+                self.ledger.record_revenue(
+                    meter.total_export_revenue,
+                    Account::SolarExport,
+                    "Solar grid export",
+                );
+            }
+            if site.pending_opex > 0.0 {
+                self.ledger
+                    .record_expense(site.pending_opex, Account::Opex, "Operating expense");
+                site.pending_opex = 0.0;
+            }
+            if site.pending_warranty > 0.0 {
+                self.ledger.record_expense(
+                    site.pending_warranty,
+                    Account::Warranty,
+                    "Warranty premium",
+                );
+                site.pending_warranty = 0.0;
+            }
+        }
+        self.cash = self.ledger.cash_balance_f32();
+    }
+
     // ============ Leaderboard Score Calculation ============
 
     /// Calculate the score for a single day
-    /// Score is simply the net profit/loss for the day
     pub fn calculate_daily_score(&self, daily_record: &DailyRecord) -> i64 {
-        // Score = net profit (positive for profit, negative for loss)
         daily_record.net_profit() as i64
     }
 

@@ -23,6 +23,7 @@ pub mod demand_toasts;
 pub mod hud;
 pub mod leaderboard_modal;
 pub mod leaderboard_systems;
+pub mod ledger_modal;
 pub mod overlay;
 pub mod power_panel;
 pub mod radial_menu;
@@ -42,6 +43,7 @@ pub use achievement_modal::*;
 pub use hud::*;
 pub use leaderboard_modal::*;
 pub use leaderboard_systems::*;
+pub use ledger_modal::*;
 pub use overlay::*;
 pub use power_panel::*;
 pub use radial_menu::*;
@@ -65,7 +67,8 @@ impl Plugin for UiPlugin {
             .init_resource::<TutorialFaultInjected>()
             .init_resource::<GifAnimationFrames>()
             .init_resource::<LeaderboardModalState>()
-            .init_resource::<AchievementModalState>();
+            .init_resource::<AchievementModalState>()
+            .init_resource::<LedgerModalState>();
 
         // Main game UI setup - runs when entering Playing state
         // Initialization + HUD + character selection overlay (if first play)
@@ -129,6 +132,7 @@ impl Plugin for UiPlugin {
                 update_top_nav_visibility,
                 handle_primary_nav_clicks,
                 top_nav::handle_leaderboard_button_click,
+                top_nav::handle_ledger_button_click,
                 sync_primary_nav_button_colors,
                 update_weather_display,
                 handle_temperature_tooltip,
@@ -228,6 +232,29 @@ impl Plugin for UiPlugin {
                     achievement_modal::despawn_achievement_modal,
                 ),
                 achievement_modal::update_achievement_modal_content,
+            )
+                .chain()
+                .in_set(crate::systems::GameSystemSet::UiUpdate)
+                .run_if(is_game_visible),
+        );
+
+        // Ledger modal systems - chained for correct ordering
+        app.add_systems(
+            Update,
+            (
+                (
+                    ledger_modal::handle_ledger_close_button,
+                    ledger_modal::handle_ledger_tab_buttons,
+                    ledger_modal::handle_ledger_keyboard,
+                ),
+                (
+                    ledger_modal::spawn_ledger_modal,
+                    ledger_modal::despawn_ledger_modal,
+                ),
+                (
+                    ledger_modal::update_tab_visuals,
+                    ledger_modal::update_ledger_content,
+                ),
             )
                 .chain()
                 .in_set(crate::systems::GameSystemSet::UiUpdate)

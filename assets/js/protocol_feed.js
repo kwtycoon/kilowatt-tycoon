@@ -344,11 +344,14 @@
 
     function makeTab(id, label) {
       var btn = document.createElement("button");
-      btn.textContent = label;
       btn.dataset.tab = id;
       btn.style.cssText =
-        "flex:1;padding:5px 0;background:none;border:none;color:#94a3b8;" +
-        "font-family:inherit;font-size:11px;cursor:pointer;border-bottom:2px solid transparent;";
+        "flex:1;padding:5px 8px;background:none;border:none;color:#94a3b8;" +
+        "font-family:inherit;font-size:11px;cursor:pointer;border-bottom:2px solid transparent;" +
+        "display:flex;align-items:center;gap:6px;";
+      var lbl = document.createElement("span");
+      lbl.textContent = label;
+      btn.appendChild(lbl);
       btn.addEventListener("click", function () {
         switchTab(id);
       });
@@ -366,35 +369,23 @@
     tabs.ocpp.badge = document.createElement("span");
     tabs.ocpp.badge.style.cssText =
       "background:#1e293b;color:#94a3b8;padding:1px 6px;border-radius:4px;" +
-      "font-size:9px;margin-left:6px;";
+      "font-size:9px;";
     tabs.ocpp.badge.textContent = "0 ports";
     ocppTab.appendChild(tabs.ocpp.badge);
-
-    analyzeBtn = document.createElement("button");
-    analyzeBtn.textContent = "kwwhat!";
-    analyzeBtn.disabled = true;
-    analyzeBtn.style.cssText =
-      "background:linear-gradient(90deg,#4ade80,#22d3ee);color:#0a0a14;border:none;padding:2px 10px;" +
-      "border-radius:4px;font-family:inherit;font-size:9px;font-weight:bold;cursor:pointer;" +
-      "margin-left:6px;opacity:0.5;letter-spacing:0.5px;transition:transform 0.1s;";
-    analyzeBtn.addEventListener("mouseenter", function () { if (!analyzeBtn.disabled) analyzeBtn.style.transform = "scale(1.1)"; });
-    analyzeBtn.addEventListener("mouseleave", function () { analyzeBtn.style.transform = "scale(1)"; });
-    analyzeBtn.addEventListener("click", runAnalysis);
-    ocppTab.appendChild(analyzeBtn);
 
     var exportBtn = document.createElement("button");
     exportBtn.textContent = "\u2913";
     exportBtn.title = "Export OCPP data (CSV)";
     exportBtn.style.cssText =
       "background:#1e293b;color:#94a3b8;border:1px solid #334155;padding:1px 6px;" +
-      "border-radius:4px;font-size:11px;cursor:pointer;margin-left:4px;";
+      "border-radius:4px;font-size:11px;cursor:pointer;margin-left:auto;";
     exportBtn.addEventListener("click", function () { exportFeed("ocpp"); });
     ocppTab.appendChild(exportBtn);
 
     tabs.openadr.badge = document.createElement("span");
     tabs.openadr.badge.style.cssText =
       "background:#1e293b;color:#94a3b8;padding:1px 6px;border-radius:4px;" +
-      "font-size:9px;margin-left:6px;";
+      "font-size:9px;";
     tabs.openadr.badge.textContent = "DER";
     openadrTab.appendChild(tabs.openadr.badge);
 
@@ -403,14 +394,14 @@
     exportAdrBtn.title = "Export OpenADR data (CSV)";
     exportAdrBtn.style.cssText =
       "background:#1e293b;color:#94a3b8;border:1px solid #334155;padding:1px 6px;" +
-      "border-radius:4px;font-size:11px;cursor:pointer;margin-left:4px;";
+      "border-radius:4px;font-size:11px;cursor:pointer;margin-left:auto;";
     exportAdrBtn.addEventListener("click", function () { exportFeed("openadr"); });
     openadrTab.appendChild(exportAdrBtn);
 
     tabs.ocpi.badge = document.createElement("span");
     tabs.ocpi.badge.style.cssText =
       "background:#1e293b;color:#94a3b8;padding:1px 6px;border-radius:4px;" +
-      "font-size:9px;margin-left:6px;";
+      "font-size:9px;";
     tabs.ocpi.badge.textContent = "Roaming";
     ocpiTab.appendChild(tabs.ocpi.badge);
 
@@ -419,9 +410,38 @@
     exportOcpiBtn.title = "Export OCPI data (CSV)";
     exportOcpiBtn.style.cssText =
       "background:#1e293b;color:#94a3b8;border:1px solid #334155;padding:1px 6px;" +
-      "border-radius:4px;font-size:11px;cursor:pointer;margin-left:4px;";
+      "border-radius:4px;font-size:11px;cursor:pointer;margin-left:auto;";
     exportOcpiBtn.addEventListener("click", function () { exportFeed("ocpi"); });
     ocpiTab.appendChild(exportOcpiBtn);
+
+    // kwwhat row (visible only on OCPP tab)
+    var kwwhatRow = document.createElement("div");
+    kwwhatRow.id = "kwwhat-row";
+    kwwhatRow.style.cssText =
+      "display:flex;align-items:center;padding:4px 10px;border-bottom:1px solid #334155;" +
+      "flex-shrink:0;gap:6px;font-size:10px;";
+
+    var kwwhatIcon = document.createElement("span");
+    kwwhatIcon.textContent = "\uD83D\uDCC8";
+    kwwhatIcon.style.cssText = "font-size:11px;";
+    kwwhatRow.appendChild(kwwhatIcon);
+
+    var kwwhatLabel = document.createElement("span");
+    kwwhatLabel.textContent = "kwwhat";
+    kwwhatLabel.style.cssText = "color:#94a3b8;font-weight:bold;letter-spacing:0.5px;";
+    kwwhatRow.appendChild(kwwhatLabel);
+
+    analyzeBtn = document.createElement("button");
+    analyzeBtn.textContent = "Run";
+    analyzeBtn.disabled = true;
+    analyzeBtn.style.cssText =
+      "background:linear-gradient(90deg,#4ade80,#22d3ee);color:#0a0a14;border:none;padding:2px 10px;" +
+      "border-radius:4px;font-family:inherit;font-size:9px;font-weight:bold;cursor:pointer;" +
+      "margin-left:auto;opacity:0.5;letter-spacing:0.5px;transition:transform 0.1s;";
+    analyzeBtn.addEventListener("mouseenter", function () { if (!analyzeBtn.disabled) analyzeBtn.style.transform = "scale(1.1)"; });
+    analyzeBtn.addEventListener("mouseleave", function () { analyzeBtn.style.transform = "scale(1)"; });
+    analyzeBtn.addEventListener("click", runAnalysis);
+    kwwhatRow.appendChild(analyzeBtn);
 
     // Message bodies
     function makeBody() {
@@ -438,6 +458,7 @@
 
     container.appendChild(header);
     container.appendChild(tabBar);
+    container.appendChild(kwwhatRow);
     container.appendChild(tabs.ocpp.body);
     container.appendChild(tabs.openadr.body);
     container.appendChild(tabs.ocpi.body);
@@ -458,6 +479,9 @@
     tabs.ocpp.body.style.display = id === "ocpp" ? "block" : "none";
     tabs.openadr.body.style.display = id === "openadr" ? "block" : "none";
     tabs.ocpi.body.style.display = id === "ocpi" ? "block" : "none";
+
+    var kwr = container && container.querySelector("#kwwhat-row");
+    if (kwr) kwr.style.display = id === "ocpp" ? "flex" : "none";
 
     var activeBody = tabs[id].body;
     activeBody.scrollTop = activeBody.scrollHeight;
@@ -739,7 +763,7 @@
     }
 
     analysisRunning = true;
-    analyzeBtn.textContent = "kwwhat-ing...";
+    analyzeBtn.textContent = "Running\u2026";
     analyzeBtn.disabled = true;
     analyzeBtn.style.opacity = "0.6";
 
@@ -763,7 +787,7 @@
 
     analysisRunning = false;
     if (analyzeBtn) {
-      analyzeBtn.textContent = "kwwhat!";
+      analyzeBtn.textContent = "Run";
       analyzeBtn.disabled = buffers.ocpp.messages.length === 0;
       analyzeBtn.style.opacity = buffers.ocpp.messages.length === 0 ? "0.5" : "1";
     }

@@ -194,5 +194,5 @@ pub struct SelectedTemplate {
 /// Apply a template to the grid and game state
 pub fn apply_template(template: LotTemplate, grid: &mut SiteGrid, game_state: &mut GameState) {
     *grid = template.build_grid();
-    game_state.cash = template.starting_budget() as f32;
+    game_state.reset_with_cash(template.starting_budget() as f32);
 }

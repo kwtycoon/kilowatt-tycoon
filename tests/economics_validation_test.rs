@@ -1178,6 +1178,69 @@ fn test_maintenance_investment_reduces_fault_rate() {
 }
 
 #[test]
+fn test_repair_failure_chance_scales_with_maintenance() {
+    let s_zero = ServiceStrategy {
+        maintenance_investment: 0.0,
+        ..Default::default()
+    };
+    let s_default = ServiceStrategy {
+        maintenance_investment: 10.0,
+        ..Default::default()
+    };
+    let s_high = ServiceStrategy {
+        maintenance_investment: 30.0,
+        ..Default::default()
+    };
+    let s_max = ServiceStrategy {
+        maintenance_investment: 50.0,
+        ..Default::default()
+    };
+
+    let fc_zero = s_zero.repair_failure_chance();
+    let fc_default = s_default.repair_failure_chance();
+    let fc_high = s_high.repair_failure_chance();
+    let fc_max = s_max.repair_failure_chance();
+
+    println!(
+        "Repair failure chance: $0/hr={:.0}%, $10/hr={:.0}%, $30/hr={:.0}%, $50/hr={:.0}%",
+        fc_zero * 100.0,
+        fc_default * 100.0,
+        fc_high * 100.0,
+        fc_max * 100.0
+    );
+
+    assert!(
+        (fc_zero - 0.30).abs() < 0.01,
+        "$0/hr should be 30%, got {:.1}%",
+        fc_zero * 100.0
+    );
+    assert!(
+        (fc_default - 0.20).abs() < 0.01,
+        "$10/hr should be 20%, got {:.1}%",
+        fc_default * 100.0
+    );
+    assert!(
+        (fc_high - 0.05).abs() < 0.01,
+        "$30/hr should be 5%, got {:.1}%",
+        fc_high * 100.0
+    );
+    assert!(
+        (fc_max - 0.05).abs() < 0.01,
+        "$50/hr should be clamped at 5%, got {:.1}%",
+        fc_max * 100.0
+    );
+
+    assert!(
+        fc_zero > fc_default,
+        "Higher maintenance should reduce failure chance"
+    );
+    assert!(
+        fc_default > fc_high,
+        "Higher maintenance should reduce failure chance"
+    );
+}
+
+#[test]
 fn test_maintenance_recovers_reliability() {
     let mut charger = Charger {
         reliability: 0.5,
@@ -1475,7 +1538,7 @@ fn test_large_site_profitable_with_upgrades() {
     // Standard MTBF 50h, 10 chargers, 24h/day, fault_mult 0.3, ~15% require technician
     let expected_faults_per_day = 10.0 * (24.0 / 50.0) * 0.3 * 3.0; // wear_mult ~3.0 at cap
     let tech_faults = expected_faults_per_day * 0.15;
-    let daily_tech_cost = tech_faults * (250.0 * 1.5); // avg 1.5 hours per job
+    let daily_tech_cost = tech_faults * (150.0 * 1.5); // avg 1.5 hours per job
 
     let net_profit = daily_revenue
         - daily_energy_cost

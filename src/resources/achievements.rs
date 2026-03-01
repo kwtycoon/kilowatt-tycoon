@@ -173,7 +173,7 @@ impl AchievementKind {
         match self {
             // Bronze
             AchievementKind::PlugAndPlay => ctx.game_state.sessions_completed >= 1,
-            AchievementKind::LemonadeStand => ctx.game_state.gross_revenue >= 100.0,
+            AchievementKind::LemonadeStand => ctx.game_state.ledger.gross_revenue_f32() >= 100.0,
             AchievementKind::DinosaurTears => ctx.game_state.reputation <= 10,
             AchievementKind::TheGoldenBean => ctx
                 .multi_site
@@ -417,10 +417,8 @@ mod tests {
 
     #[test]
     fn test_is_met_lemonade_stand() {
-        let gs = GameState {
-            gross_revenue: 100.0,
-            ..Default::default()
-        };
+        let mut gs = GameState::default();
+        gs.add_charging_revenue(100.0);
         let ctx = ctx_with_gs(&gs);
         assert!(AchievementKind::LemonadeStand.is_met(&ctx));
     }

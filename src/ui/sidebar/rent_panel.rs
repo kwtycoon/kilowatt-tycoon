@@ -512,7 +512,7 @@ pub fn handle_rent_button(
             // Rent the site
             match multi_site.rent_site(&listing, &template_cache, &tiled_assets, &game_data) {
                 Ok(site_id) => {
-                    game_state.cash -= listing.rent_cost;
+                    game_state.spend_rent(listing.rent_cost);
                     info!(
                         "Rented site: {} ({:?}) for ${:.0}. New balance: ${:.0}",
                         listing.name, listing.archetype, listing.rent_cost, game_state.cash

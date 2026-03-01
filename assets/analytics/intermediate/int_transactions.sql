@@ -8,7 +8,10 @@
             from_timestamp,
             
 
-    (from_timestamp + cast(3 as bigint) * interval 1 month) as to_timestamp
+    least(
+        (from_timestamp + cast(3 as bigint) * interval 1 month),
+        (select max(ingested_timestamp) from "memory"."main"."stg_ocpp_logs")
+    ) as to_timestamp
         from
             (
                 select (select coalesce(min(ingested_timestamp), TIMESTAMP '2025-10-01') from "memory"."main"."stg_ocpp_logs") as from_timestamp

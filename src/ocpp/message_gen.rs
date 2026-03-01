@@ -785,9 +785,11 @@ pub fn ocpp_reset_system(
 //  8. Day-end cleanup system
 // ─────────────────────────────────────────────────────
 
-/// Emit a final `StatusNotification` and `Heartbeat` for every charger when
-/// entering the `DayEnd` state. This closes any open fault or offline periods
-/// in the analytics so the kwwhat pipeline doesn't extend them indefinitely.
+/// Emit a final `StatusNotification(Available)` and `Heartbeat` for every
+/// charger when entering the `DayEnd` state. Always emits Available regardless
+/// of the charger's actual state so that open fault/offline periods in the
+/// analytics are cleanly closed at the day boundary. Uses T+1s offset to
+/// sort after any same-timestamp events from earlier systems.
 pub fn ocpp_day_end_system(
     chargers: Query<(Entity, &Charger)>,
     mut queue: ResMut<OcppMessageQueue>,
@@ -797,36 +799,29 @@ pub fn ocpp_day_end_system(
         return;
     }
 
-    for (entity, charger) in chargers.iter() {
+    for (entity, _charger) in chargers.iter() {
         let state = queue.get_or_create(entity);
         if !state.boot_sent {
             continue;
         }
 
         let charger_id = state.charger_id.clone();
-        let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
-        let ts_iso = timestamp.to_rfc3339();
-
-        // Final StatusNotification with the charger's current state
-        let ocpp_status = charger_state_to_ocpp_status(charger.state());
-        let error_code = charger
-            .current_fault
-            .map(fault_to_ocpp_error)
-            .unwrap_or(ChargePointErrorCode::NoError);
+        let boundary =
+            queue.game_time_to_utc(game_clock.total_game_time) + chrono::Duration::seconds(1);
+        let ts_iso = boundary.to_rfc3339();
 
         push_status_notif(
             &mut queue,
             &charger_id,
             &ts_iso,
-            timestamp,
-            ocpp_status,
-            error_code,
-            charger.current_fault.map(|f| f.display_name().to_string()),
-            charger.current_fault.map(|_| "KilowattTycoon".to_string()),
-            charger.current_fault.map(|f| format!("{f:?}")),
+            boundary,
+            ChargePointStatus::Available,
+            ChargePointErrorCode::NoError,
+            None,
+            None,
+            None,
         );
 
-        // Final Heartbeat so offline-gap detection sees activity at the boundary
         let uid = new_unique_id();
         let heartbeat = HeartbeatRequest {};
         queue.push_with_log(
@@ -836,8 +831,16 @@ pub fn ocpp_day_end_system(
             serialize_call(&uid, "Heartbeat", &heartbeat),
         );
         let hb_resp = HeartbeatResponse {
-            current_time: timestamp,
+            current_time: boundary,
         };
-        queue.push_with_log(charger_id, ts_iso, "", serialize_callresult(&uid, &hb_resp));
+        queue.push_with_log(
+            charger_id.clone(),
+            ts_iso,
+            "",
+            serialize_callresult(&uid, &hb_resp),
+        );
+
+        let state = queue.get_or_create(entity);
+        state.last_status = Some(ChargePointStatus::Available);
     }
 }

@@ -3,10 +3,10 @@
 use bevy::prelude::*;
 
 /// Technician hourly rate for OpEx calculations
-pub const TECHNICIAN_HOURLY_RATE: f32 = 250.0; // $/hour
+pub const TECHNICIAN_HOURLY_RATE: f32 = 150.0; // $/hour
 
 /// Base travel time to reach site (game seconds)
-pub const BASE_TRAVEL_TIME: f32 = 3600.0; // 1 hour
+pub const BASE_TRAVEL_TIME: f32 = 1800.0; // 30 minutes
 
 /// Queued dispatch request for technician
 #[derive(Debug, Clone)]

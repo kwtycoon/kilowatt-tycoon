@@ -113,6 +113,13 @@ function patchSql(sql) {
   // 6) DuckDB 1.0+ uses 1-based array indexing. kwwhat's SQL uses [0] which returns NULL.
   sql = sql.split('connector_ids[0]').join('connector_ids[1]');
   sql = sql.split('transaction_ids[0]').join('transaction_ids[1]');
+  // 7) Cap uncapped +3 month incremental boundaries to the actual data range.
+  //    Some models use (from_timestamp + 3 months) as to_timestamp without
+  //    least(...), letting unclosed periods extend months beyond the data.
+  sql = sql.replace(
+    /\(from_timestamp \+ cast\(3 as bigint\) \* interval 1 month\) as to_timestamp/g,
+    'least(\\n        (from_timestamp + cast(3 as bigint) * interval 1 month),\\n        (select max(ingested_timestamp) from \"memory\".\"main\".\"stg_ocpp_logs\")\\n    ) as to_timestamp'
+  );
   return sql;
 }
 

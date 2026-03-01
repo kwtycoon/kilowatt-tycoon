@@ -18,6 +18,9 @@ pub struct OperationsPanel;
 #[derive(Component)]
 pub struct OperationsContent;
 
+#[derive(Component)]
+pub struct ViewLedgerButton;
+
 // ============ Spawn Functions ============
 
 /// Spawn the operations panel
@@ -315,7 +318,7 @@ fn spawn_om_stats_section(
             spawn_stat_row(
                 section,
                 "Total OPEX:",
-                &format!("${:.0}", game_state.total_opex),
+                &format!("${:.0}", game_state.ledger.total_opex_f32()),
                 Color::srgb(1.0, 0.6, 0.3),
             );
 
@@ -348,6 +351,31 @@ fn spawn_om_stats_section(
                         ));
                     });
             }
+
+            // View Ledger button
+            section
+                .spawn((
+                    Button,
+                    ViewLedgerButton,
+                    Node {
+                        width: Val::Percent(100.0),
+                        padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        margin: UiRect::top(Val::Px(6.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.08)),
+                    BorderRadius::all(Val::Px(4.0)),
+                ))
+                .with_child((
+                    Text::new("View Ledger (L)"),
+                    TextFont {
+                        font_size: 11.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.7, 0.8, 1.0)),
+                ));
         });
 }
 
@@ -553,4 +581,16 @@ pub fn handle_fault_row_clicks(
 ) {
     // TODO: Implement charger selection from fault rows
     // This would require adding a component to fault row buttons with the charger entity
+}
+
+/// Open ledger modal when the "View Ledger" button is clicked.
+pub fn handle_view_ledger_button(
+    interaction: Query<&Interaction, (Changed<Interaction>, With<ViewLedgerButton>)>,
+    mut ledger_modal: ResMut<crate::ui::ledger_modal::LedgerModalState>,
+) {
+    for i in &interaction {
+        if *i == Interaction::Pressed {
+            ledger_modal.toggle();
+        }
+    }
 }

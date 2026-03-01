@@ -69,8 +69,8 @@ impl WarrantyTier {
     pub fn description(&self) -> &'static str {
         match self {
             WarrantyTier::None => "No warranty coverage",
-            WarrantyTier::Standard => "Covers: Ground Fault, Cable Damage parts",
-            WarrantyTier::Comprehensive => "Covers: All fault parts incl. Cable Theft",
+            WarrantyTier::Standard => "Per charger. Covers: Ground Fault, Cable Damage parts",
+            WarrantyTier::Comprehensive => "Per charger. Covers: All fault parts incl. Cable Theft",
         }
     }
 
@@ -385,6 +385,19 @@ impl ServiceStrategy {
         // $0/hr = 2x failures, $10/hr = 1x, $30+/hr = 0.3x
         let normalized = (self.maintenance_investment / 10.0).clamp(0.0, 3.0);
         (2.0 - normalized * 0.57).max(0.3)
+    }
+
+    /// Probability that a technician repair attempt fails.
+    /// Scales with maintenance investment: $0/hr = 30%, $10/hr = 20%, $30+/hr = 5%.
+    pub fn repair_failure_chance(&self) -> f32 {
+        let inv = self.maintenance_investment;
+        if inv <= 10.0 {
+            // 30% at $0/hr, linearly to 20% at $10/hr
+            0.30 - (inv / 10.0) * 0.10
+        } else {
+            // 20% at $10/hr, linearly to 5% at $30/hr, clamped
+            (0.20 - ((inv - 10.0) / 20.0) * 0.15).max(0.05)
+        }
     }
 
     /// Get hourly OPEX from maintenance investment

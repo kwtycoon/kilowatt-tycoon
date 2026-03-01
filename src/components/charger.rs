@@ -319,6 +319,8 @@ pub struct Charger {
     pub video_ad_enabled: bool,
     /// Total ad revenue earned by this charger ($)
     pub total_ad_revenue: f32,
+    /// Ad revenue accumulated during the current session, flushed to ledger at session end
+    pub pending_ad_revenue: f32,
 
     // === Anti-theft ===
     /// Whether this charger has an anti-theft cable upgrade
@@ -363,6 +365,7 @@ impl Default for Charger {
             total_repair_opex: 0.0,
             video_ad_enabled: false,
             total_ad_revenue: 0.0,
+            pending_ad_revenue: 0.0,
             anti_theft_cable: false,
         }
     }

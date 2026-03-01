@@ -172,6 +172,7 @@ pub struct ImageAssets {
     pub icon_success: Handle<Image>,
     pub icon_technician: Handle<Image>,
     pub icon_marketing: Handle<Image>,
+    pub icon_ledger: Handle<Image>,
 
     // Action icons for radial menu
     pub icon_action_soft_reboot: Handle<Image>,
@@ -404,6 +405,7 @@ pub fn load_image_assets(mut commands: Commands, asset_server: Res<AssetServer>)
         icon_success: asset_server.load("ui/icons/icon_success.png"),
         icon_technician: asset_server.load("ui/icons/icon_technician.png"),
         icon_marketing: asset_server.load("ui/icons/icon_reputation.png"),
+        icon_ledger: asset_server.load("ui/icons/icon_ledger.png"),
 
         // Action icons for radial menu
         icon_action_soft_reboot: asset_server.load("ui/icons/icon_action_soft_reboot.png"),

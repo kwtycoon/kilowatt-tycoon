@@ -381,6 +381,13 @@ fn on_enter_playing(
         game_clock.reset();
     }
 
+    // Set ledger date for this day
+    if let Some(date) =
+        chrono::NaiveDate::from_ymd_opt(game_clock.year as i32, game_clock.month, game_clock.day)
+    {
+        game_state.ledger.current_date = date;
+    }
+
     // Snapshot achievements at day start so we can diff at day end
     commands.insert_resource(crate::resources::achievements::AchievementSnapshot {
         unlocked_at_day_start: achievement_state.snapshot(),
@@ -450,18 +457,6 @@ fn on_enter_day_end(
 ) {
     info!("Day {} complete!", game_clock.day);
 
-    // Aggregate utility costs from all sites
-    let total_energy_cost: f32 = multi_site
-        .owned_sites
-        .values()
-        .map(|s| s.utility_meter.total_energy_cost)
-        .sum();
-    let total_demand_charge: f32 = multi_site
-        .owned_sites
-        .values()
-        .map(|s| s.utility_meter.demand_charge)
-        .sum();
-
     // Calculate carbon credits from energy delivered to EVs across all sites
     let rate_per_kwh = carbon_market.rate_per_kwh();
     let mut total_carbon_credits = 0.0;
@@ -482,6 +477,9 @@ fn on_enter_day_end(
         site_state.sessions_today = 0;
     }
 
+    // Flush all accumulated per-site costs to the ledger before verification
+    game_state.flush_site_costs(&mut multi_site.owned_sites);
+
     // Add carbon credit revenue to game state
     game_state.add_carbon_credit_revenue(total_carbon_credits);
 
@@ -492,11 +490,12 @@ fn on_enter_day_end(
         total_carbon_credits
     );
 
-    // Finalize current day tracker with utility costs
-    game_state.daily_history.current_day.energy_cost = total_energy_cost;
-    game_state.daily_history.current_day.demand_charge = total_demand_charge;
+    // Verify ledger cash balance matches game state
+    if let Err(e) = game_state.ledger.verify_cash(game_state.cash) {
+        error!("Ledger balance verification failed: {e}");
+    }
 
-    // Create daily record from current day tracker
+    // Build DailyRecord from the ledger (financial fields) + tracker (non-financial stats)
     let site_id = game_state
         .daily_history
         .current_day
@@ -504,44 +503,37 @@ fn on_enter_day_end(
         .unwrap_or(crate::resources::multi_site::SiteId(1));
     let reputation_change =
         game_state.reputation - game_state.daily_history.current_day.starting_reputation;
+    let financials = game_state
+        .ledger
+        .daily_totals(game_state.ledger.current_date);
 
-    let daily_record = crate::resources::game_state::DailyRecord {
-        day: game_clock.day,
-        month: game_clock.month,
-        year: game_clock.year,
+    let daily_record = crate::resources::game_state::DailyRecord::from_ledger(
+        &financials,
+        game_clock.day,
+        game_clock.month,
+        game_clock.year,
         site_id,
-        charging_revenue: game_state.daily_history.current_day.charging_revenue,
-        ad_revenue: game_state.daily_history.current_day.ad_revenue,
-        carbon_credits: game_state.daily_history.current_day.carbon_credits,
-        solar_export_revenue: game_state.daily_history.current_day.solar_export_revenue,
-        energy_cost: game_state.daily_history.current_day.energy_cost,
-        demand_charge: game_state.daily_history.current_day.demand_charge,
-        opex: game_state.daily_history.current_day.opex,
-        cable_theft_cost: game_state.daily_history.current_day.cable_theft_cost,
-        warranty_cost: game_state.daily_history.current_day.warranty_cost,
-        warranty_savings: game_state.daily_history.current_day.warranty_savings,
-        refunds: game_state.daily_history.current_day.refunds,
-        penalties: game_state.daily_history.current_day.penalties,
-        sessions: game_state.daily_history.current_day.sessions,
-        sessions_failed_today: game_state.daily_history.current_day.sessions_failed_today,
-        dispatches: game_state.daily_history.current_day.dispatches,
+        game_state.daily_history.current_day.sessions,
+        game_state.daily_history.current_day.sessions_failed_today,
+        game_state.daily_history.current_day.dispatches,
         reputation_change,
-    };
+    );
 
     // Calculate values for display (extract before pushing to history)
-    let charging_revenue = daily_record.charging_revenue;
-    let _ad_revenue = daily_record.ad_revenue;
+    let charging_revenue = daily_record.financials.charging_revenue;
     let total_revenue = daily_record.total_revenue();
-    let carbon_credits = daily_record.carbon_credits;
-    let solar_export_revenue = daily_record.solar_export_revenue;
-    let energy_cost = daily_record.energy_cost;
-    let demand_charge = daily_record.demand_charge;
-    let opex = daily_record.opex;
-    let cable_theft_cost = daily_record.cable_theft_cost;
-    let warranty_cost = daily_record.warranty_cost;
-    let warranty_savings = daily_record.warranty_savings;
-    let refunds = daily_record.refunds;
-    let penalties = daily_record.penalties;
+    let carbon_credits = daily_record.financials.carbon_credits;
+    let solar_export_revenue = daily_record.financials.solar_export_revenue;
+    let energy_cost = daily_record.financials.energy_cost;
+    let demand_charge = daily_record.financials.demand_charge;
+    let opex = daily_record.financials.opex;
+    let cable_theft_cost = daily_record.financials.cable_theft_cost;
+    let warranty_cost = daily_record.financials.warranty_cost;
+    let warranty_recovery = daily_record.financials.warranty_recovery;
+    let refunds = daily_record.financials.refunds;
+    let penalties = daily_record.financials.penalties;
+    let rent = daily_record.financials.rent;
+    let upgrades = daily_record.financials.upgrades;
     let net_profit = daily_record.net_profit();
     let sessions_delta = daily_record.sessions;
     let sessions_failed_today = daily_record.sessions_failed_today;
@@ -633,12 +625,17 @@ fn on_enter_day_end(
     );
     commands.insert_resource(DayEndShareText(share_text));
 
-    // Precompute values for both KPI views
-    let total_energy = energy_cost + demand_charge;
-    let total_opex = opex + cable_theft_cost + warranty_cost + refunds + penalties;
+    // Precompute values for both KPI views.
+    // Operating expenses exclude fixed costs (rent, upgrades) so
+    // Operating Profit = Revenue - Operating Expenses.
+    let total_energy = financials.category_total(crate::resources::ledger::ExpenseCategory::Energy);
+    let total_opex =
+        financials.category_total(crate::resources::ledger::ExpenseCategory::Operations);
+    let total_fixed = financials.category_total(crate::resources::ledger::ExpenseCategory::Fixed);
     let total_expenses = total_energy + total_opex;
+    let operating_profit = total_income - total_expenses;
 
-    let profit_color = if net_profit >= 0.0 {
+    let profit_color = if operating_profit >= 0.0 {
         Color::srgb(0.4, 0.9, 0.4)
     } else {
         Color::srgb(0.9, 0.4, 0.4)
@@ -659,7 +656,7 @@ fn on_enter_day_end(
         energy_cost,
         opex,
         warranty_cost,
-        warranty_savings,
+        warranty_recovery,
     );
     let pro_tip_text = generate_pro_tip(
         char_name,
@@ -670,7 +667,7 @@ fn on_enter_day_end(
         opex,
         reputation_delta,
         warranty_cost,
-        warranty_savings,
+        warranty_recovery,
     );
 
     // Compute per-kWh pricing for expanded view
@@ -1043,11 +1040,11 @@ fn on_enter_day_end(
                                                     ops_color,
                                                 );
                                             }
-                                            if warranty_savings > 0.01 {
+                                            if warranty_recovery > 0.01 {
                                                 spawn_indented_row(
                                                     section,
-                                                    "  Warranty Savings",
-                                                    &format!("+${:.2}", warranty_savings),
+                                                    "  Warranty Recovery",
+                                                    &format!("+${:.2}", warranty_recovery),
                                                     Color::srgb(0.4, 0.9, 0.4),
                                                 );
                                             }
@@ -1076,8 +1073,30 @@ fn on_enter_day_end(
                                             );
                                             spawn_insight_row(
                                                 section,
-                                                operations_insight(opex, cable_theft_cost, dispatches_delta, warranty_savings),
+                                                operations_insight(opex, cable_theft_cost, dispatches_delta, warranty_recovery),
                                             );
+
+                                            // ===== B2. Fixed Costs =====
+                                            if total_fixed > 0.01 {
+                                                let fixed_color = Color::srgb(0.7, 0.55, 0.9);
+                                                spawn_section_header(section, "Fixed Costs", "[=]", fixed_color);
+                                                if rent > 0.01 {
+                                                    spawn_indented_row(
+                                                        section,
+                                                        "  Site Rent",
+                                                        &format!("-${:.2}", rent),
+                                                        fixed_color,
+                                                    );
+                                                }
+                                                if upgrades > 0.01 {
+                                                    spawn_indented_row(
+                                                        section,
+                                                        "  Upgrades",
+                                                        &format!("-${:.2}", upgrades),
+                                                        fixed_color,
+                                                    );
+                                                }
+                                            }
 
                                             // ===== C. Reputation =====
                                             let rep_section_color = Color::srgb(0.4, 0.7, 0.9);
@@ -1263,7 +1282,7 @@ fn on_enter_day_end(
                                                 Color::srgb(0.9, 0.4, 0.4),
                                                 expense_hint,
                                             );
-                                            // Thin divider above Net Profit
+                                            // Thin divider above Operating Profit
                                             section.spawn((
                                                 Node {
                                                     width: Val::Percent(100.0),
@@ -1275,8 +1294,8 @@ fn on_enter_day_end(
                                             ));
                                             spawn_prominent_stat_row(
                                                 section,
-                                                "Daily Net",
-                                                &format_delta(net_profit),
+                                                "Operating Profit",
+                                                &format_delta(operating_profit),
                                                 profit_color,
                                             );
                                             spawn_stat_row(
@@ -1609,7 +1628,7 @@ fn day_title(
     energy_cost: f32,
     opex: f32,
     warranty_cost: f32,
-    warranty_savings: f32,
+    warranty_recovery: f32,
 ) -> (&'static str, &'static str) {
     if day == 1 {
         return ("Day One", "Every empire starts somewhere.");
@@ -1618,7 +1637,7 @@ fn day_title(
         return ("Ghost Town", "Not a single EV in sight.");
     }
     if net_profit >= 0.0 && reputation_delta >= 0 {
-        if warranty_savings > warranty_cost * 5.0 && warranty_savings > 500.0 {
+        if warranty_recovery > warranty_cost * 5.0 && warranty_recovery > 500.0 {
             return (
                 "Insurance Payday",
                 "The warranty just earned its keep \u{2014} and then some.",
@@ -1639,7 +1658,7 @@ fn day_title(
     if charging_revenue < energy_cost && energy_cost > 0.01 {
         return ("The Pricing Trap", "Selling electrons below cost.");
     }
-    if warranty_cost > 0.01 && warranty_savings < 0.01 && opex < 1.0 {
+    if warranty_cost > 0.01 && warranty_recovery < 0.01 && opex < 1.0 {
         return (
             "Quiet Shift",
             "Nothing broke. The warranty company sends their thanks.",
@@ -1660,19 +1679,19 @@ fn generate_pro_tip(
     opex: f32,
     reputation_delta: i32,
     warranty_cost: f32,
-    warranty_savings: f32,
+    warranty_recovery: f32,
 ) -> String {
     let tip = if sessions == 0 {
         "Zero sessions today. The tumbleweeds are charging for free though."
     } else if charging_revenue < energy_cost && energy_cost > 0.01 {
         "We're losing money on every electron we sell, but at least the technician bought a new boat with our repair fees!"
-    } else if warranty_savings > warranty_cost && warranty_savings > 0.01 {
+    } else if warranty_recovery > warranty_cost && warranty_recovery > 0.01 {
         "The extended warranty covered more than its premium today. Rare W for insurance."
     } else if opex > charging_revenue && opex > 0.01 && warranty_cost < 0.01 {
         "Our repair budget could fund a small space program. Ever heard of an extended warranty?"
     } else if opex > charging_revenue && opex > 0.01 {
         "Our repair budget could fund a small space program."
-    } else if warranty_cost > 0.01 && opex > warranty_savings && opex > 0.01 {
+    } else if warranty_cost > 0.01 && opex > warranty_recovery && opex > 0.01 {
         "Warranty covers parts, not labor. That technician's hourly rate is still brutal."
     } else if reputation_delta < -20 {
         "The local EV forum has created a dedicated thread about us. It's not flattering."
@@ -1824,9 +1843,9 @@ fn operations_insight(
     opex: f32,
     cable_theft_cost: f32,
     dispatches: i32,
-    warranty_savings: f32,
+    warranty_recovery: f32,
 ) -> &'static str {
-    if warranty_savings > 500.0 {
+    if warranty_recovery > 500.0 {
         "The warranty just paid for itself. Sometimes insurance actually works out."
     } else if cable_theft_cost > 0.01 && opex > 0.01 {
         "Between the thieves and the breakdowns, it's been an eventful day."
@@ -2019,6 +2038,13 @@ fn on_exit_day_end(
 
     // Start new day - reset clock but keep the day counter
     game_clock.start_new_day();
+
+    // Set ledger date for the new day
+    if let Some(date) =
+        chrono::NaiveDate::from_ymd_opt(game_clock.year as i32, game_clock.month, game_clock.day)
+    {
+        game_state.ledger.current_date = date;
+    }
 
     // Reset environment timers for new day
     environment.reset_for_new_day();
@@ -2293,19 +2319,22 @@ fn setup_game_over(mut commands: Commands, game_state: Res<crate::resources::Gam
                 TextColor(color),
             ));
 
-            // Stats
-            let total_cable_theft: f32 = game_state
-                .daily_history
-                .records
-                .iter()
-                .map(|r| r.cable_theft_cost)
-                .sum::<f32>()
-                + game_state.daily_history.current_day.cable_theft_cost;
+            // Stats -- derive cable theft total from ledger (debit-normal account, positive balance)
+            let total_cable_theft: f32 = {
+                use rust_decimal::prelude::ToPrimitive;
+                game_state
+                    .ledger
+                    .account_balance(crate::resources::ledger::Account::CableTheft)
+                    .to_f32()
+                    .unwrap_or(0.0)
+            };
 
             parent.spawn((
                 Text::new(format!(
                     "Revenue: ${:.0}\nReputation: {}\nSessions: {}",
-                    game_state.net_revenue, game_state.reputation, game_state.sessions_completed
+                    game_state.ledger.net_revenue_f32(),
+                    game_state.reputation,
+                    game_state.sessions_completed
                 )),
                 TextFont {
                     font_size: 24.0,

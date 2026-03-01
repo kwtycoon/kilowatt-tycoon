@@ -11,7 +11,13 @@ pub mod upgrade_costs {
     // O&M platform tiers
     pub const OEM_DETECT: f32 = 5000.0;
     pub const OEM_OPTIMIZE: f32 = 20000.0;
+    // Repeatable demand boost
+    pub const DEMAND_BOOST: f32 = 500.0;
 }
+
+/// Demand boost: 2x demand for 4 game hours
+pub const DEMAND_BOOST_MULTIPLIER: f32 = 2.0;
+pub const DEMAND_BOOST_DURATION_SECS: f32 = 14_400.0;
 
 /// O&M platform tiers - determines fault detection, auto-remediation, and repair capabilities
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -130,6 +136,8 @@ pub struct SiteUpgrades {
     pub has_dynamic_pricing: bool,
     /// O&M platform tier
     pub oem_tier: OemTier,
+    /// Remaining game-seconds on the active demand boost (0 = inactive)
+    pub demand_boost_remaining_secs: f32,
 }
 
 impl SiteUpgrades {
@@ -139,13 +147,41 @@ impl SiteUpgrades {
         self.oem_tier.repair_time_multiplier()
     }
 
-    /// Get the demand bonus from marketing
-    /// Marketing campaign adds 10% demand
+    /// Combined demand multiplier from marketing + active demand boost.
     pub fn demand_multiplier(&self) -> f32 {
-        if self.has_marketing {
-            1.1 // +10%
+        let marketing = if self.has_marketing { 1.1 } else { 1.0 };
+        let boost = if self.is_demand_boost_active() {
+            DEMAND_BOOST_MULTIPLIER
         } else {
             1.0
+        };
+        marketing * boost
+    }
+
+    pub fn is_demand_boost_active(&self) -> bool {
+        self.demand_boost_remaining_secs > 0.0
+    }
+
+    pub fn activate_demand_boost(&mut self) {
+        self.demand_boost_remaining_secs = DEMAND_BOOST_DURATION_SECS;
+    }
+
+    pub fn tick_demand_boost(&mut self, delta_game_secs: f32) {
+        if self.demand_boost_remaining_secs > 0.0 {
+            self.demand_boost_remaining_secs =
+                (self.demand_boost_remaining_secs - delta_game_secs).max(0.0);
+        }
+    }
+
+    /// Human-readable time remaining for the demand boost (e.g. "3h 15m").
+    pub fn demand_boost_time_remaining_display(&self) -> String {
+        let total_secs = self.demand_boost_remaining_secs.ceil() as u32;
+        let hours = total_secs / 3600;
+        let minutes = (total_secs % 3600) / 60;
+        if hours > 0 {
+            format!("{hours}h {minutes:02}m")
+        } else {
+            format!("{minutes}m")
         }
     }
 
@@ -229,10 +265,16 @@ impl SiteUpgrades {
                 description: "Auto-dispatch technicians, 25% faster repairs",
                 cost: upgrade_costs::OEM_OPTIMIZE,
             },
+            UpgradeInfo {
+                id: UpgradeId::DemandBoost,
+                name: "Demand Blitz",
+                description: "2x customer demand for 4 hours",
+                cost: upgrade_costs::DEMAND_BOOST,
+            },
         ]
     }
 
-    /// Check if an upgrade is purchased
+    /// Check if an upgrade is purchased (DemandBoost is never "purchased" — it's repeatable).
     pub fn is_purchased(&self, id: UpgradeId) -> bool {
         match id {
             UpgradeId::TransformerCooling => self.has_transformer_cooling,
@@ -241,10 +283,11 @@ impl SiteUpgrades {
             UpgradeId::DynamicPricing => self.has_dynamic_pricing,
             UpgradeId::OemDetect => self.oem_tier.at_least(OemTier::Detect),
             UpgradeId::OemOptimize => self.oem_tier.at_least(OemTier::Optimize),
+            UpgradeId::DemandBoost => false,
         }
     }
 
-    /// Purchase an upgrade (sets the flag to true)
+    /// Purchase an upgrade (sets the flag to true, or activates the boost timer).
     pub fn purchase(&mut self, id: UpgradeId) {
         match id {
             UpgradeId::TransformerCooling => self.has_transformer_cooling = true,
@@ -261,6 +304,7 @@ impl SiteUpgrades {
                     self.oem_tier = OemTier::Optimize;
                 }
             }
+            UpgradeId::DemandBoost => self.activate_demand_boost(),
         }
     }
 
@@ -273,6 +317,7 @@ impl SiteUpgrades {
             UpgradeId::DynamicPricing => upgrade_costs::DYNAMIC_PRICING,
             UpgradeId::OemDetect => upgrade_costs::OEM_DETECT,
             UpgradeId::OemOptimize => upgrade_costs::OEM_OPTIMIZE,
+            UpgradeId::DemandBoost => upgrade_costs::DEMAND_BOOST,
         }
     }
 
@@ -295,6 +340,8 @@ pub enum UpgradeId {
     DynamicPricing,
     OemDetect,
     OemOptimize,
+    /// Repeatable temporary demand boost
+    DemandBoost,
 }
 
 /// Info about an upgrade for UI display

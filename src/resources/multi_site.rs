@@ -179,6 +179,11 @@ pub struct SiteState {
     /// Charging sessions completed today (reset at end of day)
     pub sessions_today: i32,
 
+    /// Accumulated opex cost this day, flushed to ledger at day-end
+    pub pending_opex: f32,
+    /// Accumulated warranty cost this day, flushed to ledger at day-end
+    pub pending_warranty: f32,
+
     /// Pending video ad charger positions - positions where newly placed chargers should have video ads enabled
     pub pending_video_ad_chargers: std::collections::HashSet<(i32, i32)>,
 
@@ -234,6 +239,8 @@ impl SiteState {
             max_vehicles: 20,
             energy_delivered_kwh_today: 0.0,
             sessions_today: 0,
+            pending_opex: 0.0,
+            pending_warranty: 0.0,
             pending_video_ad_chargers: std::collections::HashSet::new(),
             thermal_throttle_factor: 1.0,
         }

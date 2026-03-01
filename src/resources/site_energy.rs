@@ -142,9 +142,8 @@ pub struct UtilityMeter {
     pub total_energy_cost: f32,
     /// Projected daily demand charge (peak_demand_kw * rate / 30).
     /// This is the daily amortized portion of a monthly demand charge.
+    /// Flushed to ledger at day-end.
     pub demand_charge: f32,
-    /// Demand charge already applied to game state opex
-    pub demand_charge_applied: f32,
     /// Total energy exported to the grid (kWh)
     pub total_exported_kwh: f32,
     /// Accumulated revenue from solar export this session
@@ -162,7 +161,6 @@ impl Default for UtilityMeter {
             current_grid_import_kw: 0.0,
             total_energy_cost: 0.0,
             demand_charge: 0.0,
-            demand_charge_applied: 0.0,
             total_exported_kwh: 0.0,
             total_export_revenue: 0.0,
         }

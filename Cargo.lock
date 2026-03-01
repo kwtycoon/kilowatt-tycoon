@@ -3454,6 +3454,9 @@ dependencies = [
  "rand 0.9.2",
  "reqwest",
  "rust-ocpp",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "rustledger-core",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -5037,6 +5040,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust_decimal_macros"
+version = "1.40.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74a5a6f027e892c7a035c6fddb50435a1fbf5a734ffc0c2a9fed4d0221440519"
+dependencies = [
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5081,6 +5094,19 @@ dependencies = [
  "libc",
  "linux-raw-sys 0.12.1",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "rustledger-core"
+version = "0.9.1"
+dependencies = [
+ "chrono",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "rustc-hash 2.1.1",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

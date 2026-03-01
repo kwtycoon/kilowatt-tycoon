@@ -24,6 +24,9 @@ pub struct PrimaryNavButton {
 pub struct LeaderboardButton;
 
 #[derive(Component)]
+pub struct LedgerButton;
+
+#[derive(Component)]
 pub struct UnitToggleButton;
 
 /// Text child inside the unit toggle button so we can update the label.
@@ -236,6 +239,49 @@ pub fn spawn_top_nav_content(parent: &mut ChildSpawnerCommands, image_assets: &I
                     // Text
                     btn.spawn((
                         Text::new("Leaderboard"),
+                        TextFont {
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(colors::TEXT_PRIMARY),
+                    ));
+                });
+
+            // Ledger button (opens modal instead of navigation)
+            nav_parent
+                .spawn((
+                    Button,
+                    Node {
+                        padding: UiRect::new(
+                            Val::Px(12.0),
+                            Val::Px(12.0),
+                            Val::Px(4.0),
+                            Val::Px(4.0),
+                        ),
+                        height: Val::Px(38.0),
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(6.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        border: UiRect::new(Val::Px(2.0), Val::Px(2.0), Val::Px(2.0), Val::Px(2.0)),
+                        ..default()
+                    },
+                    BeveledBorder::normal().to_border_color(),
+                    BackgroundColor(colors::BUTTON_FACE),
+                    LedgerButton,
+                    BeveledBorder::normal(),
+                ))
+                .with_children(|btn| {
+                    btn.spawn((
+                        ImageNode::new(image_assets.icon_ledger.clone()),
+                        Node {
+                            width: Val::Px(18.0),
+                            height: Val::Px(18.0),
+                            ..default()
+                        },
+                    ));
+                    btn.spawn((
+                        Text::new("Ledger"),
                         TextFont {
                             font_size: 13.0,
                             ..default()
@@ -479,6 +525,18 @@ pub fn handle_leaderboard_button_click(
         if *interaction == Interaction::Pressed {
             leaderboard_modal_state.open();
             info!("Opening leaderboard modal");
+        }
+    }
+}
+
+/// Handle ledger button clicks to open the modal
+pub fn handle_ledger_button_click(
+    mut ledger_modal_state: ResMut<crate::ui::LedgerModalState>,
+    interaction_query: Query<&Interaction, (Changed<Interaction>, With<LedgerButton>)>,
+) {
+    for interaction in &interaction_query {
+        if *interaction == Interaction::Pressed {
+            ledger_modal_state.toggle();
         }
     }
 }

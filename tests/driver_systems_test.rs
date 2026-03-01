@@ -165,8 +165,8 @@ fn test_game_state_revenue_tracking() {
     let initial_cash = game_state.cash;
 
     game_state.add_charging_revenue(50.0);
-    assert_eq!(game_state.gross_revenue, 50.0);
-    assert_eq!(game_state.net_revenue, 50.0);
+    assert_eq!(game_state.ledger.gross_revenue_f32(), 50.0);
+    assert_eq!(game_state.ledger.net_revenue_f32(), 50.0);
     assert_eq!(game_state.cash, initial_cash + 50.0);
 }
 
@@ -178,9 +178,8 @@ fn test_game_state_refund_tracking() {
     game_state.add_charging_revenue(100.0);
     game_state.add_refund(25.0);
 
-    assert_eq!(game_state.gross_revenue, 100.0);
-    assert_eq!(game_state.total_refunds, 25.0);
-    assert_eq!(game_state.net_revenue, 75.0);
+    assert_eq!(game_state.ledger.gross_revenue_f32(), 100.0);
+    assert_eq!(game_state.ledger.net_revenue_f32(), 75.0);
     assert_eq!(game_state.cash, initial_cash + 75.0);
 }
 
@@ -197,7 +196,7 @@ fn test_game_state_reset() {
     game_state.reset();
 
     // Should be back to defaults
-    assert_eq!(game_state.net_revenue, 0.0);
+    assert_eq!(game_state.ledger.net_revenue_f32(), 0.0);
     assert_eq!(game_state.sessions_completed, 0);
 }
 

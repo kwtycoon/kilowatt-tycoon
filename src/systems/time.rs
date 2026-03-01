@@ -6,6 +6,21 @@ use crate::components::driver::{Driver, DriverState, MovementPhase, VehicleMovem
 use crate::resources::{GameClock, GameState, MultiSiteManager};
 use crate::states::AppState;
 
+/// Tick down demand boost timers for all sites.
+pub fn tick_demand_boosts(
+    time: Res<Time>,
+    game_clock: Res<GameClock>,
+    mut multi_site: ResMut<MultiSiteManager>,
+) {
+    let delta_game_secs = time.delta_secs() * game_clock.speed.multiplier();
+    if delta_game_secs <= 0.0 {
+        return;
+    }
+    for site_state in multi_site.owned_sites.values_mut() {
+        site_state.site_upgrades.tick_demand_boost(delta_game_secs);
+    }
+}
+
 /// Advance game time based on speed multiplier
 pub fn time_system(time: Res<Time>, mut game_clock: ResMut<GameClock>, game_state: Res<GameState>) {
     // Don't advance time if game has ended
@@ -92,6 +107,11 @@ pub fn day_ending_system(
                     // Credit partial revenue
                     if revenue > 0.0 {
                         game_state.add_charging_revenue(revenue);
+                    }
+                    // Flush accumulated ad revenue for this session
+                    if charger.pending_ad_revenue > 0.0 {
+                        game_state.add_ad_revenue(charger.pending_ad_revenue);
+                        charger.pending_ad_revenue = 0.0;
                     }
                     game_state.sessions_completed += 1;
                     game_state.change_reputation(2);

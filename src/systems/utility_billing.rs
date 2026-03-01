@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use crate::components::BelongsToSite;
 use crate::components::charger::Charger;
 use crate::resources::{
-    CharacterPerk, EnvironmentState, GameClock, GameState, MultiSiteManager, PlayerProfile,
+    CharacterPerk, EnvironmentState, GameClock, MultiSiteManager, PlayerProfile,
 };
 
 /// Minimum challenge level required for spot market pricing.
@@ -61,12 +61,13 @@ pub fn spot_market_system(
     }
 }
 
-/// Utility billing system - tracks consumption and applies costs
+/// Utility billing system - tracks consumption and accumulates costs on the
+/// site's utility meter / pending fields. Dollar amounts are flushed to the
+/// ledger at day-end (not per-tick) to avoid f32-vs-Decimal rounding drift.
 pub fn utility_billing_system(
     mut multi_site: ResMut<MultiSiteManager>,
     game_clock: Res<GameClock>,
     time: Res<Time>,
-    mut game_state: ResMut<GameState>,
     profile: Res<PlayerProfile>,
     chargers: Query<(&Charger, &BelongsToSite)>,
 ) {
@@ -105,19 +106,13 @@ pub fn utility_billing_system(
                 .site_energy_config
                 .current_rate(game_clock.game_time);
 
-            // Add to meter
+            // Accumulate on meter (dollar total flushed to ledger at day-end)
             site_state
                 .utility_meter
                 .add_energy(energy_kwh, tou_period, rate);
-
-            // Apply energy cost (continuously)
-            let energy_cost = energy_kwh * rate;
-            game_state.add_energy_cost(energy_cost);
         }
 
-        // Solar export revenue: credit for power sold back to the grid.
-        // Level 2+ sites use the per-site spot market price; level 1 uses
-        // the fixed TOU export rate from SiteEnergyConfig.
+        // Solar export: accumulate on meter (flushed to ledger at day-end)
         let export_kw = site_state.grid_import.export_kw;
         if export_kw > 0.0 {
             let export_kwh = export_kw * (delta_game_seconds / 3600.0);
@@ -130,13 +125,9 @@ pub fn utility_billing_system(
             };
 
             site_state.utility_meter.add_export(export_kwh, export_rate);
-
-            let export_revenue = export_kwh * export_rate;
-            game_state.add_solar_export_revenue(export_revenue);
         }
 
         // Update demand charge based on current peak
-        // Apply character perk multiplier if UtilityInsider is active
         let demand_perk_multiplier = match profile.active_perk() {
             Some(CharacterPerk::UtilityInsider {
                 demand_charge_multiplier,
@@ -148,24 +139,15 @@ pub fn utility_billing_system(
             demand_perk_multiplier,
         );
 
-        // Apply demand charge delta to game state (since peak only goes up)
-        let demand_delta =
-            site_state.utility_meter.demand_charge - site_state.utility_meter.demand_charge_applied;
-        if demand_delta > 0.0 {
-            game_state.add_demand_charge(demand_delta);
-            site_state.utility_meter.demand_charge_applied += demand_delta;
-        }
-
-        // Charge maintenance and amenity OPEX (per-tick, per-site)
+        // Accumulate opex on site (flushed to ledger at day-end)
         let hourly_opex = site_state.service_strategy.hourly_maintenance_cost()
             + site_state.service_strategy.amenity_cost_per_hour();
         let opex_this_tick = hourly_opex * (delta_game_seconds / 3600.0);
         if opex_this_tick > 0.0 {
-            game_state.add_opex(opex_this_tick);
+            site_state.pending_opex += opex_this_tick;
         }
 
-        // Warranty premium — tracked separately from opex so the player can
-        // see fixed insurance cost vs variable repair cost in the daily report.
+        // Accumulate warranty on site (flushed to ledger at day-end)
         let warranty_hourly = site_state
             .service_strategy
             .hourly_warranty_cost_for_chargers(
@@ -176,7 +158,7 @@ pub fn utility_billing_system(
             );
         let warranty_this_tick = warranty_hourly * (delta_game_seconds / 3600.0);
         if warranty_this_tick > 0.0 {
-            game_state.add_warranty_cost(warranty_this_tick);
+            site_state.pending_warranty += warranty_this_tick;
         }
     }
 }

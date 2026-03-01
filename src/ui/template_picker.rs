@@ -44,7 +44,7 @@ pub fn initialize_game_on_first_play(
 
             // Template is now automatically applied by rent_site()
             // Set starting budget based on traditional Large template
-            game_state.cash = LotTemplate::Large.starting_budget() as f32;
+            game_state.reset_with_cash(LotTemplate::Large.starting_budget() as f32);
 
             // Initialize current day tracker for Day 1
             game_state.daily_history.current_day =

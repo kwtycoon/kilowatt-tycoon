@@ -1183,7 +1183,7 @@ pub fn update_summary_panel_values(
     }
     for mut text in &mut revenue {
         let display_revenue = {
-            let rounded = game_state.net_revenue.round();
+            let rounded = game_state.ledger.net_revenue_f32().round();
             if rounded == 0.0 { 0.0 } else { rounded }
         };
         **text = format!("${display_revenue:.0}");

@@ -165,7 +165,8 @@ pub fn update_overlay(
     for mut text in &mut stats_q {
         **text = format!(
             "Revenue: ${:.0}\nSessions: {}",
-            game_state.net_revenue, game_state.sessions_completed
+            game_state.ledger.net_revenue_f32(),
+            game_state.sessions_completed
         );
     }
 
