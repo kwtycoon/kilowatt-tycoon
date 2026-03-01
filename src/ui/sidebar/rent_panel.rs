@@ -52,18 +52,29 @@ pub fn spawn_rent_panel(parent: &mut ChildSpawnerCommands) {
     });
 }
 
-/// Update the rent panel content when data changes
+/// Update the rent panel content when data changes or panel becomes visible.
+///
+/// Also triggers on `NavigationState` changes so that children are rebuilt
+/// after the panel switches from `Display::None` to `Display::Flex`.
+/// Bevy's taffy layout may report zero-size for nodes first laid out
+/// under an invisible parent; rebuilding when visible fixes that.
 pub fn update_rent_panel(
     multi_site: Res<MultiSiteManager>,
     carousel: Res<RentCarouselState>,
     game_state: Res<GameState>,
+    nav_state: Res<super::NavigationState>,
     image_assets: Res<ImageAssets>,
     panel_query: Query<Entity, With<RentPanel>>,
     children_query: Query<&Children>,
     mut commands: Commands,
 ) {
-    // Only update when data changes
-    if !multi_site.is_changed() && !carousel.is_changed() && !game_state.is_changed() {
+    let nav_switched_to_rent =
+        nav_state.is_changed() && nav_state.primary == super::PrimaryNav::Rent;
+    if !nav_switched_to_rent
+        && !multi_site.is_changed()
+        && !carousel.is_changed()
+        && !game_state.is_changed()
+    {
         return;
     }
 

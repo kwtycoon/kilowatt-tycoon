@@ -42,10 +42,12 @@ impl Plugin for OpenAdrPlugin {
         app.init_resource::<OpenAdrMessageQueue>();
 
         // Message generation systems -- run during Playing state.
-        // Grid telemetry runs last so it can update the shared `last_telemetry_game_time`.
+        // Program registration runs first, then VEN/resource registration,
+        // then telemetry (grid last to update shared timestamps), then events.
         app.add_systems(
             Update,
             (
+                openadr_program_system,
                 openadr_register_system,
                 openadr_solar_telemetry_system,
                 openadr_bess_telemetry_system,
@@ -54,6 +56,8 @@ impl Plugin for OpenAdrPlugin {
                 openadr_event_response_system,
                 openadr_export_event_system,
                 openadr_customer_price_system,
+                openadr_ghg_signal_system,
+                openadr_grid_alert_system,
             )
                 .chain()
                 .run_if(in_state(AppState::Playing)),

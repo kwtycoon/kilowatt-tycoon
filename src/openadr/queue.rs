@@ -65,6 +65,10 @@ pub struct OpenAdrSiteState {
     pub last_customer_price: Option<f32>,
     /// Whether a spot-market grid event signal is currently active.
     pub spot_grid_event_active: bool,
+    /// Whether a grid alert event has been emitted for the current spot grid event.
+    pub grid_alert_emitted: bool,
+    /// Last emitted carbon credit rate (quantised, to detect changes).
+    pub last_carbon_rate: Option<f32>,
     /// Monotonically increasing interval counter for reports.
     pub next_interval_id: i32,
 }
@@ -83,6 +87,8 @@ impl Default for OpenAdrSiteState {
             export_active: false,
             last_customer_price: None,
             spot_grid_event_active: false,
+            grid_alert_emitted: false,
+            last_carbon_rate: None,
             next_interval_id: 1,
         }
     }
@@ -112,6 +118,9 @@ pub struct OpenAdrMessageQueue {
     /// Whether the event log is enabled.
     pub event_log_enabled: bool,
 
+    /// Whether the DR program definition has been emitted.
+    pub program_registered: bool,
+
     /// Per-site DER state, keyed by `SiteId`.
     pub site_state: HashMap<SiteId, OpenAdrSiteState>,
 }
@@ -129,6 +138,7 @@ impl Default for OpenAdrMessageQueue {
             sim_start: midnight,
             event_log: Vec::new(),
             event_log_enabled: true,
+            program_registered: false,
             site_state: HashMap::new(),
         }
     }

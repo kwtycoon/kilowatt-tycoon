@@ -45,6 +45,7 @@ pub struct OcpiChargerState {
     pub last_update_game_time: f32,
     pub active_driver: Option<Entity>,
     pub active_id_tag: Option<String>,
+    pub is_roaming: bool,
 }
 
 impl Default for OcpiChargerState {
@@ -59,6 +60,7 @@ impl Default for OcpiChargerState {
             last_update_game_time: 0.0,
             active_driver: None,
             active_id_tag: None,
+            is_roaming: false,
         }
     }
 }

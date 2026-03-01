@@ -267,6 +267,7 @@ pub fn driver_spawn_system(
                 .clone()
                 .unwrap_or_else(|| generate_evcc_mac(&mut rand::rng()));
 
+            let is_roaming = rand::random::<f32>() < 0.25;
             let driver = Driver {
                 id: driver_data.id.clone(),
                 evcc_id,
@@ -279,6 +280,7 @@ pub fn driver_spawn_system(
                 assigned_charger: None,
                 assigned_bay: Some((bay_x, bay_y)),
                 state: DriverState::Arriving,
+                is_roaming,
                 ..default()
             };
 
@@ -307,8 +309,12 @@ pub fn driver_spawn_system(
             });
 
             info!(
-                "Driver {} arrived at site {:?}, pathfinding to bay ({}, {})",
-                driver_id, site_id, bay_x, bay_y
+                "Driver {} arrived at site {:?}{}, pathfinding to bay ({}, {})",
+                driver_id,
+                site_id,
+                if is_roaming { " [roaming]" } else { "" },
+                bay_x,
+                bay_y
             );
 
             arrived_events.write(DriverArrivedEvent {
@@ -513,6 +519,7 @@ pub fn driver_spawn_system(
                 .clone()
                 .unwrap_or_else(|| generate_evcc_mac(&mut rand::rng()));
 
+            let is_roaming = rand::random::<f32>() < 0.25;
             let driver = Driver {
                 id: driver_data.id.clone(),
                 evcc_id,
@@ -525,6 +532,7 @@ pub fn driver_spawn_system(
                 assigned_charger: None,
                 assigned_bay: Some((bay_x, bay_y)),
                 state: DriverState::Arriving,
+                is_roaming,
                 ..default()
             };
 
@@ -551,8 +559,12 @@ pub fn driver_spawn_system(
             });
 
             info!(
-                "Procedural driver {} arrived (demand: {:.2}x), pathfinding to bay ({}, {})",
-                driver_id, effective_demand, bay_x, bay_y
+                "Procedural driver {} arrived (demand: {:.2}x){}, pathfinding to bay ({}, {})",
+                driver_id,
+                effective_demand,
+                if is_roaming { " [roaming]" } else { "" },
+                bay_x,
+                bay_y
             );
 
             arrived_events.write(DriverArrivedEvent {

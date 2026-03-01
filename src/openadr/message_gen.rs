@@ -6,7 +6,9 @@
 
 use bevy::prelude::*;
 
-use crate::resources::{GameClock, MultiSiteManager, PricingMode, SolarExportPolicy};
+use crate::resources::{
+    GameClock, MultiSiteManager, PricingMode, SolarExportPolicy, site_energy::CarbonCreditMarket,
+};
 
 use super::queue::{OpenAdrMessageQueue, TELEMETRY_INTERVAL_GAME_SECS};
 use super::types::*;
@@ -15,10 +17,148 @@ use super::types::*;
 const DR_PROGRAM_ID: &str = "kw-tycoon-dr";
 
 // ─────────────────────────────────────────────────────
-//  1. VEN registration system
+//  Targeting helpers
+// ─────────────────────────────────────────────────────
+
+fn ven_target(ven_name: &str) -> Option<TargetMap> {
+    Some(TargetMap(vec![TargetEntry {
+        label: TargetType::VENName,
+        values: vec![ven_name.to_string()],
+    }]))
+}
+
+fn resource_target(ven_name: &str, resource_name: &str) -> Option<TargetMap> {
+    Some(TargetMap(vec![
+        TargetEntry {
+            label: TargetType::VENName,
+            values: vec![ven_name.to_string()],
+        },
+        TargetEntry {
+            label: TargetType::ResourceName,
+            values: vec![resource_name.to_string()],
+        },
+    ]))
+}
+
+fn site_group_target(site_id: u32) -> Option<TargetMap> {
+    Some(TargetMap(vec![TargetEntry {
+        label: TargetType::Group,
+        values: vec![format!("site-{site_id}")],
+    }]))
+}
+
+// ─────────────────────────────────────────────────────
+//  OperatingState mapping helpers
+// ─────────────────────────────────────────────────────
+
+fn bess_operating_state(
+    current_power_kw: f32,
+    soc_percent: f32,
+    demand_event_active: bool,
+) -> OperatingState {
+    if current_power_kw > 0.0 && demand_event_active {
+        OperatingState::RunningCurtailed
+    } else if current_power_kw.abs() > f32::EPSILON {
+        OperatingState::RunningNormal
+    } else if soc_percent < 10.0 {
+        OperatingState::IdleCurtailed
+    } else {
+        OperatingState::IdleNormal
+    }
+}
+
+fn grid_operating_state(demand_event_active: bool) -> OperatingState {
+    if demand_event_active {
+        OperatingState::RunningHeightened
+    } else {
+        OperatingState::Normal
+    }
+}
+
+/// Map a grid event name to the appropriate OpenADR 3.0 alert type.
+fn grid_event_to_alert_type(event_name: &str) -> EventType {
+    match event_name {
+        "Record Demand" | "Generator Trip" | "Unexpected Plant Outage" => {
+            EventType::AlertGridEmergency
+        }
+        "Transmission Constraint" | "Grid Congestion" => EventType::AlertPossibleOutage,
+        "Heat Emergency" => EventType::AlertOther,
+        "Renewable Shortfall" => EventType::AlertFlexAlert,
+        _ => EventType::AlertOther,
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  0. Program registration system
+// ─────────────────────────────────────────────────────
+
+/// Emit a `ProgramContent` message once when the feed first activates.
+pub fn openadr_program_system(mut queue: ResMut<OpenAdrMessageQueue>) {
+    if !queue.is_active() || queue.program_registered {
+        return;
+    }
+    queue.program_registered = true;
+
+    let sim_start = queue.sim_start;
+    let ts_iso = sim_start.to_rfc3339();
+
+    let program = ProgramContent {
+        program_name: DR_PROGRAM_ID.to_string(),
+        program_long_name: Some("Kilowatt Tycoon DER Management Program".to_string()),
+        retailer_name: Some("KW Tycoon Grid Operator".to_string()),
+        retailer_long_name: None,
+        program_type: Some("PRICING_TARIFF".to_string()),
+        country: Some("US".to_string()),
+        principal_subdivision: None,
+        time_zone_offset: None,
+        interval_period: Some(IntervalPeriod {
+            start: sim_start,
+            duration: None,
+            randomize_start: None,
+        }),
+        program_descriptions: Some(vec![ProgramDescription {
+            url: "https://kilowatt-tycoon.com/dr-program".to_string(),
+        }]),
+        binding_events: Some(true),
+        local_price: Some(true),
+        payload_descriptors: Some(vec![
+            PayloadDescriptor::EventPayloadDescriptor(EventPayloadDescriptor {
+                payload_type: EventType::Price,
+                units: Some(Unit::Private("$/kWh".to_string())),
+                currency: None,
+            }),
+            PayloadDescriptor::EventPayloadDescriptor(EventPayloadDescriptor {
+                payload_type: EventType::GHG,
+                units: Some(Unit::Private("gCO2/kWh".to_string())),
+                currency: None,
+            }),
+            PayloadDescriptor::ReportPayloadDescriptor(ReportPayloadDescriptor {
+                payload_type: ReportType::Usage,
+                reading_type: ReadingType::DirectRead,
+                units: Some(Unit::KW),
+                accuracy: None,
+                confidence: None,
+            }),
+        ]),
+        targets: None,
+    };
+
+    let json = serialize_openadr(&program);
+    queue.push_log(
+        "vtn".to_string(),
+        ts_iso,
+        "Program",
+        "Program Register",
+        json,
+    );
+}
+
+// ─────────────────────────────────────────────────────
+//  1. VEN registration system (+ Resource registration)
 // ─────────────────────────────────────────────────────
 
 /// Register solar and BESS as VENs when capacity goes from 0 to >0.
+/// Also emits `ResourceContent` for each physical DER asset.
 pub fn openadr_register_system(
     multi_site: Res<MultiSiteManager>,
     mut queue: ResMut<OpenAdrMessageQueue>,
@@ -36,27 +176,91 @@ pub fn openadr_register_system(
 
         let der_state = queue.get_or_create(*site_id);
 
-        // Solar VEN registration
+        // Solar VEN + Resource registration
         if !der_state.solar_registered && site_state.solar_state.installed_kw_peak > 0.0 {
             der_state.solar_registered = true;
             der_state.last_solar_kw_peak = site_state.solar_state.installed_kw_peak;
 
             let ven_name = format!("solar-site-{}", site_id.0);
-            let ven_content = VenContent::new(ven_name.clone(), None, None, None);
+            let ven_content = VenContent::new(
+                ven_name.clone(),
+                Some(vec![values_map_f32(
+                    "CAPACITY_KW_PEAK",
+                    site_state.solar_state.installed_kw_peak,
+                )]),
+                ven_target(&ven_name),
+                None,
+            );
             let json = serialize_openadr(&ven_content);
-            queue.push_log(ven_name, ts_iso.clone(), "Ven", "Solar VEN Register", json);
+            queue.push_log(
+                ven_name.clone(),
+                ts_iso.clone(),
+                "Ven",
+                "Solar VEN Register",
+                json,
+            );
+
+            let resource = ResourceContent {
+                resource_name: format!("solar-array-site-{}", site_id.0),
+                attributes: Some(vec![values_map_f32(
+                    "CAPACITY_KW_PEAK",
+                    site_state.solar_state.installed_kw_peak,
+                )]),
+                targets: resource_target(&ven_name, "solar-array"),
+            };
+            let resource_json = serialize_openadr(&resource);
+            queue.push_log(
+                ven_name,
+                ts_iso.clone(),
+                "Resource",
+                "Resource Register",
+                resource_json,
+            );
         }
 
-        // BESS VEN registration
+        // BESS VEN + Resource registration
         let der_state = queue.get_or_create(*site_id);
         if !der_state.bess_registered && site_state.bess_state.capacity_kwh > 0.0 {
             der_state.bess_registered = true;
             der_state.last_bess_kwh = site_state.bess_state.capacity_kwh;
 
             let ven_name = format!("bess-site-{}", site_id.0);
-            let ven_content = VenContent::new(ven_name.clone(), None, None, None);
+            let ven_content = VenContent::new(
+                ven_name.clone(),
+                Some(vec![
+                    values_map_f32("CAPACITY_KWH", site_state.bess_state.capacity_kwh),
+                    values_map_f32("MAX_CHARGE_KW", site_state.bess_state.max_charge_kw),
+                    values_map_f32("MAX_DISCHARGE_KW", site_state.bess_state.max_discharge_kw),
+                ]),
+                ven_target(&ven_name),
+                None,
+            );
             let json = serialize_openadr(&ven_content);
-            queue.push_log(ven_name, ts_iso.clone(), "Ven", "BESS VEN Register", json);
+            queue.push_log(
+                ven_name.clone(),
+                ts_iso.clone(),
+                "Ven",
+                "BESS VEN Register",
+                json,
+            );
+
+            let resource = ResourceContent {
+                resource_name: format!("bess-unit-site-{}", site_id.0),
+                attributes: Some(vec![
+                    values_map_f32("CAPACITY_KWH", site_state.bess_state.capacity_kwh),
+                    values_map_f32("MAX_CHARGE_KW", site_state.bess_state.max_charge_kw),
+                    values_map_f32("MAX_DISCHARGE_KW", site_state.bess_state.max_discharge_kw),
+                ]),
+                targets: resource_target(&ven_name, "bess-unit"),
+            };
+            let resource_json = serialize_openadr(&resource);
+            queue.push_log(
+                ven_name,
+                ts_iso.clone(),
+                "Resource",
+                "Resource Register",
+                resource_json,
+            );
         }
     }
 }
@@ -86,7 +290,6 @@ pub fn openadr_solar_telemetry_system(
             continue;
         }
 
-        // Check timing and registration; extract what we need then drop the borrow
         let der_state = queue.get_or_create(*site_id);
         if !der_state.solar_registered {
             continue;
@@ -146,10 +349,10 @@ pub fn openadr_solar_telemetry_system(
 }
 
 // ─────────────────────────────────────────────────────
-//  3. BESS telemetry system
+//  3. BESS telemetry system (+ OperatingState)
 // ─────────────────────────────────────────────────────
 
-/// Periodic BESS state-of-charge and power reports.
+/// Periodic BESS state-of-charge and power reports with `OperatingState`.
 pub fn openadr_bess_telemetry_system(
     multi_site: Res<MultiSiteManager>,
     mut queue: ResMut<OpenAdrMessageQueue>,
@@ -180,10 +383,17 @@ pub fn openadr_bess_telemetry_system(
             continue;
         }
         let interval_id = der_state.next_interval();
+        let dr_active = der_state.demand_event_active;
 
         let timestamp = sim_start + chrono::Duration::seconds(game_clock.total_game_time as i64);
         let ts_iso = timestamp.to_rfc3339();
         let ven_name = format!("bess-site-{}", site_id.0);
+
+        let op_state = bess_operating_state(
+            site_state.bess_state.current_power_kw,
+            site_state.bess_state.soc_percent(),
+            dr_active,
+        );
 
         let report = ReportContent {
             program_id: program_id.clone(),
@@ -222,6 +432,7 @@ pub fn openadr_bess_telemetry_system(
                         values_map_f32("SOC_PERCENT", site_state.bess_state.soc_percent()),
                         values_map_f32("POWER_KW", site_state.bess_state.current_power_kw),
                         values_map_str("MODE", site_state.bess_state.mode.display_name()),
+                        values_map_str("OPERATING_STATE", &format!("{op_state:?}")),
                     ],
                 }],
             }],
@@ -233,10 +444,10 @@ pub fn openadr_bess_telemetry_system(
 }
 
 // ─────────────────────────────────────────────────────
-//  4. Grid telemetry system
+//  4. Grid telemetry system (+ OperatingState)
 // ─────────────────────────────────────────────────────
 
-/// Periodic grid import and demand reports from the VTN perspective.
+/// Periodic grid import and demand reports with `OperatingState`.
 pub fn openadr_grid_telemetry_system(
     multi_site: Res<MultiSiteManager>,
     mut queue: ResMut<OpenAdrMessageQueue>,
@@ -261,13 +472,15 @@ pub fn openadr_grid_telemetry_system(
             continue;
         }
 
-        // Mark telemetry time here so all three telemetry systems share the same tick
         der_state.last_telemetry_game_time = game_clock.total_game_time;
         let interval_id = der_state.next_interval();
+        let dr_active = der_state.demand_event_active;
 
         let timestamp = sim_start + chrono::Duration::seconds(game_clock.total_game_time as i64);
         let ts_iso = timestamp.to_rfc3339();
         let ven_name = format!("grid-site-{}", site_id.0);
+
+        let op_state = grid_operating_state(dr_active);
 
         let report = ReportContent {
             program_id: program_id.clone(),
@@ -298,6 +511,7 @@ pub fn openadr_grid_telemetry_system(
                         values_map_f32("NET_IMPORT_KVA", site_state.grid_import.current_kva),
                         values_map_f32("EXPORT_KW", site_state.grid_import.export_kw),
                         values_map_f32("PEAK_DEMAND_KW", site_state.utility_meter.peak_demand_kw),
+                        values_map_str("OPERATING_STATE", &format!("{op_state:?}")),
                     ],
                 }],
             }],
@@ -309,11 +523,11 @@ pub fn openadr_grid_telemetry_system(
 }
 
 // ─────────────────────────────────────────────────────
-//  5. DR event system (VTN events)
+//  5. DR event system (VTN events) + TargetMap addressing
 // ─────────────────────────────────────────────────────
 
 /// Emit OpenADR Events when TOU period transitions or demand approaches
-/// the site capacity threshold.
+/// the site capacity threshold. Events now include `TargetMap` addressing.
 pub fn openadr_event_system(
     multi_site: Res<MultiSiteManager>,
     mut queue: ResMut<OpenAdrMessageQueue>,
@@ -345,7 +559,6 @@ pub fn openadr_event_system(
             if should_send {
                 der_state.last_tou_period = Some(current_tou);
             }
-            // Drop der_state borrow here
             if should_send {
                 let rate = site_state
                     .site_energy_config
@@ -355,7 +568,7 @@ pub fn openadr_event_system(
                     program_id: program_id.clone(),
                     event_name: Some(format!("TOU-{}", current_tou.display_name())),
                     priority: Priority::new(5),
-                    targets: None,
+                    targets: site_group_target(site_id.0),
                     report_descriptors: None,
                     payload_descriptors: Some(vec![EventPayloadDescriptor {
                         payload_type: EventType::Price,
@@ -386,8 +599,6 @@ pub fn openadr_event_system(
                     json,
                 );
 
-                // Emit an ExportPrice event with the buyback rate.
-                // Level 2+ sites use the spot market price; level 1 uses fixed TOU.
                 let export_rate = if site_state.challenge_level >= 2 {
                     site_state.spot_market.current_price_per_kwh
                 } else {
@@ -402,11 +613,12 @@ pub fn openadr_event_system(
                     format!("TOU-Export-{}", current_tou.display_name())
                 };
 
+                let solar_ven = format!("solar-site-{}", site_id.0);
                 let export_event = EventContent {
                     program_id: program_id.clone(),
                     event_name: Some(export_label),
                     priority: Priority::new(5),
-                    targets: None,
+                    targets: ven_target(&solar_ven),
                     report_descriptors: None,
                     payload_descriptors: Some(vec![EventPayloadDescriptor {
                         payload_type: EventType::ExportPrice,
@@ -453,7 +665,7 @@ pub fn openadr_event_system(
                         program_id: program_id.clone(),
                         event_name: Some(format!("Grid-Event: {}", grid_event.name)),
                         priority: Priority::new(1),
-                        targets: None,
+                        targets: site_group_target(site_id.0),
                         report_descriptors: None,
                         payload_descriptors: Some(vec![EventPayloadDescriptor {
                             payload_type: EventType::ExportPrice,
@@ -489,6 +701,7 @@ pub fn openadr_event_system(
             } else if !has_event && was_active {
                 let der_state = queue.get_or_create(*site_id);
                 der_state.spot_grid_event_active = false;
+                der_state.grid_alert_emitted = false;
             }
         }
 
@@ -510,7 +723,7 @@ pub fn openadr_event_system(
                 program_id: program_id.clone(),
                 event_name: Some("Demand Limit Warning".to_string()),
                 priority: Priority::new(2),
-                targets: None,
+                targets: site_group_target(site_id.0),
                 report_descriptors: None,
                 payload_descriptors: Some(vec![EventPayloadDescriptor {
                     payload_type: EventType::ImportCapacityLimit,
@@ -541,11 +754,11 @@ pub fn openadr_event_system(
 }
 
 // ─────────────────────────────────────────────────────
-//  6. BESS event response system
+//  6. BESS event response + dispatch setpoint system
 // ─────────────────────────────────────────────────────
 
-/// Emit a dispatch setpoint report when BESS starts or stops
-/// discharging for peak shaving in response to a demand event.
+/// Emit `DispatchSetpoint` and `ChargeStateSetpoint` events from the VTN side,
+/// plus the existing BESS DR Response report as VEN-side acknowledgment.
 pub fn openadr_event_response_system(
     multi_site: Res<MultiSiteManager>,
     mut queue: ResMut<OpenAdrMessageQueue>,
@@ -571,13 +784,11 @@ pub fn openadr_event_response_system(
             continue;
         }
 
-        // Only report when BESS is actively discharging (positive power = discharge)
         let bess_power = site_state.bess_state.current_power_kw;
         if bess_power <= 0.0 {
             continue;
         }
 
-        // Throttle to once per telemetry interval
         if game_clock.total_game_time - der_state.last_demand_event_game_time
             < TELEMETRY_INTERVAL_GAME_SECS
         {
@@ -590,6 +801,49 @@ pub fn openadr_event_response_system(
         let ts_iso = timestamp.to_rfc3339();
         let ven_name = format!("bess-site-{}", site_id.0);
 
+        // VTN-side: DispatchSetpoint event targeting the BESS
+        let dispatch_event = EventContent {
+            program_id: program_id.clone(),
+            event_name: Some("BESS Dispatch".to_string()),
+            priority: Priority::new(2),
+            targets: resource_target(&ven_name, "bess-unit"),
+            report_descriptors: None,
+            payload_descriptors: Some(vec![EventPayloadDescriptor {
+                payload_type: EventType::DispatchSetpoint,
+                units: Some(Unit::KW),
+                currency: None,
+            }]),
+            interval_period: Some(IntervalPeriod {
+                start: timestamp,
+                duration: None,
+                randomize_start: None,
+            }),
+            intervals: vec![EventInterval {
+                id: 0,
+                interval_period: None,
+                payloads: vec![
+                    EventValuesMap {
+                        value_type: EventType::DispatchSetpoint,
+                        values: vec![ovalue_f32(bess_power)],
+                    },
+                    EventValuesMap {
+                        value_type: EventType::ChargeStateSetpoint,
+                        values: vec![ovalue_f32(site_state.bess_state.soc_percent())],
+                    },
+                ],
+            }],
+        };
+
+        let dispatch_json = serialize_openadr(&dispatch_event);
+        queue.push_log(
+            ven_name.clone(),
+            ts_iso.clone(),
+            "Event",
+            "Dispatch Setpoint",
+            dispatch_json,
+        );
+
+        // VEN-side: DR response report (existing behavior, retained)
         let report = ReportContent {
             program_id: program_id.clone(),
             event_id: "demand-response"
@@ -625,7 +879,7 @@ pub fn openadr_event_response_system(
 }
 
 // ─────────────────────────────────────────────────────
-//  7. Solar export event system
+//  7. Solar export event system (+ TargetMap)
 // ─────────────────────────────────────────────────────
 
 /// Emit an `ExportCapacityAvailable` event when excess solar transitions
@@ -664,13 +918,13 @@ pub fn openadr_export_event_system(
             let timestamp =
                 sim_start + chrono::Duration::seconds(game_clock.total_game_time as i64);
             let ts_iso = timestamp.to_rfc3339();
-            let vtn_name = format!("grid-site-{}", site_id.0);
+            let solar_ven = format!("solar-site-{}", site_id.0);
 
             let event_content = EventContent {
                 program_id: program_id.clone(),
                 event_name: Some("Solar Export Active".to_string()),
                 priority: Priority::new(5),
-                targets: None,
+                targets: resource_target(&solar_ven, "solar-array"),
                 report_descriptors: None,
                 payload_descriptors: Some(vec![EventPayloadDescriptor {
                     payload_type: EventType::ExportCapacityAvailable,
@@ -693,7 +947,7 @@ pub fn openadr_export_event_system(
             };
 
             let json = serialize_openadr(&event_content);
-            queue.push_log(vtn_name, ts_iso, "Event", "Solar Export", json);
+            queue.push_log(solar_ven, ts_iso, "Event", "Solar Export", json);
         } else if !is_exporting && der_state.export_active {
             der_state.export_active = false;
         }
@@ -701,11 +955,10 @@ pub fn openadr_export_event_system(
 }
 
 // ─────────────────────────────────────────────────────
-//  8. Customer Price Signal system
+//  8. Customer Price Signal system (+ TargetMap)
 // ─────────────────────────────────────────────────────
 
-/// Emit an OpenADR Event whenever the customer-facing effective price changes
-/// (TOU transition, surge ramp, mode switch, etc.).
+/// Emit an OpenADR Event whenever the customer-facing effective price changes.
 pub fn openadr_customer_price_system(
     multi_site: Res<MultiSiteManager>,
     mut queue: ResMut<OpenAdrMessageQueue>,
@@ -728,7 +981,6 @@ pub fn openadr_customer_price_system(
             site.charger_utilization,
         );
 
-        // Quantise to 2 decimal places to avoid noise from floating-point jitter
         let quantised = (effective * 100.0).round() / 100.0;
 
         let der_state = queue.get_or_create(*site_id);
@@ -752,7 +1004,7 @@ pub fn openadr_customer_price_system(
             program_id: program_id.clone(),
             event_name: Some(format!("CustomerPrice-{mode_label}-{}", site_id.0)),
             priority: Priority::new(5),
-            targets: None,
+            targets: site_group_target(site_id.0),
             report_descriptors: None,
             payload_descriptors: Some(vec![EventPayloadDescriptor {
                 payload_type: EventType::Price,
@@ -776,5 +1028,150 @@ pub fn openadr_customer_price_system(
 
         let json = serialize_openadr(&event_content);
         queue.push_log(vtn_name, ts_iso, "Event", "Customer Price Signal", json);
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  9. GHG signal system
+// ─────────────────────────────────────────────────────
+
+/// Emit `EventType::GHG` events when the carbon credit market rate changes,
+/// providing a grid carbon-intensity signal.
+pub fn openadr_ghg_signal_system(
+    multi_site: Res<MultiSiteManager>,
+    carbon_market: Res<CarbonCreditMarket>,
+    mut queue: ResMut<OpenAdrMessageQueue>,
+    game_clock: Res<GameClock>,
+) {
+    if !queue.is_active() {
+        return;
+    }
+
+    let program_id = match make_program_id(DR_PROGRAM_ID) {
+        Some(id) => id,
+        None => return,
+    };
+    let sim_start = queue.sim_start;
+
+    // Derive a synthetic carbon intensity from the credit rate.
+    // Higher credit rate => dirtier grid => higher gCO2/kWh.
+    // rate_per_kwh ranges ~$0.10-$0.20; map to ~200-800 gCO2/kWh.
+    let rate = carbon_market.rate_per_kwh();
+    let carbon_intensity = rate * 4000.0;
+    let quantised = (carbon_intensity * 10.0).round() / 10.0;
+
+    for site_id in multi_site.owned_sites.keys() {
+        let der_state = queue.get_or_create(*site_id);
+        if der_state.last_carbon_rate == Some(quantised) {
+            continue;
+        }
+        der_state.last_carbon_rate = Some(quantised);
+
+        let timestamp = sim_start + chrono::Duration::seconds(game_clock.total_game_time as i64);
+        let ts_iso = timestamp.to_rfc3339();
+        let vtn_name = format!("grid-site-{}", site_id.0);
+
+        let event_content = EventContent {
+            program_id: program_id.clone(),
+            event_name: Some("GHG-Signal".to_string()),
+            priority: Priority::new(4),
+            targets: site_group_target(site_id.0),
+            report_descriptors: None,
+            payload_descriptors: Some(vec![EventPayloadDescriptor {
+                payload_type: EventType::GHG,
+                units: Some(Unit::Private("gCO2/kWh".to_string())),
+                currency: None,
+            }]),
+            interval_period: Some(IntervalPeriod {
+                start: timestamp,
+                duration: None,
+                randomize_start: None,
+            }),
+            intervals: vec![EventInterval {
+                id: 0,
+                interval_period: None,
+                payloads: vec![EventValuesMap {
+                    value_type: EventType::GHG,
+                    values: vec![ovalue_f32(quantised)],
+                }],
+            }],
+        };
+
+        let json = serialize_openadr(&event_content);
+        queue.push_log(vtn_name, ts_iso, "Event", "GHG Signal", json);
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  10. Grid alert system
+// ─────────────────────────────────────────────────────
+
+/// Emit proper OpenADR 3.0 alert events (`AlertGridEmergency`,
+/// `AlertPossibleOutage`, `AlertFlexAlert`) for spot-market grid events.
+pub fn openadr_grid_alert_system(
+    multi_site: Res<MultiSiteManager>,
+    mut queue: ResMut<OpenAdrMessageQueue>,
+    game_clock: Res<GameClock>,
+) {
+    if !queue.is_active() {
+        return;
+    }
+
+    let program_id = match make_program_id(DR_PROGRAM_ID) {
+        Some(id) => id,
+        None => return,
+    };
+    let sim_start = queue.sim_start;
+
+    for (site_id, site_state) in &multi_site.owned_sites {
+        if site_state.challenge_level < 2 {
+            continue;
+        }
+
+        let grid_event = match &site_state.spot_market.grid_event {
+            Some(ge) => ge,
+            None => continue,
+        };
+
+        let der_state = queue.get_or_create(*site_id);
+        if der_state.grid_alert_emitted {
+            continue;
+        }
+        der_state.grid_alert_emitted = true;
+
+        let timestamp = sim_start + chrono::Duration::seconds(game_clock.total_game_time as i64);
+        let ts_iso = timestamp.to_rfc3339();
+        let vtn_name = format!("grid-site-{}", site_id.0);
+
+        let alert_type = grid_event_to_alert_type(grid_event.name);
+
+        let event_content = EventContent {
+            program_id: program_id.clone(),
+            event_name: Some(format!("Grid-Alert: {}", grid_event.name)),
+            priority: Priority::new(1),
+            targets: site_group_target(site_id.0),
+            report_descriptors: None,
+            payload_descriptors: Some(vec![EventPayloadDescriptor {
+                payload_type: alert_type.clone(),
+                units: None,
+                currency: None,
+            }]),
+            interval_period: Some(IntervalPeriod {
+                start: timestamp,
+                duration: None,
+                randomize_start: None,
+            }),
+            intervals: vec![EventInterval {
+                id: 0,
+                interval_period: None,
+                payloads: vec![EventValuesMap {
+                    value_type: alert_type,
+                    values: vec![ovalue_f32(grid_event.price_multiplier)],
+                }],
+            }],
+        };
+
+        let json = serialize_openadr(&event_content);
+        queue.push_log(vtn_name, ts_iso, "Event", "Grid Alert", json);
     }
 }

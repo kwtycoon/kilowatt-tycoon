@@ -55,17 +55,23 @@
 
   // OpenADR action colors (by action label)
   var OPENADR_COLORS = {
+    "Program Register": "#c084fc",
     "Solar VEN Register": "#a78bfa",
     "BESS VEN Register": "#a78bfa",
+    "Resource Register": "#818cf8",
     "Solar Telemetry": "#fbbf24",
     "BESS Telemetry": "#22d3ee",
     "Grid Telemetry": "#60a5fa",
     "Price Signal": "#fb923c",
     "Demand Limit": "#f87171",
     "BESS DR Response": "#4ade80",
+    "Dispatch Setpoint": "#34d399",
     "Solar Export Price": "#fbbf24",
     "Solar Export": "#facc15",
     "Customer Price Signal": "#a3e635",
+    "GHG Signal": "#86efac",
+    "Grid Alert": "#ef4444",
+    "Grid Event Start": "#f97316",
   };
 
   // OCPI action colors
@@ -214,6 +220,49 @@
           }
         }
         return name;
+      }
+      if (action === "Program Register") {
+        var pName = obj.program_name || obj.programName || "";
+        var pLong = obj.program_long_name || obj.programLongName || "";
+        return pLong || pName;
+      }
+      if (action === "Resource Register") {
+        var rName = obj.resource_name || obj.resourceName || "";
+        var attrs = obj.attributes;
+        if (attrs && attrs[0] && attrs[0].values && attrs[0].values[0] != null) {
+          var vt = attrs[0].value_type || attrs[0].valueType || "";
+          return rName + " " + vt + "=" + Number(attrs[0].values[0]).toFixed(1);
+        }
+        return rName;
+      }
+      if (action === "GHG Signal") {
+        var intervals = obj.intervals;
+        if (intervals && intervals[0] && intervals[0].payloads) {
+          var vals = intervals[0].payloads[0];
+          if (vals && vals.values && vals.values[0] != null) {
+            return Number(vals.values[0]).toFixed(0) + " gCO2/kWh";
+          }
+        }
+        return "";
+      }
+      if (action === "Grid Alert") {
+        return obj.event_name || obj.eventName || "";
+      }
+      if (action === "Dispatch Setpoint") {
+        var intervals = obj.intervals;
+        if (intervals && intervals[0] && intervals[0].payloads) {
+          var parts = [];
+          for (var k = 0; k < intervals[0].payloads.length; k++) {
+            var p = intervals[0].payloads[k];
+            var vt = p.value_type || p.valueType || "";
+            if (p.values && p.values[0] != null) {
+              var label = vt.indexOf("ChargeState") !== -1 ? "SOC" : "kW";
+              parts.push(Number(p.values[0]).toFixed(1) + " " + label);
+            }
+          }
+          return parts.join(" ");
+        }
+        return "";
       }
       return "";
     } catch (_) {

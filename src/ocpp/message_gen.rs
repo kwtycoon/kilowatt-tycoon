@@ -235,6 +235,10 @@ pub fn ocpp_status_system(
 /// Detect when a charger transitions to `is_charging` and emit `StartTransaction`.
 /// We detect this by checking chargers that are charging but don't have an active
 /// OCPP transaction yet.
+///
+/// For roaming sessions (driver.is_roaming), a `RemoteStartTransaction` request/
+/// response pair is emitted before the normal Preparing -> StartTransaction ->
+/// Charging sequence, matching real CSMS-initiated session starts.
 pub fn ocpp_start_transaction_system(
     chargers: Query<(Entity, &Charger)>,
     drivers: Query<(Entity, &Driver)>,
@@ -267,17 +271,45 @@ pub fn ocpp_start_transaction_system(
         let driver_info = drivers
             .iter()
             .find(|(_, d)| d.assigned_charger == Some(entity))
-            .map(|(de, d)| (de, d.evcc_id.clone()));
+            .map(|(de, d)| (de, d.evcc_id.clone(), d.is_roaming));
 
-        let (driver_entity, id_tag) = match driver_info {
-            Some((de, evcc)) => (Some(de), format!("VID:{evcc}")),
-            None => (None, "VID:000000000000".to_string()),
+        let (driver_entity, id_tag, is_roaming) = match driver_info {
+            Some((de, evcc, roaming)) => (Some(de), format!("VID:{evcc}"), roaming),
+            None => (None, "VID:000000000000".to_string(), false),
         };
 
         let meter_start_wh = (charger.total_energy_delivered_kwh * 1000.0) as i32;
         let transaction_id = queue.next_transaction_id();
         let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
         let charger_id = charger.id.clone();
+
+        // For roaming sessions, emit RemoteStartTransaction (CSMS → CP) first
+        if is_roaming {
+            let ts_remote = (timestamp - chrono::Duration::seconds(3)).to_rfc3339();
+            let remote_uid = new_unique_id();
+
+            let remote_start = RemoteStartTransactionRequest {
+                connector_id: Some(1),
+                id_tag: id_tag.clone(),
+                charging_profile: None,
+            };
+            queue.push_with_log(
+                charger_id.clone(),
+                ts_remote.clone(),
+                "RemoteStartTransaction",
+                serialize_call(&remote_uid, "RemoteStartTransaction", &remote_start),
+            );
+
+            let remote_resp = RemoteStartTransactionResponse {
+                status: RemoteStartStopStatus::Accepted,
+            };
+            queue.push_with_log(
+                charger_id.clone(),
+                ts_remote,
+                "",
+                serialize_callresult(&remote_uid, &remote_resp),
+            );
+        }
 
         // Emit the full OCPP 1.6 connector lifecycle with proper timestamp offsets.
         // kwwhat relies on this sequence: Preparing → StartTransaction → Charging
@@ -361,8 +393,11 @@ pub fn ocpp_start_transaction_system(
         state.last_status = Some(ChargePointStatus::Charging);
 
         info!(
-            "OCPP StartTransaction: charger={}, txn={}, driver={}",
-            state.charger_id, transaction_id, id_tag
+            "OCPP StartTransaction: charger={}, txn={}, driver={}{}",
+            state.charger_id,
+            transaction_id,
+            id_tag,
+            if is_roaming { " [roaming]" } else { "" }
         );
     }
 }

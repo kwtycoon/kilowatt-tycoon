@@ -66,6 +66,17 @@ export default defineConfig({
         deviceScaleFactor: 1,
       },
     },
+    {
+      name: "ipad-air-landscape-retina",
+      use: {
+        ...devices["iPad (gen 7) landscape"],
+        browserName: "chromium",
+        viewport: { width: 1180, height: 820 },
+        // Real iPad Air DPR. Exercises the physical↔logical coordinate
+        // conversion in the picking pipeline (the bug the Bevy fork fixes).
+        deviceScaleFactor: 2,
+      },
+    },
 
     // --- Portrait (should show rotation prompt) ---
     {

@@ -513,6 +513,7 @@ pub fn ambient_to_customer_system(
         let current_pos = transform.translation;
         let current_grid = SiteGrid::world_to_grid(Vec2::new(current_pos.x, current_pos.y));
 
+        let is_roaming = rng.random::<f32>() < 0.25;
         let driver = Driver {
             id: driver_id.clone(),
             evcc_id: crate::resources::generate_evcc_mac(&mut rng),
@@ -527,6 +528,7 @@ pub fn ambient_to_customer_system(
             assigned_bay: Some((*bay_x, *bay_y)),
             state: DriverState::Arriving,
             mood: DriverMood::Neutral,
+            is_roaming,
         };
 
         // Update movement phase

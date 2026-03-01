@@ -81,14 +81,42 @@ fn make_tariff_id(site_id: SiteId, mode: crate::resources::PricingMode) -> Strin
     format!("{prefix}-{}", site_id.0)
 }
 
-fn make_cdr_token(evcc_id: &str) -> CdrToken {
-    CdrToken {
-        country_code: CPO_COUNTRY_CODE.to_string(),
-        party_id: CPO_PARTY_ID.to_string(),
+fn make_cdr_token(evcc_id: &str, is_roaming: bool) -> CdrToken {
+    if is_roaming {
+        CdrToken {
+            country_code: EMSP_COUNTRY_CODE.to_string(),
+            party_id: EMSP_PARTY_ID.to_string(),
+            uid: evcc_id.to_string(),
+            token_type: TokenType::AppUser,
+            contract_id: format!("US-EVC-{evcc_id}"),
+        }
+    } else {
+        CdrToken {
+            country_code: CPO_COUNTRY_CODE.to_string(),
+            party_id: CPO_PARTY_ID.to_string(),
+            uid: evcc_id.to_string(),
+            token_type: TokenType::AppUser,
+            contract_id: format!("US-KWT-{evcc_id}"),
+        }
+    }
+}
+
+fn make_roaming_token(evcc_id: &str, ts_iso: &str) -> Token {
+    Token {
+        country_code: EMSP_COUNTRY_CODE.to_string(),
+        party_id: EMSP_PARTY_ID.to_string(),
         uid: evcc_id.to_string(),
         token_type: TokenType::AppUser,
-        contract_id: format!("US-KWT-{evcc_id}"),
+        contract_id: format!("US-EVC-{evcc_id}"),
+        issuer: EMSP_ISSUER.to_string(),
+        valid: true,
+        whitelist: WhitelistType::Never,
+        last_updated: ts_iso.to_string(),
     }
+}
+
+fn make_authorization_reference(session_num: i32) -> String {
+    format!("AUTH-EVC-{session_num:05}")
 }
 
 // ─────────────────────────────────────────────────────
@@ -253,11 +281,11 @@ pub fn ocpi_session_start_system(
         let driver_info = drivers
             .iter()
             .find(|(_, d)| d.assigned_charger == Some(entity))
-            .map(|(de, d)| (de, d.evcc_id.clone()));
+            .map(|(de, d)| (de, d.evcc_id.clone(), d.is_roaming));
 
-        let (driver_entity, evcc_id) = match driver_info {
-            Some((de, id)) => (Some(de), id),
-            None => (None, "000000000000".to_string()),
+        let (driver_entity, evcc_id, is_roaming) = match driver_info {
+            Some((de, id, roaming)) => (Some(de), id, roaming),
+            None => (None, "000000000000".to_string(), false),
         };
 
         let session_num = queue.next_session_id();
@@ -266,6 +294,65 @@ pub fn ocpi_session_start_system(
             .unwrap_or(game_clock.total_game_time);
         let start_ts = queue.game_time_to_utc(start_game_time).to_rfc3339();
         let site_id = site_tag.map(|s| s.site_id).unwrap_or(SiteId(0));
+        let location_id = make_location_id(site_id);
+
+        let (auth_method, auth_ref) = if is_roaming {
+            (
+                AuthMethod::Command,
+                make_authorization_reference(session_num),
+            )
+        } else {
+            (AuthMethod::Whitelist, evcc_id.clone())
+        };
+
+        // For roaming sessions, emit the eMSP → CPO command chain first
+        if is_roaming {
+            let cmd_ts = queue.game_time_to_utc(start_game_time - 3.0).to_rfc3339();
+
+            let start_cmd = StartSessionCommand {
+                response_url: format!(
+                    "https://emsp.evconnect.com/ocpi/2.3.0/commands/START_SESSION/{}",
+                    session_num
+                ),
+                token: make_roaming_token(&evcc_id, &cmd_ts),
+                location_id: location_id.clone(),
+                evse_uid: Some(charger.id.clone()),
+                connector_id: Some("1".to_string()),
+                authorization_reference: Some(auth_ref.clone()),
+            };
+            queue.push_log(
+                EMSP_PARTY_ID.to_string(),
+                cmd_ts.clone(),
+                "Command",
+                "START_SESSION POST",
+                serialize_ocpi(&start_cmd),
+            );
+
+            let cmd_response = CommandResponse {
+                result: CommandResponseType::Accepted,
+                timeout: 30,
+                message: None,
+            };
+            queue.push_log(
+                CPO_PARTY_ID.to_string(),
+                cmd_ts.clone(),
+                "Command",
+                "CommandResponse",
+                serialize_ocpi(&cmd_response),
+            );
+
+            let cmd_result = CommandResult {
+                result: CommandResultType::Accepted,
+                message: None,
+            };
+            queue.push_log(
+                CPO_PARTY_ID.to_string(),
+                cmd_ts,
+                "Command",
+                "CommandResult POST",
+                serialize_ocpi(&cmd_result),
+            );
+        }
 
         let session = Session {
             country_code: CPO_COUNTRY_CODE.to_string(),
@@ -274,10 +361,10 @@ pub fn ocpi_session_start_system(
             start_date_time: start_ts.clone(),
             end_date_time: None,
             kwh: 0.0,
-            cdr_token: make_cdr_token(&evcc_id),
-            auth_method: AuthMethod::Whitelist,
-            authorization_reference: Some(evcc_id.clone()),
-            location_id: make_location_id(site_id),
+            cdr_token: make_cdr_token(&evcc_id, is_roaming),
+            auth_method,
+            authorization_reference: Some(auth_ref),
+            location_id,
             evse_uid: charger.id.clone(),
             connector_id: "1".to_string(),
             currency: CURRENCY.to_string(),
@@ -302,6 +389,7 @@ pub fn ocpi_session_start_system(
         state.last_update_game_time = start_game_time;
         state.active_driver = driver_entity;
         state.active_id_tag = Some(evcc_id);
+        state.is_roaming = is_roaming;
     }
 }
 
@@ -434,20 +522,21 @@ pub fn ocpi_cdr_system(
         return;
     }
 
-    // Collect CDR candidates
-    #[allow(clippy::type_complexity)]
-    let to_stop: Vec<(
-        Entity,
-        String,
-        String,
-        i32,
-        f32,
-        f32,
-        String,
-        String,
-        ChargerType,
-        String,
-    )> = chargers
+    struct CdrCandidate {
+        entity: Entity,
+        site_name: String,
+        loc_id: String,
+        session_num: i32,
+        kwh: f32,
+        price: f32,
+        evcc: String,
+        charger_id: String,
+        charger_type: ChargerType,
+        tariff: String,
+        is_roaming: bool,
+    }
+
+    let to_stop: Vec<CdrCandidate> = chargers
         .iter()
         .filter_map(|(entity, charger, site_tag)| {
             if charger.is_charging {
@@ -456,6 +545,7 @@ pub fn ocpi_cdr_system(
             let cs = queue.charger_state.get(&entity)?;
             let session_num = cs.session_id?;
             let evcc = cs.active_id_tag.clone().unwrap_or_default();
+            let is_roaming = cs.is_roaming;
 
             let site_id = site_tag.map(|s| s.site_id).unwrap_or(SiteId(0));
             let (site_name, price, tariff) = multi_site
@@ -472,37 +562,26 @@ pub fn ocpi_cdr_system(
                 .unwrap_or_else(|| ("Unknown Site".to_string(), 0.0, String::new()));
             let loc_id = make_location_id(site_id);
 
-            Some((
+            Some(CdrCandidate {
                 entity,
                 site_name,
                 loc_id,
                 session_num,
-                cs.session_kwh,
+                kwh: cs.session_kwh,
                 price,
                 evcc,
-                charger.id.clone(),
-                charger.charger_type,
+                charger_id: charger.id.clone(),
+                charger_type: charger.charger_type,
                 tariff,
-            ))
+                is_roaming,
+            })
         })
         .collect();
 
-    for (
-        entity,
-        site_name,
-        loc_id,
-        session_num,
-        kwh,
-        price,
-        evcc,
-        charger_id,
-        charger_type,
-        tariff,
-    ) in to_stop
-    {
+    for c in to_stop {
         let session_start_gt = queue
             .charger_state
-            .get(&entity)
+            .get(&c.entity)
             .map(|s| s.session_start_game_time)
             .unwrap_or(0.0);
 
@@ -512,28 +591,38 @@ pub fn ocpi_cdr_system(
         let start_ts = queue.game_time_to_utc(session_start_gt).to_rfc3339();
         let session_hours = (game_clock.total_game_time - session_start_gt) / 3600.0;
 
+        let (auth_method, auth_ref) = if c.is_roaming {
+            (
+                AuthMethod::Command,
+                make_authorization_reference(c.session_num),
+            )
+        } else {
+            (AuthMethod::Whitelist, c.evcc.clone())
+        };
+
         // Clear session state
-        let state = queue.get_or_create(entity);
+        let state = queue.get_or_create(c.entity);
         state.session_id = None;
         state.active_driver = None;
         state.active_id_tag = None;
         state.session_kwh = 0.0;
+        state.is_roaming = false;
 
-        let total_cost_val = (kwh * price) as f64;
+        let total_cost_val = (c.kwh * c.price) as f64;
 
         let cdr = Cdr {
             country_code: CPO_COUNTRY_CODE.to_string(),
             party_id: CPO_PARTY_ID.to_string(),
-            id: format!("CDR-{session_num:05}"),
+            id: format!("CDR-{:05}", c.session_num),
             start_date_time: start_ts.clone(),
             end_date_time: end_ts.clone(),
-            session_id: Some(format!("SES-{session_num:05}")),
-            cdr_token: make_cdr_token(&evcc),
-            auth_method: AuthMethod::Whitelist,
-            authorization_reference: Some(evcc),
+            session_id: Some(format!("SES-{:05}", c.session_num)),
+            cdr_token: make_cdr_token(&c.evcc, c.is_roaming),
+            auth_method,
+            authorization_reference: Some(auth_ref),
             cdr_location: CdrLocation {
-                id: loc_id,
-                name: Some(site_name),
+                id: c.loc_id,
+                name: Some(c.site_name),
                 address: SIM_ADDRESS.to_string(),
                 city: SIM_CITY.to_string(),
                 postal_code: Some(SIM_POSTAL.to_string()),
@@ -542,12 +631,12 @@ pub fn ocpi_cdr_system(
                     latitude: SIM_LAT.to_string(),
                     longitude: SIM_LON.to_string(),
                 },
-                evse_uid: charger_id,
+                evse_uid: c.charger_id,
                 evse_id: make_evse_id(&state.charger_id),
                 connector_id: "1".to_string(),
-                connector_standard: connector_type_for(charger_type),
+                connector_standard: connector_type_for(c.charger_type),
                 connector_format: ConnectorFormat::Cable,
-                connector_power_type: power_type_for(charger_type),
+                connector_power_type: power_type_for(c.charger_type),
             },
             currency: CURRENCY.to_string(),
             charging_periods: vec![ChargingPeriod {
@@ -555,24 +644,24 @@ pub fn ocpi_cdr_system(
                 dimensions: vec![
                     CdrDimension {
                         dimension_type: CdrDimensionType::Energy,
-                        volume: kwh as f64,
+                        volume: c.kwh as f64,
                     },
                     CdrDimension {
                         dimension_type: CdrDimensionType::Time,
                         volume: session_hours as f64,
                     },
                 ],
-                tariff_id: if tariff.is_empty() {
+                tariff_id: if c.tariff.is_empty() {
                     None
                 } else {
-                    Some(tariff)
+                    Some(c.tariff)
                 },
             }],
             total_cost: Price {
                 before_taxes: total_cost_val,
                 taxes: None,
             },
-            total_energy: kwh as f64,
+            total_energy: c.kwh as f64,
             total_energy_cost: Some(Price {
                 before_taxes: total_cost_val,
                 taxes: None,

@@ -160,6 +160,8 @@ pub struct Driver {
     pub assigned_charger: Option<Entity>,
     pub assigned_bay: Option<(i32, i32)>,
     pub mood: DriverMood,
+    /// Whether this driver arrived via an eMSP roaming app (OCPI START_SESSION).
+    pub is_roaming: bool,
 }
 
 impl Default for Driver {
@@ -178,6 +180,7 @@ impl Default for Driver {
             assigned_charger: None,
             assigned_bay: None,
             mood: DriverMood::Neutral,
+            is_roaming: false,
         }
     }
 }

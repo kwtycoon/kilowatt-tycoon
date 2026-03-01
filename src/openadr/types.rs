@@ -24,10 +24,21 @@ pub use openleadr_wire::ven::VenContent;
 
 // ─── Re-exports: OpenADR 3.0 program types ────────────────────
 
-pub use openleadr_wire::program::ProgramId;
+pub use openleadr_wire::program::{
+    PayloadDescriptor, ProgramContent, ProgramDescription, ProgramId,
+};
 
-// ─── Re-exports: intervals, units, and values ─────────────────
+// ─── Re-exports: OpenADR 3.0 resource types ───────────────────
 
+pub use openleadr_wire::resource::ResourceContent;
+
+// ─── Re-exports: OpenADR 3.0 target types ─────────────────────
+
+pub use openleadr_wire::target::{TargetEntry, TargetMap, TargetType};
+
+// ─── Re-exports: intervals, units, values, and metadata ───────
+
+pub use openleadr_wire::OperatingState;
 pub use openleadr_wire::Unit;
 pub use openleadr_wire::interval::IntervalPeriod;
 pub use openleadr_wire::values_map::{Value as OadrValue, ValueType, ValuesMap};

@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
 use serde::Serialize;
@@ -20,7 +21,10 @@ use crate::resources::{
 use crate::states::{AppState, DayEndScrollBody, KpiToggleButton};
 use crate::systems::WorldCamera;
 use crate::ui::hud::SpeedButton;
-use crate::ui::sidebar::{BuildToolButton, StartDayButton};
+use crate::ui::sidebar::rent_panel::{CarouselButton, RentSiteButton};
+use crate::ui::sidebar::{BuildToolButton, PrimaryNav, StartDayButton};
+use crate::ui::site_tabs::SiteTab;
+use crate::ui::top_nav::PrimaryNavButton;
 use crate::ui::tutorial::{TutorialNextButton, TutorialSkipButton};
 
 #[derive(Serialize, Clone, Debug)]
@@ -40,6 +44,8 @@ struct BridgeSnapshot {
     game_time: f32,
     selected_build_tool: Option<String>,
     day_end_scroll_y: Option<f32>,
+    num_owned_sites: usize,
+    viewed_site_id: Option<u32>,
     elements: HashMap<String, ElementRect>,
 }
 
@@ -60,13 +66,17 @@ fn push_to_window(json: &str) {
 
 /// Convert a UI node's `UiGlobalTransform` + `ComputedNode` into a CSS-pixel rect.
 ///
-/// Both `UiGlobalTransform.translation` and `ComputedNode::size()` are in physical
-/// pixels. Multiply by `inverse_scale_factor` (1/DPR) to get CSS-pixel coordinates
-/// that Playwright can target with `page.mouse.move`.
-fn to_rect(ugt: &UiGlobalTransform, cn: &ComputedNode) -> ElementRect {
+/// `UiGlobalTransform.translation` is in physical pixels (scaled by the window DPR).
+/// `ComputedNode::size()` is in physical pixels scaled by DPR * UiScale.
+///
+/// Playwright operates in CSS pixels, so we divide positions by the window DPR.
+/// For size we use `inverse_scale_factor` (1 / (DPR * UiScale)) which gives us the
+/// original `Val::Px` value -- slightly larger than the rendered CSS size, but
+/// inconsequential because tests click at the center.
+fn to_rect(ugt: &UiGlobalTransform, cn: &ComputedNode, dpr: f32) -> ElementRect {
+    let cx = ugt.translation.x / dpr;
+    let cy = ugt.translation.y / dpr;
     let isf = cn.inverse_scale_factor();
-    let cx = ugt.translation.x * isf;
-    let cy = ugt.translation.y * isf;
     let w = cn.size().x * isf;
     let h = cn.size().y * isf;
     ElementRect {
@@ -75,6 +85,112 @@ fn to_rect(ugt: &UiGlobalTransform, cn: &ComputedNode) -> ElementRect {
         width: w,
         height: h,
     }
+}
+
+/// Bundled UI element queries to keep the system under Bevy's 16-param limit.
+#[derive(SystemParam)]
+pub struct UiElementQueries<'w, 's> {
+    next_btns: Query<
+        'w,
+        's,
+        (&'static UiGlobalTransform, &'static ComputedNode),
+        With<crate::states::NextButton>,
+    >,
+    start_btns: Query<
+        'w,
+        's,
+        (&'static UiGlobalTransform, &'static ComputedNode),
+        With<crate::states::StartButton>,
+    >,
+    tut_btns: Query<
+        'w,
+        's,
+        (
+            &'static UiGlobalTransform,
+            &'static ComputedNode,
+            Option<&'static TutorialNextButton>,
+        ),
+        Or<(With<TutorialNextButton>, With<TutorialSkipButton>)>,
+    >,
+    start_day:
+        Query<'w, 's, (&'static UiGlobalTransform, &'static ComputedNode), With<StartDayButton>>,
+    speed_btns: Query<
+        'w,
+        's,
+        (
+            &'static UiGlobalTransform,
+            &'static ComputedNode,
+            &'static SpeedButton,
+        ),
+    >,
+    day_end_btns: Query<
+        'w,
+        's,
+        (
+            &'static UiGlobalTransform,
+            &'static ComputedNode,
+            Option<&'static crate::states::DayEndContinueButton>,
+            Option<&'static KpiToggleButton>,
+        ),
+        Or<(
+            With<crate::states::DayEndContinueButton>,
+            With<KpiToggleButton>,
+        )>,
+    >,
+    build_tool_btns: Query<
+        'w,
+        's,
+        (
+            &'static UiGlobalTransform,
+            &'static ComputedNode,
+            &'static BuildToolButton,
+        ),
+    >,
+    scroll_body: Query<
+        'w,
+        's,
+        (
+            &'static UiGlobalTransform,
+            &'static ComputedNode,
+            &'static ScrollPosition,
+        ),
+        With<DayEndScrollBody>,
+    >,
+    nav_btns: Query<
+        'w,
+        's,
+        (
+            &'static UiGlobalTransform,
+            &'static ComputedNode,
+            &'static PrimaryNavButton,
+        ),
+    >,
+    carousel_btns: Query<
+        'w,
+        's,
+        (
+            &'static UiGlobalTransform,
+            &'static ComputedNode,
+            &'static CarouselButton,
+        ),
+    >,
+    rent_btns:
+        Query<'w, 's, (&'static UiGlobalTransform, &'static ComputedNode), With<RentSiteButton>>,
+    rent_panel: Query<
+        'w,
+        's,
+        (&'static UiGlobalTransform, &'static ComputedNode),
+        With<crate::ui::sidebar::rent_panel::RentPanel>,
+    >,
+    site_tabs: Query<
+        'w,
+        's,
+        (
+            &'static UiGlobalTransform,
+            &'static ComputedNode,
+            &'static SiteTab,
+        ),
+    >,
 }
 
 /// Bevy system that collects game state and element positions each frame,
@@ -88,37 +204,14 @@ pub fn update_test_bridge(
     build_state: Res<BuildState>,
     multi_site: Res<MultiSiteManager>,
     mut bridge: ResMut<TestBridgeState>,
-    next_btns: Query<(&UiGlobalTransform, &ComputedNode), With<crate::states::NextButton>>,
-    start_btns: Query<(&UiGlobalTransform, &ComputedNode), With<crate::states::StartButton>>,
-    tut_btns: Query<
-        (
-            &UiGlobalTransform,
-            &ComputedNode,
-            Option<&TutorialNextButton>,
-        ),
-        Or<(With<TutorialNextButton>, With<TutorialSkipButton>)>,
-    >,
-    start_day: Query<(&UiGlobalTransform, &ComputedNode), With<StartDayButton>>,
-    speed_btns: Query<(&UiGlobalTransform, &ComputedNode, &SpeedButton)>,
-    day_end_btns: Query<
-        (
-            &UiGlobalTransform,
-            &ComputedNode,
-            Option<&crate::states::DayEndContinueButton>,
-            Option<&KpiToggleButton>,
-        ),
-        Or<(
-            With<crate::states::DayEndContinueButton>,
-            With<KpiToggleButton>,
-        )>,
-    >,
-    build_tool_btns: Query<(&UiGlobalTransform, &ComputedNode, &BuildToolButton)>,
-    scroll_body: Query<
-        (&UiGlobalTransform, &ComputedNode, &ScrollPosition),
-        With<DayEndScrollBody>,
-    >,
+    ui: UiElementQueries,
     world_camera: Query<(&Camera, &GlobalTransform), With<WorldCamera>>,
 ) {
+    let dpr = world_camera
+        .iter()
+        .next()
+        .and_then(|(cam, _)| cam.target_scaling_factor())
+        .unwrap_or(1.0);
     let mut snapshot = BridgeSnapshot {
         app_state: format!("{:?}", *app_state.get()),
         tutorial_step: tutorial.current_step.map(|s| format!("{s:?}")),
@@ -131,70 +224,117 @@ pub fn update_test_bridge(
             None
         },
         day_end_scroll_y: None,
+        num_owned_sites: multi_site.owned_sites.len(),
+        viewed_site_id: multi_site.viewed_site_id.map(|id| id.0),
         elements: HashMap::new(),
     };
 
     // Character setup buttons
-    for (ugt, cn) in &next_btns {
+    for (ugt, cn) in &ui.next_btns {
         snapshot
             .elements
-            .insert("NextButton".into(), to_rect(ugt, cn));
+            .insert("NextButton".into(), to_rect(ugt, cn, dpr));
     }
-    for (ugt, cn) in &start_btns {
+    for (ugt, cn) in &ui.start_btns {
         snapshot
             .elements
-            .insert("StartButton".into(), to_rect(ugt, cn));
+            .insert("StartButton".into(), to_rect(ugt, cn, dpr));
     }
 
     // Tutorial buttons (combined query, discriminated by marker presence)
-    for (ugt, cn, is_next) in &tut_btns {
+    for (ugt, cn, is_next) in &ui.tut_btns {
         let name = if is_next.is_some() {
             "TutorialNextButton"
         } else {
             "TutorialSkipButton"
         };
-        snapshot.elements.insert(name.into(), to_rect(ugt, cn));
+        snapshot.elements.insert(name.into(), to_rect(ugt, cn, dpr));
     }
 
     // HUD buttons
-    for (ugt, cn) in &start_day {
+    for (ugt, cn) in &ui.start_day {
         snapshot
             .elements
-            .insert("StartDayButton".into(), to_rect(ugt, cn));
+            .insert("StartDayButton".into(), to_rect(ugt, cn, dpr));
     }
-    for (ugt, cn, speed) in &speed_btns {
+    for (ugt, cn, speed) in &ui.speed_btns {
         let name = match speed.0 {
             crate::resources::GameSpeed::Normal => "SpeedButton_Normal",
             crate::resources::GameSpeed::Fast => "SpeedButton_Fast",
             crate::resources::GameSpeed::Paused => "SpeedButton_Paused",
         };
-        snapshot.elements.insert(name.into(), to_rect(ugt, cn));
+        snapshot.elements.insert(name.into(), to_rect(ugt, cn, dpr));
     }
-    for (ugt, cn, is_continue, is_kpi_toggle) in &day_end_btns {
+    for (ugt, cn, is_continue, is_kpi_toggle) in &ui.day_end_btns {
         if is_continue.is_some() {
             snapshot
                 .elements
-                .insert("DayEndContinueButton".into(), to_rect(ugt, cn));
+                .insert("DayEndContinueButton".into(), to_rect(ugt, cn, dpr));
         }
         if is_kpi_toggle.is_some() {
             snapshot
                 .elements
-                .insert("KpiToggleButton".into(), to_rect(ugt, cn));
+                .insert("KpiToggleButton".into(), to_rect(ugt, cn, dpr));
         }
     }
 
     // Build tool buttons
-    for (ugt, cn, tool) in &build_tool_btns {
+    for (ugt, cn, tool) in &ui.build_tool_btns {
         let name = format!("BuildTool_{:?}", tool.tool);
-        snapshot.elements.insert(name, to_rect(ugt, cn));
+        snapshot.elements.insert(name, to_rect(ugt, cn, dpr));
     }
 
     // Day-end scroll body
-    for (ugt, cn, scroll_pos) in &scroll_body {
+    for (ugt, cn, scroll_pos) in &ui.scroll_body {
         snapshot
             .elements
-            .insert("DayEndScrollBody".into(), to_rect(ugt, cn));
+            .insert("DayEndScrollBody".into(), to_rect(ugt, cn, dpr));
         snapshot.day_end_scroll_y = Some(scroll_pos.y);
+    }
+
+    // Primary navigation buttons (Location, Build, Strategy, Stats)
+    for (ugt, cn, nav_btn) in &ui.nav_btns {
+        let name = match nav_btn.nav {
+            PrimaryNav::Rent => "NavButton_Rent",
+            PrimaryNav::Build => "NavButton_Build",
+            PrimaryNav::Strategy => "NavButton_Strategy",
+            PrimaryNav::Stats => "NavButton_Stats",
+        };
+        snapshot.elements.insert(name.into(), to_rect(ugt, cn, dpr));
+    }
+
+    // Rent panel carousel buttons
+    for (ugt, cn, carousel) in &ui.carousel_btns {
+        let name = match carousel {
+            CarouselButton::Previous => "CarouselButton_Previous",
+            CarouselButton::Next => "CarouselButton_Next",
+        };
+        snapshot.elements.insert(name.into(), to_rect(ugt, cn, dpr));
+    }
+
+    // Rent panel container (for debugging layout)
+    for (ugt, cn) in &ui.rent_panel {
+        snapshot
+            .elements
+            .insert("RentPanel".into(), to_rect(ugt, cn, dpr));
+    }
+
+    // Rent site button
+    for (ugt, cn) in &ui.rent_btns {
+        snapshot
+            .elements
+            .insert("RentSiteButton".into(), to_rect(ugt, cn, dpr));
+    }
+
+    // Site switcher tabs (sorted by SiteId for stable indexing)
+    {
+        let mut tabs: Vec<_> = ui.site_tabs.iter().collect();
+        tabs.sort_by_key(|(_, _, tab)| tab.site_id);
+        for (i, (ugt, cn, _)) in tabs.iter().enumerate() {
+            snapshot
+                .elements
+                .insert(format!("SiteTab_{i}"), to_rect(ugt, cn, dpr));
+        }
     }
 
     // Grid placement hints: expose valid charger/transformer positions as

@@ -17,6 +17,9 @@ interface BridgeState {
   cash: number;
   game_time: number;
   selected_build_tool: string | null;
+  day_end_scroll_y: number | null;
+  num_owned_sites: number;
+  viewed_site_id: number | null;
   elements: Record<string, ElementRect>;
 }
 
@@ -247,9 +250,9 @@ test.describe("Full gameplay flow", () => {
 
   test("add charger, add transformer, start day, 10x, end of day report", async ({
     page,
-  }) => {
+  }, testInfo) => {
     const vp = page.viewportSize()!;
-    log(`Viewport: ${vp.width}×${vp.height}  CI=${IS_CI}`);
+    log(`Viewport: ${vp.width}×${vp.height}  project=${testInfo.project.name}  CI=${IS_CI}`);
 
     // Skip portrait viewports — the rotate-device prompt blocks interaction.
     if (vp.height > vp.width && vp.width <= 1024) {
@@ -339,22 +342,109 @@ test.describe("Full gameplay flow", () => {
     await waitForStateWithLogs(page, "DayEnd", 240_000, 10_000);
 
     // Verify the bridge reports day 1.
-    const state = await bridge(page);
-    expect(state).not.toBeNull();
-    expect(state!.app_state).toBe("DayEnd");
-    expect(state!.day_number).toBe(1);
-    log(`Day end verified: day=${state!.day_number} cash=${state!.cash.toFixed(0)}`);
+    const dayEndState = await bridge(page);
+    expect(dayEndState).not.toBeNull();
+    expect(dayEndState!.app_state).toBe("DayEnd");
+    expect(dayEndState!.day_number).toBe(1);
+    log(`Day end verified: day=${dayEndState!.day_number} cash=${dayEndState!.cash.toFixed(0)}`);
+    await snap(page, "08-day-end-summary");
 
-    // ── 9. Continue past day-end report ─────────────────────────────
-    await page.keyboard.press("Enter");
-    await page.waitForTimeout(2_000);
+    // ── 9. See summary — verify key day-end elements are present ────
+    await waitForElement(page, "DayEndContinueButton", 10_000);
+    await waitForElement(page, "KpiToggleButton", 10_000);
+    log("Day-end summary elements visible");
 
-    // Should be back to Playing state for day 2.
-    await waitForState(page, "Playing", 10_000);
+    // ── 10. Expand KPI view ─────────────────────────────────────────
+    await tapElement(page, "KpiToggleButton");
+    await page.waitForTimeout(1_000);
+    log("Tapped KPI toggle to expand");
+    await snap(page, "10-kpi-expanded");
 
-    const stateAfter = await bridge(page);
-    expect(stateAfter).not.toBeNull();
-    expect(stateAfter!.app_state).toBe("Playing");
+    // ── 11. Scroll the day-end modal via pointer drag ─────────────
+    const scrollEl = await waitForElement(page, "DayEndScrollBody", 10_000);
+    const scrollCx = scrollEl.x + scrollEl.width / 2;
+    const dragStartY = scrollEl.y + scrollEl.height * 0.7;
+    const dragEndY = scrollEl.y + scrollEl.height * 0.2;
+
+    const scrollBefore = (await bridge(page))?.day_end_scroll_y ?? 0;
+
+    // Pointer drag: finger up = content scrolls down.
+    await page.mouse.move(scrollCx, dragStartY);
+    await page.mouse.down();
+    await page.waitForTimeout(80);
+    const dragSteps = 10;
+    for (let i = 1; i <= dragSteps; i++) {
+      const t = i / dragSteps;
+      await page.mouse.move(scrollCx, dragStartY + (dragEndY - dragStartY) * t);
+      await page.waitForTimeout(80);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(500);
+
+    const scrollAfter = (await bridge(page))?.day_end_scroll_y ?? 0;
+    log(`Scroll: ${scrollBefore.toFixed(1)} → ${scrollAfter.toFixed(1)}`);
+    expect(scrollAfter).toBeGreaterThanOrEqual(scrollBefore);
+    await snap(page, "11-scrolled");
+
+    // ── 12. Verify clock / day info ─────────────────────────────────
+    const clockState = await bridge(page);
+    expect(clockState!.day_number).toBe(1);
+    expect(clockState!.game_time).toBeGreaterThan(80_000);
+    log(`Clock check: day=${clockState!.day_number} game_time=${clockState!.game_time.toFixed(0)}`);
+
+    // ── 13. Continue past day-end report ────────────────────────────
+    await tapElement(page, "DayEndContinueButton");
+    await waitForState(page, "Playing", 30_000);
+    const day2State = await bridge(page);
+    expect(day2State!.app_state).toBe("Playing");
+    expect(day2State!.num_owned_sites).toBe(1);
+    log(`Continued to day 2: cash=${day2State!.cash.toFixed(0)} sites=${day2State!.num_owned_sites}`);
+    await snap(page, "13-day2-playing");
+
+    // ── 14. Go to Locations panel ───────────────────────────────────
+    await tapElement(page, "NavButton_Rent");
+    await page.waitForTimeout(3_000);
+    const rentState = await bridge(page);
+    const rentPanel = rentState?.elements?.["RentPanel"];
+    const rentBtn = rentState?.elements?.["RentSiteButton"];
+    const carNext = rentState?.elements?.["CarouselButton_Next"];
+    log(`After nav to Rent: Panel=${JSON.stringify(rentPanel)} RentBtn=${JSON.stringify(rentBtn)} CarNext=${JSON.stringify(carNext)}`);
+    await waitForElement(page, "RentSiteButton", 30_000);
+    log("Navigated to Locations panel");
+    await snap(page, "14-locations-panel");
+
+    // ── 15. Click Next to browse to location 2 ─────────────────────
+    await tapElement(page, "CarouselButton_Next");
+    await page.waitForTimeout(1_000);
+    log("Clicked carousel Next");
+    await snap(page, "15-location-2");
+
+    // ── 16. Buy location 2 ──────────────────────────────────────────
+    const firstSiteId = day2State!.viewed_site_id;
+    await tapElementUntil(
+      page,
+      "RentSiteButton",
+      "Buy location 2",
+      (b) => b != null && b.num_owned_sites === 2,
+    );
+    const afterBuy = await bridge(page);
+    expect(afterBuy!.num_owned_sites).toBe(2);
+    log(`Bought location 2: sites=${afterBuy!.num_owned_sites} cash=${afterBuy!.cash.toFixed(0)} viewed=${afterBuy!.viewed_site_id}`);
+    await snap(page, "16-bought-location-2");
+
+    // ── 17. Switch back to original site ────────────────────────────
+    await waitForElement(page, "SiteTab_0", 15_000);
+    await tapElementUntil(
+      page,
+      "SiteTab_0",
+      "Switch to site 0",
+      (b) => b != null && b.viewed_site_id === firstSiteId,
+    );
+    const afterSwitch = await bridge(page);
+    expect(afterSwitch!.viewed_site_id).toBe(firstSiteId);
+    log(`Switched back to site 0: viewed=${afterSwitch!.viewed_site_id}`);
+    await snap(page, "17-switched-back");
+
     log("Test complete");
   });
 });
