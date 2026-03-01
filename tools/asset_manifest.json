@@ -2668,6 +2668,11 @@
         "id": 66,
         "name": "SoundOff",
         "filename": "icon_sound_off.png"
+      },
+      {
+        "id": 67,
+        "name": "Ledger",
+        "filename": "icon_ledger.png"
       }
     ]
   }
