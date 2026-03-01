@@ -2,6 +2,7 @@
 
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::prelude::*;
+use rand::Rng;
 
 use super::CharacterSetupUI;
 use crate::helpers::ui_builders::colors;
@@ -77,6 +78,29 @@ const PLACEHOLDER_NAMES: &[&str] = &[
     "Phase Changer",
     "The Gridfather",
     "Fast & the Curious",
+    "OCPP-timus Prime",
+    "The OCPP-erator",
+    "Cap'n OCPP",
+    "Agent OCPP",
+    "OCPP-rah Winfrey",
+    "OCPP & Loaded",
+    "OpenADR-enaline",
+    "ADR-ian Volt",
+    "OpenADR-ift",
+    "OCPI Wan Kenobi",
+    "MC OCPI",
+    "OCPI-derman",
+    "Professor OCPI",
+    "Surge Protector",
+    "Flux Capacitor",
+    "AC/DC Slater",
+    "Amp-ire State",
+    "Joule Thief",
+    "Watt's Up Doc",
+    "Megawatt Mind",
+    "Circuit Breaker",
+    "The Transformer",
+    "Demand Charger",
 ];
 
 /// Cycles through placeholder names in the name input field until the player types
@@ -560,7 +584,9 @@ fn spawn_name_input_ui(
 
                     // Subtitle
                     modal.spawn((
-                        Text::new("Your goal is build a profitable EV charging network."),
+                        Text::new(
+                            "Your goal is to build and operate a profitable EV charging network.",
+                        ),
                         TextFont {
                             font_size: 22.0,
                             ..default()
@@ -620,10 +646,14 @@ fn spawn_name_input_ui(
                                 BorderRadius::all(Val::Px(6.0)),
                             ))
                             .with_children(|field| {
-                                // Determine if we should show placeholder or actual name
                                 let is_default_name = profile.name == "Player";
+                                let start_index = if is_default_name {
+                                    rand::rng().random_range(0..PLACEHOLDER_NAMES.len())
+                                } else {
+                                    0
+                                };
                                 let display_text = if is_default_name {
-                                    PLACEHOLDER_NAMES[0].to_string()
+                                    PLACEHOLDER_NAMES[start_index].to_string()
                                 } else {
                                     profile.name.clone()
                                 };
@@ -633,7 +663,6 @@ fn spawn_name_input_ui(
                                     Color::srgb(0.1, 0.4, 0.1)
                                 };
 
-                                // Text display (with placeholder cycler when showing defaults)
                                 field.spawn((
                                     Text::new(display_text),
                                     TextFont {
@@ -644,7 +673,7 @@ fn spawn_name_input_ui(
                                     NameInputText,
                                     PlaceholderCycler {
                                         timer: Timer::from_seconds(2.0, TimerMode::Repeating),
-                                        index: 0,
+                                        index: start_index,
                                         active: is_default_name,
                                     },
                                 ));
@@ -859,7 +888,7 @@ pub fn animate_cursor(
     }
 }
 
-/// Cycle through funny placeholder names in the name input field
+/// Cycle through funny placeholder names in the name input field (random order)
 pub fn cycle_placeholder_names(
     time: Res<Time>,
     mut query: Query<(&mut PlaceholderCycler, &mut Text), With<NameInputText>>,
@@ -871,7 +900,14 @@ pub fn cycle_placeholder_names(
 
         cycler.timer.tick(time.delta());
         if cycler.timer.just_finished() {
-            cycler.index = (cycler.index + 1) % PLACEHOLDER_NAMES.len();
+            let mut rng = rand::rng();
+            let mut next = rng.random_range(0..PLACEHOLDER_NAMES.len());
+            if PLACEHOLDER_NAMES.len() > 1 {
+                while next == cycler.index {
+                    next = rng.random_range(0..PLACEHOLDER_NAMES.len());
+                }
+            }
+            cycler.index = next;
             **text = PLACEHOLDER_NAMES[cycler.index].to_string();
         }
     }

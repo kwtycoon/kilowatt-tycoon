@@ -69,7 +69,7 @@ impl TutorialStep {
     pub fn description(&self) -> &'static str {
         match self {
             TutorialStep::Welcome => {
-                "Your goal is to build and operate a profitable EV charging station. Let's walk through the basics."
+                "Your goal is to build and operate a profitable EV charging network. Let's walk through the basics."
             }
             TutorialStep::PlaceCharger => {
                 "Click a charger from the BUILD menu, then click a green spot on the parking lot to place it."

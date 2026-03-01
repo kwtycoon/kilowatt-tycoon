@@ -161,7 +161,7 @@ pub fn setup_tutorial(
 
                     // Description
                     panel.spawn((
-                        Text::new("Your goal is build a profitable EV charging network. Let's get started!"),
+                        Text::new("Your goal is to build and operate a profitable EV charging network. Let's get started!"),
                         TextFont {
                             font_size: 20.0,
                             ..default()
