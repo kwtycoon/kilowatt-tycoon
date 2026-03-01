@@ -17,7 +17,7 @@ use crate::resources::{
     BuildState, BuildTool, GameClock, GameState, MultiSiteManager, SiteGrid, TileContent,
     TutorialState,
 };
-use crate::states::AppState;
+use crate::states::{AppState, DayEndScrollBody, KpiToggleButton};
 use crate::systems::WorldCamera;
 use crate::ui::hud::SpeedButton;
 use crate::ui::sidebar::{BuildToolButton, StartDayButton};
@@ -39,6 +39,7 @@ struct BridgeSnapshot {
     cash: f32,
     game_time: f32,
     selected_build_tool: Option<String>,
+    day_end_scroll_y: Option<f32>,
     elements: HashMap<String, ElementRect>,
 }
 
@@ -98,11 +99,23 @@ pub fn update_test_bridge(
     >,
     start_day: Query<(&UiGlobalTransform, &ComputedNode), With<StartDayButton>>,
     speed_btns: Query<(&UiGlobalTransform, &ComputedNode, &SpeedButton)>,
-    day_end_continue: Query<
-        (&UiGlobalTransform, &ComputedNode),
-        With<crate::states::DayEndContinueButton>,
+    day_end_btns: Query<
+        (
+            &UiGlobalTransform,
+            &ComputedNode,
+            Option<&crate::states::DayEndContinueButton>,
+            Option<&KpiToggleButton>,
+        ),
+        Or<(
+            With<crate::states::DayEndContinueButton>,
+            With<KpiToggleButton>,
+        )>,
     >,
     build_tool_btns: Query<(&UiGlobalTransform, &ComputedNode, &BuildToolButton)>,
+    scroll_body: Query<
+        (&UiGlobalTransform, &ComputedNode, &ScrollPosition),
+        With<DayEndScrollBody>,
+    >,
     world_camera: Query<(&Camera, &GlobalTransform), With<WorldCamera>>,
 ) {
     let mut snapshot = BridgeSnapshot {
@@ -116,6 +129,7 @@ pub fn update_test_bridge(
         } else {
             None
         },
+        day_end_scroll_y: None,
         elements: HashMap::new(),
     };
 
@@ -155,16 +169,31 @@ pub fn update_test_bridge(
         };
         snapshot.elements.insert(name.into(), to_rect(ugt, cn));
     }
-    for (ugt, cn) in &day_end_continue {
-        snapshot
-            .elements
-            .insert("DayEndContinueButton".into(), to_rect(ugt, cn));
+    for (ugt, cn, is_continue, is_kpi_toggle) in &day_end_btns {
+        if is_continue.is_some() {
+            snapshot
+                .elements
+                .insert("DayEndContinueButton".into(), to_rect(ugt, cn));
+        }
+        if is_kpi_toggle.is_some() {
+            snapshot
+                .elements
+                .insert("KpiToggleButton".into(), to_rect(ugt, cn));
+        }
     }
 
     // Build tool buttons
     for (ugt, cn, tool) in &build_tool_btns {
         let name = format!("BuildTool_{:?}", tool.tool);
         snapshot.elements.insert(name, to_rect(ugt, cn));
+    }
+
+    // Day-end scroll body
+    for (ugt, cn, scroll_pos) in &scroll_body {
+        snapshot
+            .elements
+            .insert("DayEndScrollBody".into(), to_rect(ugt, cn));
+        snapshot.day_end_scroll_y = Some(scroll_pos.y);
     }
 
     // Grid placement hints: expose valid charger/transformer positions as

@@ -1,0 +1,41 @@
+name: E2E Tests (Live Site)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL to test against"
+        required: false
+        default: "https://kwtycoon.com"
+
+jobs:
+  playwright:
+    name: Playwright vs ${{ inputs.base_url || 'https://kwtycoon.com' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Playwright dependencies
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        working-directory: tests/e2e
+        run: npx playwright test
+        env:
+          BASE_URL: ${{ inputs.base_url || 'https://kwtycoon.com' }}
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-live-results
+          path: tests/e2e/test-results/
+          retention-days: 14

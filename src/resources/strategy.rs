@@ -72,9 +72,11 @@ impl WarrantyTier {
     pub fn description(&self) -> &'static str {
         match self {
             WarrantyTier::None => "No warranty coverage",
-            WarrantyTier::Standard => "Per charger. Covers: Ground Fault, Cable Damage parts",
-            WarrantyTier::Comprehensive => "Per charger. Covers: All fault parts incl. Cable Theft",
-            WarrantyTier::Premium => "Per charger. Covers: All fault parts + 80% labour",
+            WarrantyTier::Standard => "Damaged parts only. No theft. Price scales with # chargers.",
+            WarrantyTier::Comprehensive => {
+                "All parths including theft. Price scales with # chargers."
+            }
+            WarrantyTier::Premium => "All parts including theft. 80% of labor covered.",
         }
     }
 

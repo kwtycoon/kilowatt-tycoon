@@ -155,7 +155,8 @@ impl Plugin for StatesPlugin {
                     .run_if(in_state(AppState::DayEnd)),
             )
             // Global UI scroll for any container with overflow: scroll_y + ScrollPosition
-            .add_systems(Update, ui_scroll_system)
+            .init_resource::<TouchScrollState>()
+            .add_systems(Update, (ui_scroll_system, ui_touch_scroll_system))
             // GameOver state
             .add_systems(OnEnter(AppState::GameOver), setup_game_over)
             .add_systems(OnExit(AppState::GameOver), cleanup_game_over)
@@ -205,7 +206,11 @@ struct KpiExpanded;
 
 /// Toggle button between collapsed and expanded KPI views
 #[derive(Component, Debug, Clone, Copy)]
-struct KpiToggleButton;
+pub struct KpiToggleButton;
+
+/// Marker for the scrollable body of the day-end modal (used by test bridge).
+#[derive(Component, Debug, Clone, Copy)]
+pub struct DayEndScrollBody;
 
 /// Marker for the modal container so the toggle system can change its width
 #[derive(Component, Debug, Clone, Copy)]
@@ -780,6 +785,7 @@ fn on_enter_day_end(
                         // Scrollable body — grows to fill available height so buttons stay pinned below
                         modal_outer
                             .spawn((
+                                DayEndScrollBody,
                                 Node {
                                     width: Val::Percent(100.0),
                                     flex_direction: FlexDirection::Column,
@@ -2252,6 +2258,114 @@ fn ui_scroll_system(
         let scale = computed.inverse_scale_factor();
         let max_scroll = ((content_h - visible_h) * scale).max(0.0);
         scroll_pos.y = (scroll_pos.y + total_dy).clamp(0.0, max_scroll);
+    }
+}
+
+/// Tracks pointer-drag scroll gestures over UI scroll containers.
+///
+/// Works with both mouse drag (desktop) and single-finger touch (tablet)
+/// because it reads from the unified `GamePointer` abstraction.
+#[derive(Resource, Default)]
+pub struct TouchScrollState {
+    prev_y: Option<f32>,
+    active_entity: Option<Entity>,
+    cumulative_drag: f32,
+    pub scrolling: bool,
+}
+
+const TOUCH_SCROLL_DEAD_ZONE: f32 = 8.0;
+
+/// Converts pointer drags (mouse or touch) into `ScrollPosition` updates for
+/// any visible container with `Overflow::scroll_y()`.
+fn ui_touch_scroll_system(
+    mut pointer: ResMut<crate::helpers::pointer::GamePointer>,
+    mut state: ResMut<TouchScrollState>,
+    mut scrollable: Query<(
+        Entity,
+        &mut ScrollPosition,
+        &Node,
+        &ComputedNode,
+        &bevy::ui::UiGlobalTransform,
+    )>,
+) {
+    // Pointer released or inactive -- clear state.
+    if !pointer.pressed && !pointer.just_pressed {
+        if state.scrolling {
+            pointer.just_released = false;
+        }
+        *state = TouchScrollState::default();
+        return;
+    }
+
+    let Some(pos) = pointer.screen_position else {
+        *state = TouchScrollState::default();
+        return;
+    };
+
+    if pointer.just_pressed {
+        // Pointer just went down -- hit-test against scrollable containers.
+        let mut best: Option<(Entity, f32)> = None;
+        for (entity, _scroll, node, computed, ugt) in scrollable.iter() {
+            if node.overflow.y != OverflowAxis::Scroll {
+                continue;
+            }
+            let scale = computed.inverse_scale_factor();
+            let size = computed.size() * scale;
+            let center = ugt.translation;
+            let half = size * 0.5;
+            let min = center - half;
+            let max = center + half;
+
+            if pos.x >= min.x && pos.x <= max.x && pos.y >= min.y && pos.y <= max.y {
+                let area = size.x * size.y;
+                if best.is_none_or(|(_, a)| area < a) {
+                    best = Some((entity, area));
+                }
+            }
+        }
+
+        *state = TouchScrollState {
+            prev_y: Some(pos.y),
+            active_entity: best.map(|(e, _)| e),
+            cumulative_drag: 0.0,
+            scrolling: false,
+        };
+        return;
+    }
+
+    // While actively scrolling, suppress pointer so buttons don't activate.
+    if state.scrolling {
+        pointer.just_pressed = false;
+        pointer.just_released = false;
+    }
+
+    // Pointer held -- compute delta and potentially scroll.
+    let Some(prev_y) = state.prev_y else {
+        return;
+    };
+    let Some(target) = state.active_entity else {
+        state.prev_y = Some(pos.y);
+        return;
+    };
+
+    let raw_dy = pos.y - prev_y;
+    state.cumulative_drag += raw_dy;
+    state.prev_y = Some(pos.y);
+
+    if !state.scrolling && state.cumulative_drag.abs() < TOUCH_SCROLL_DEAD_ZONE {
+        return;
+    }
+    state.scrolling = true;
+
+    // Negate: finger/mouse moving up (negative dy) scrolls content down (positive offset).
+    let scroll_dy = -raw_dy;
+
+    if let Ok((_entity, mut scroll_pos, _node, computed, _ugt)) = scrollable.get_mut(target) {
+        let content_h = computed.content_size().y;
+        let visible_h = computed.size().y;
+        let scale = computed.inverse_scale_factor();
+        let max_scroll = ((content_h - visible_h) * scale).max(0.0);
+        scroll_pos.y = (scroll_pos.y + scroll_dy).clamp(0.0, max_scroll);
     }
 }
 

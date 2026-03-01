@@ -38,9 +38,9 @@
 
   // Per-tab state
   var tabs = {
-    ocpp: { body: null, badge: null, msgCount: 0 },
-    openadr: { body: null, badge: null, msgCount: 0 },
-    ocpi: { body: null, badge: null, msgCount: 0 },
+    ocpp: { body: null, badge: null, msgCount: 0, groups: {} },
+    openadr: { body: null, badge: null, msgCount: 0, groups: {} },
+    ocpi: { body: null, badge: null, msgCount: 0, groups: {} },
   };
 
   // OCPP action colors
@@ -487,125 +487,96 @@
     activeBody.scrollTop = activeBody.scrollHeight;
   }
 
-  // ─── Message rendering ───
+  // ─── Group tracking & rendering ───
+
+  function updateGroup(tabId, key, label, color, fontWeight, detail, timestamp) {
+    var g = tabs[tabId].groups;
+    if (!g[key]) {
+      g[key] = {
+        label: label,
+        color: color,
+        fontWeight: fontWeight,
+        count: 0,
+        firstTs: timestamp,
+        lastTs: timestamp,
+        lastDetail: detail,
+      };
+    }
+    g[key].count++;
+    g[key].lastTs = timestamp;
+    g[key].color = color;
+    g[key].fontWeight = fontWeight;
+    if (detail) g[key].lastDetail = detail;
+  }
+
+  function renderGroups(tabId) {
+    var body = tabs[tabId].body;
+    body.innerHTML = "";
+    var g = tabs[tabId].groups;
+    var keys = Object.keys(g);
+
+    keys.sort(function (a, b) {
+      if (g[a].lastTs > g[b].lastTs) return -1;
+      if (g[a].lastTs < g[b].lastTs) return 1;
+      return 0;
+    });
+
+    for (var i = 0; i < keys.length; i++) {
+      var entry = g[keys[i]];
+      var el = document.createElement("div");
+      el.style.cssText =
+        "padding:2px 10px;line-height:1.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+
+      var firstFmt = formatTime(entry.firstTs);
+      var lastFmt = formatTime(entry.lastTs);
+      var timeSpread = firstFmt;
+      if (entry.count > 1 && firstFmt !== lastFmt) {
+        timeSpread = firstFmt + "\u2013" + lastFmt;
+      }
+
+      el.innerHTML =
+        '<span style="color:' + entry.color + ";font-weight:" + entry.fontWeight + ';">' +
+        entry.label +
+        "</span> " +
+        '<span style="color:#94a3b8;font-size:10px;">\u00d7' + entry.count + "</span> " +
+        '<span style="color:#6b7280;font-size:10px;">' + timeSpread + "</span>" +
+        (entry.lastDetail
+          ? ' <span style="color:#cbd5e1;">' + entry.lastDetail + "</span>"
+          : "");
+
+      body.appendChild(el);
+    }
+  }
+
+  // ─── Message processing ───
 
   function addOcppMessage(entry) {
-    var el = document.createElement("div");
-    el.style.cssText =
-      "padding:1px 10px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
-
     var action = entry.action || "";
     var isCallResult = !action && entry.msg && entry.msg.charAt(1) === "3";
-
-    var color =
-      OCPP_COLORS[action] || (isCallResult ? "#4b5563" : "#9ca3af");
+    var color = OCPP_COLORS[action] || (isCallResult ? "#4b5563" : "#9ca3af");
     var label = action || (isCallResult ? "CallResult" : "???");
     var detail = extractOcppDetail(action, entry.msg);
-
-    var isFaulted =
-      action === "StatusNotification" && detail.indexOf("Faulted") !== -1;
+    var isFaulted = action === "StatusNotification" && detail.indexOf("Faulted") !== -1;
     if (isFaulted) color = "#f87171";
+    var fontWeight = isCallResult ? "normal" : "bold";
 
-    el.innerHTML =
-      '<span style="color:#6b7280;">' +
-      formatTime(entry.timestamp) +
-      "</span> " +
-      '<span style="color:' +
-      color +
-      ";font-weight:" +
-      (isCallResult ? "normal" : "bold") +
-      ';">' +
-      label +
-      "</span> " +
-      '<span style="color:#94a3b8;">' +
-      (entry.id || "") +
-      "</span>" +
-      (detail
-        ? ' <span style="color:#cbd5e1;">' + detail + "</span>"
-        : "");
-
-    tabs.ocpp.body.appendChild(el);
-    tabs.ocpp.msgCount++;
-
-    while (tabs.ocpp.msgCount > MAX_MESSAGES) {
-      if (tabs.ocpp.body.firstChild) tabs.ocpp.body.removeChild(tabs.ocpp.body.firstChild);
-      tabs.ocpp.msgCount--;
-    }
+    updateGroup("ocpp", label, label, color, fontWeight, detail, entry.timestamp);
   }
 
   function addOpenAdrMessage(entry) {
-    var el = document.createElement("div");
-    el.style.cssText =
-      "padding:1px 10px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
-
     var action = entry.action || "";
     var color = OPENADR_COLORS[action] || "#9ca3af";
-    var msgType = entry.message_type || "";
     var detail = extractOpenAdrDetail(entry);
 
-    el.innerHTML =
-      '<span style="color:#6b7280;">' +
-      formatTime(entry.timestamp) +
-      "</span> " +
-      '<span style="color:' +
-      color +
-      ';font-weight:bold;">' +
-      action +
-      "</span> " +
-      '<span style="color:#64748b;font-size:10px;">[' +
-      msgType +
-      "]</span> " +
-      '<span style="color:#94a3b8;">' +
-      (entry.ven_id || "") +
-      "</span>" +
-      (detail
-        ? ' <span style="color:#cbd5e1;">' + detail + "</span>"
-        : "");
-
-    tabs.openadr.body.appendChild(el);
-    tabs.openadr.msgCount++;
-
-    while (tabs.openadr.msgCount > MAX_MESSAGES) {
-      if (tabs.openadr.body.firstChild)
-        tabs.openadr.body.removeChild(tabs.openadr.body.firstChild);
-      tabs.openadr.msgCount--;
-    }
+    updateGroup("openadr", action, action, color, "bold", detail, entry.timestamp);
   }
 
   function addOcpiMessage(entry) {
-    var el = document.createElement("div");
-    el.style.cssText =
-      "padding:1px 10px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
-
     var action = entry.action || "";
     var color = OCPI_COLORS[action] || "#9ca3af";
-    var objType = entry.object_type || "";
     var detail = extractOcpiDetail(entry);
 
-    el.innerHTML =
-      '<span style="color:#6b7280;">' +
-      formatTime(entry.timestamp) +
-      "</span> " +
-      '<span style="color:' +
-      color +
-      ';font-weight:bold;">' +
-      action +
-      "</span> " +
-      '<span style="color:#64748b;font-size:10px;">[' +
-      objType +
-      "]</span>" +
-      (detail
-        ? ' <span style="color:#cbd5e1;">' + detail + "</span>"
-        : "");
-
-    tabs.ocpi.body.appendChild(el);
-    tabs.ocpi.msgCount++;
-
-    while (tabs.ocpi.msgCount > MAX_MESSAGES) {
-      if (tabs.ocpi.body.firstChild)
-        tabs.ocpi.body.removeChild(tabs.ocpi.body.firstChild);
-      tabs.ocpi.msgCount--;
-    }
+    updateGroup("ocpi", action, action, color, "bold", detail, entry.timestamp);
   }
 
   // ─── Polling ───
@@ -623,6 +594,7 @@
         bufferPush(buffers.ocpp, ocppFeed[i]);
       }
       window.__kwtycoon_ocpp_feed = null;
+      renderGroups("ocpp");
 
       if (visible && activeTab === "ocpp") {
         tabs.ocpp.body.scrollTop = tabs.ocpp.body.scrollHeight;
@@ -648,6 +620,7 @@
         bufferPush(buffers.openadr, adrFeed[j]);
       }
       window.__kwtycoon_openadr_feed = null;
+      renderGroups("openadr");
 
       if (visible && activeTab === "openadr") {
         tabs.openadr.body.scrollTop = tabs.openadr.body.scrollHeight;
@@ -662,6 +635,7 @@
         bufferPush(buffers.ocpi, ocpiFeed[k]);
       }
       window.__kwtycoon_ocpi_feed = null;
+      renderGroups("ocpi");
 
       if (visible && activeTab === "ocpi") {
         tabs.ocpi.body.scrollTop = tabs.ocpi.body.scrollHeight;
