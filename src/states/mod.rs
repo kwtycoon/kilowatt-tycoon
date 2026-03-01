@@ -2277,9 +2277,15 @@ const TOUCH_SCROLL_DEAD_ZONE: f32 = 8.0;
 
 /// Converts pointer drags (mouse or touch) into `ScrollPosition` updates for
 /// any visible container with `Overflow::scroll_y()`.
+///
+/// `GamePointer.screen_position` is in logical (CSS) pixels.
+/// `UiGlobalTransform.translation` and `ComputedNode::size()` are in physical
+/// pixels. We divide both by the window DPR so the hit-test and delta operate
+/// in the same CSS-pixel space as the pointer.
 fn ui_touch_scroll_system(
     mut pointer: ResMut<crate::helpers::pointer::GamePointer>,
     mut state: ResMut<TouchScrollState>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     mut scrollable: Query<(
         Entity,
         &mut ScrollPosition,
@@ -2302,16 +2308,22 @@ fn ui_touch_scroll_system(
         return;
     };
 
+    let dpr = windows
+        .single()
+        .map(|w: &Window| w.scale_factor())
+        .unwrap_or(1.0);
+
     if pointer.just_pressed {
         // Pointer just went down -- hit-test against scrollable containers.
+        // Convert UI rects from physical pixels to CSS pixels so they match
+        // the pointer coordinate space.
         let mut best: Option<(Entity, f32)> = None;
         for (entity, _scroll, node, computed, ugt) in scrollable.iter() {
             if node.overflow.y != OverflowAxis::Scroll {
                 continue;
             }
-            let scale = computed.inverse_scale_factor();
-            let size = computed.size() * scale;
-            let center = ugt.translation;
+            let size = computed.size() / dpr;
+            let center = ugt.translation / dpr;
             let half = size * 0.5;
             let min = center - half;
             let max = center + half;
@@ -2358,13 +2370,15 @@ fn ui_touch_scroll_system(
     state.scrolling = true;
 
     // Negate: finger/mouse moving up (negative dy) scrolls content down (positive offset).
-    let scroll_dy = -raw_dy;
-
+    // raw_dy is in CSS pixels; convert to Val::Px (the unit ScrollPosition uses)
+    // by multiplying by dpr * inverse_scale_factor (CSS -> physical -> Val::Px).
     if let Ok((_entity, mut scroll_pos, _node, computed, _ugt)) = scrollable.get_mut(target) {
+        let isf = computed.inverse_scale_factor();
+        let scroll_dy = -raw_dy * dpr * isf;
+
         let content_h = computed.content_size().y;
         let visible_h = computed.size().y;
-        let scale = computed.inverse_scale_factor();
-        let max_scroll = ((content_h - visible_h) * scale).max(0.0);
+        let max_scroll = ((content_h - visible_h) * isf).max(0.0);
         scroll_pos.y = (scroll_pos.y + scroll_dy).clamp(0.0, max_scroll);
     }
 }
