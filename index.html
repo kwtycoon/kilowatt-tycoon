@@ -167,24 +167,24 @@
         /* Landscape mobile: compact header, tighter hero */
         @media (orientation: landscape) and (max-height: 500px) {
             #splash-page header { padding: 0.5rem 1rem; }
-            .nav-link { display: none; }
-            .nav-btn-label { display: none; }
+            #splash-page .nav-link { display: none; }
+            #splash-page .nav-btn-label { display: none; }
 
             #hero {
                 height: auto;
                 min-height: calc(100vh - 52px);
                 align-items: flex-start;
-                padding-top: 1rem;
+                padding-top: 0.5rem;
             }
 
             #hero .floating { display: none; }
 
-            .hero-logo { height: 6rem; }
-            .hero-logo-wrap { margin-bottom: 0.25rem; }
-            .hero-subtitle { font-size: 1rem; margin-bottom: 0.25rem; }
-            .hero-desc { font-size: 0.875rem; margin-bottom: 0.75rem; }
-            .hero-cta button,
-            .hero-cta a { padding: 0.5rem 1.5rem; font-size: 0.875rem; }
+            #hero .hero-logo { height: 5rem; }
+            #hero .hero-logo-wrap { margin-bottom: 0.25rem; }
+            #hero .hero-subtitle { font-size: 0.875rem; margin-bottom: 0.25rem; }
+            #hero .hero-desc { font-size: 0.75rem; margin-bottom: 0.5rem; }
+            #hero .hero-cta button,
+            #hero .hero-cta a { padding: 0.5rem 1.25rem; font-size: 0.875rem; }
         }
     </style>
     
