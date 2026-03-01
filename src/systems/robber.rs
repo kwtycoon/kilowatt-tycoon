@@ -83,8 +83,13 @@ pub fn cable_theft_system(
     image_assets: Res<ImageAssets>,
     images: Res<Assets<Image>>,
     mut robbery_tracker: ResMut<DailyRobberyTracker>,
+    tutorial_state: Option<Res<crate::resources::TutorialState>>,
 ) {
     if game_clock.is_paused() {
+        return;
+    }
+
+    if tutorial_state.as_ref().is_some_and(|ts| ts.is_active()) {
         return;
     }
 
@@ -412,8 +417,13 @@ pub fn robber_stealing_system(
     spark_vfx: Query<(Entity, &StealingSparkVfx)>,
     multi_site: Res<MultiSiteManager>,
     security_cameras: Query<(&GlobalTransform, &BelongsToSite), With<SecuritySystemVisual>>,
+    tutorial_state: Option<Res<crate::resources::TutorialState>>,
 ) {
     if game_clock.is_paused() {
+        return;
+    }
+
+    if tutorial_state.as_ref().is_some_and(|ts| ts.is_active()) {
         return;
     }
 
