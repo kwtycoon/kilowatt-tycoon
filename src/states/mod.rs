@@ -526,7 +526,10 @@ fn on_enter_day_end(
     let solar_export_revenue = daily_record.financials.solar_export_revenue;
     let energy_cost = daily_record.financials.energy_cost;
     let demand_charge = daily_record.financials.demand_charge;
-    let opex = daily_record.financials.opex;
+    let repair_parts = daily_record.financials.repair_parts;
+    let repair_labor = daily_record.financials.repair_labor;
+    let maintenance = daily_record.financials.maintenance;
+    let opex = repair_parts + repair_labor + maintenance;
     let cable_theft_cost = daily_record.financials.cable_theft_cost;
     let warranty_cost = daily_record.financials.warranty_cost;
     let warranty_recovery = daily_record.financials.warranty_recovery;
@@ -1005,12 +1008,28 @@ fn on_enter_day_end(
                                             // ===== B. Operations =====
                                             let ops_color = Color::srgb(0.9, 0.4, 0.4);
                                             spawn_section_header(section, "Operations", "[*]", ops_color);
-                                            if opex > 0.01 {
+                                            if repair_parts > 0.01 {
                                                 spawn_indented_row(
                                                     section,
-                                                    "  Technician/Repairs",
-                                                    &format!("-${:.2}", opex),
+                                                    "  Repair Parts",
+                                                    &format!("-${:.2}", repair_parts),
                                                     ops_color,
+                                                );
+                                            }
+                                            if repair_labor > 0.01 {
+                                                spawn_indented_row(
+                                                    section,
+                                                    "  Repair Labor",
+                                                    &format!("-${:.2}", repair_labor),
+                                                    ops_color,
+                                                );
+                                            }
+                                            if maintenance > 0.01 {
+                                                spawn_indented_row(
+                                                    section,
+                                                    "  Maintenance/Amenities",
+                                                    &format!("-${:.2}", maintenance),
+                                                    Color::srgb(0.9, 0.6, 0.4),
                                                 );
                                             }
                                             if cable_theft_cost > 0.01 {
@@ -1692,7 +1711,7 @@ fn generate_pro_tip(
     } else if opex > charging_revenue && opex > 0.01 {
         "Our repair budget could fund a small space program."
     } else if warranty_cost > 0.01 && opex > warranty_recovery && opex > 0.01 {
-        "Warranty covers parts, not labor. That technician's hourly rate is still brutal."
+        "Consider the Premium warranty \u{2014} it covers 80% of labor too."
     } else if reputation_delta < -20 {
         "The local EV forum has created a dedicated thread about us. It's not flattering."
     } else if reputation_delta < -5 {

@@ -27,8 +27,10 @@ pub enum Account {
     // Expenses — Energy
     Energy,
     DemandCharge,
-    // Expenses — Operations
-    Opex,
+    // Expenses — Operations (OPEX breakdown)
+    RepairParts,
+    RepairLabor,
+    Maintenance,
     CableTheft,
     Warranty,
     WarrantyRecovery,
@@ -57,7 +59,9 @@ impl Account {
     pub const ALL_EXPENSES: &[Account] = &[
         Account::Energy,
         Account::DemandCharge,
-        Account::Opex,
+        Account::RepairParts,
+        Account::RepairLabor,
+        Account::Maintenance,
         Account::CableTheft,
         Account::Warranty,
         Account::WarrantyRecovery,
@@ -78,7 +82,9 @@ impl Account {
             Self::CarbonCredits => "Income:CarbonCredits",
             Self::Energy => "Expenses:Energy",
             Self::DemandCharge => "Expenses:DemandCharge",
-            Self::Opex => "Expenses:Opex",
+            Self::RepairParts => "Expenses:RepairParts",
+            Self::RepairLabor => "Expenses:RepairLabor",
+            Self::Maintenance => "Expenses:Maintenance",
             Self::CableTheft => "Expenses:CableTheft",
             Self::Warranty => "Expenses:Warranty",
             Self::WarrantyRecovery => "Expenses:WarrantyRecovery",
@@ -100,7 +106,9 @@ impl Account {
             "Income:CarbonCredits" => Some(Self::CarbonCredits),
             "Expenses:Energy" => Some(Self::Energy),
             "Expenses:DemandCharge" => Some(Self::DemandCharge),
-            "Expenses:Opex" => Some(Self::Opex),
+            "Expenses:RepairParts" => Some(Self::RepairParts),
+            "Expenses:RepairLabor" => Some(Self::RepairLabor),
+            "Expenses:Maintenance" => Some(Self::Maintenance),
             "Expenses:CableTheft" => Some(Self::CableTheft),
             "Expenses:Warranty" => Some(Self::Warranty),
             "Expenses:WarrantyRecovery" => Some(Self::WarrantyRecovery),
@@ -123,7 +131,9 @@ impl Account {
             Self::CarbonCredits => "Carbon Credits",
             Self::Energy => "Energy",
             Self::DemandCharge => "Demand Charge",
-            Self::Opex => "Opex",
+            Self::RepairParts => "Repair Parts",
+            Self::RepairLabor => "Repair Labor",
+            Self::Maintenance => "Maintenance",
             Self::CableTheft => "Cable Theft",
             Self::Warranty => "Warranty",
             Self::WarrantyRecovery => "Warranty Recovery",
@@ -154,7 +164,9 @@ impl Account {
     pub fn expense_category(&self) -> Option<ExpenseCategory> {
         match self {
             Self::Energy | Self::DemandCharge => Some(ExpenseCategory::Energy),
-            Self::Opex
+            Self::RepairParts
+            | Self::RepairLabor
+            | Self::Maintenance
             | Self::CableTheft
             | Self::Warranty
             | Self::WarrantyRecovery
@@ -193,7 +205,9 @@ pub struct DailyFinancials {
     pub carbon_credits: f32,
     pub energy_cost: f32,
     pub demand_charge: f32,
-    pub opex: f32,
+    pub repair_parts: f32,
+    pub repair_labor: f32,
+    pub maintenance: f32,
     pub cable_theft_cost: f32,
     pub warranty_cost: f32,
     pub warranty_recovery: f32,
@@ -215,7 +229,9 @@ impl DailyFinancials {
             Account::CarbonCredits => self.carbon_credits,
             Account::Energy => self.energy_cost,
             Account::DemandCharge => self.demand_charge,
-            Account::Opex => self.opex,
+            Account::RepairParts => self.repair_parts,
+            Account::RepairLabor => self.repair_labor,
+            Account::Maintenance => self.maintenance,
             Account::CableTheft => self.cable_theft_cost,
             Account::Warranty => self.warranty_cost,
             Account::WarrantyRecovery => self.warranty_recovery,
@@ -225,6 +241,11 @@ impl DailyFinancials {
             Account::Upgrades => self.upgrades,
             Account::Cash | Account::Equipment | Account::Opening => 0.0,
         }
+    }
+
+    /// Combined repair + maintenance cost (replaces the old single `opex` field).
+    pub fn total_opex_line(&self) -> f32 {
+        self.repair_parts + self.repair_labor + self.maintenance
     }
 
     /// Compute the net total for an expense category, automatically
@@ -504,7 +525,9 @@ impl Ledger {
                     Account::CarbonCredits => f.carbon_credits += val,
                     Account::Energy => f.energy_cost += val,
                     Account::DemandCharge => f.demand_charge += val,
-                    Account::Opex => f.opex += val,
+                    Account::RepairParts => f.repair_parts += val,
+                    Account::RepairLabor => f.repair_labor += val,
+                    Account::Maintenance => f.maintenance += val,
                     Account::CableTheft => f.cable_theft_cost += val,
                     Account::Warranty => f.warranty_cost += val,
                     Account::WarrantyRecovery => f.warranty_recovery += val,
@@ -641,11 +664,11 @@ mod tests {
         let mut ledger = Ledger::with_opening_balance(1000.0);
         ledger.record_revenue(500.0, Account::Charging, "Session");
         ledger.record_expense(200.0, Account::Energy, "Energy");
-        ledger.record_expense(50.0, Account::Opex, "Maintenance");
+        ledger.record_expense(50.0, Account::Maintenance, "Maintenance");
 
         assert_eq!(ledger.gross_revenue(), to_decimal(500.0));
         assert_eq!(ledger.net_revenue(), to_decimal(250.0));
-        assert_eq!(ledger.total_opex(), to_decimal(50.0));
+        assert_eq!(ledger.total_opex(), to_decimal(50.0)); // Maintenance is in Operations category
         assert!(ledger.is_balanced());
     }
 
@@ -721,7 +744,7 @@ mod tests {
 
         ledger.record_expense(776.21, Account::Energy, "Grid electricity");
         ledger.record_expense(216.66, Account::DemandCharge, "Demand charges");
-        ledger.record_expense(120.0, Account::Opex, "Maintenance");
+        ledger.record_expense(120.0, Account::Maintenance, "Maintenance");
         ledger.record_expense(350.0, Account::CableTheft, "Cable replacement");
         ledger.record_expense(15.0, Account::Warranty, "Warranty premium");
         ledger.record_expense(25.0, Account::Refunds, "Customer refund");
@@ -757,7 +780,7 @@ mod tests {
     #[test]
     fn test_contra_expense_reduces_opex() {
         let mut ledger = Ledger::with_opening_balance(10_000.0);
-        ledger.record_expense(1000.0, Account::Opex, "Full repair cost");
+        ledger.record_expense(1000.0, Account::RepairParts, "Full repair cost");
         ledger.record_contra_expense(750.0, Account::WarrantyRecovery, "Warranty coverage");
 
         assert_eq!(ledger.total_opex(), to_decimal(250.0));
@@ -771,7 +794,8 @@ mod tests {
         let mut ledger = Ledger::with_opening_balance(100_000.0);
         ledger.record_expense(500.0, Account::Energy, "Grid electricity");
         ledger.record_expense(100.0, Account::DemandCharge, "Demand charge");
-        ledger.record_expense(800.0, Account::Opex, "Repairs");
+        ledger.record_expense(500.0, Account::RepairParts, "Parts");
+        ledger.record_expense(300.0, Account::RepairLabor, "Labor");
         ledger.record_expense(50.0, Account::Warranty, "Premium");
         ledger.record_contra_expense(600.0, Account::WarrantyRecovery, "Claim");
         ledger.record_expense(200.0, Account::Rent, "Site rent");

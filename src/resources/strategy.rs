@@ -45,7 +45,7 @@ impl SolarExportPolicy {
     }
 }
 
-/// Extended warranty tier — controls how much of the parts cost is covered on dispatch.
+/// Extended warranty tier — controls how much of the parts and labour cost is covered on dispatch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WarrantyTier {
     /// No coverage, no premium.
@@ -55,6 +55,8 @@ pub enum WarrantyTier {
     Standard,
     /// Covers ALL fault parts at 100%, including CableTheft cable replacement.
     Comprehensive,
+    /// Covers ALL fault parts at 100% plus 80% of labour costs.
+    Premium,
 }
 
 impl WarrantyTier {
@@ -63,6 +65,7 @@ impl WarrantyTier {
             WarrantyTier::None => "None",
             WarrantyTier::Standard => "Standard",
             WarrantyTier::Comprehensive => "Full",
+            WarrantyTier::Premium => "Premium",
         }
     }
 
@@ -71,6 +74,7 @@ impl WarrantyTier {
             WarrantyTier::None => "No warranty coverage",
             WarrantyTier::Standard => "Per charger. Covers: Ground Fault, Cable Damage parts",
             WarrantyTier::Comprehensive => "Per charger. Covers: All fault parts incl. Cable Theft",
+            WarrantyTier::Premium => "Per charger. Covers: All fault parts + 80% labour",
         }
     }
 
@@ -78,15 +82,17 @@ impl WarrantyTier {
         match self {
             WarrantyTier::None => WarrantyTier::Standard,
             WarrantyTier::Standard => WarrantyTier::Comprehensive,
-            WarrantyTier::Comprehensive => WarrantyTier::None,
+            WarrantyTier::Comprehensive => WarrantyTier::Premium,
+            WarrantyTier::Premium => WarrantyTier::None,
         }
     }
 
     pub fn prev(&self) -> Self {
         match self {
-            WarrantyTier::None => WarrantyTier::Comprehensive,
+            WarrantyTier::None => WarrantyTier::Premium,
             WarrantyTier::Standard => WarrantyTier::None,
             WarrantyTier::Comprehensive => WarrantyTier::Standard,
+            WarrantyTier::Premium => WarrantyTier::Comprehensive,
         }
     }
 
@@ -98,10 +104,18 @@ impl WarrantyTier {
                 FaultType::GroundFault | FaultType::CableDamage => 0.0,
                 _ => 1.0,
             },
-            WarrantyTier::Comprehensive => match fault_type {
+            WarrantyTier::Comprehensive | WarrantyTier::Premium => match fault_type {
                 FaultType::GroundFault | FaultType::CableDamage | FaultType::CableTheft => 0.0,
                 _ => 1.0,
             },
+        }
+    }
+
+    /// Multiplier applied to labour cost on repair completion. 0.2 = 80% covered, 1.0 = no coverage.
+    pub fn labor_cost_multiplier(&self) -> f32 {
+        match self {
+            WarrantyTier::Premium => 0.2,
+            _ => 1.0,
         }
     }
 
@@ -134,6 +148,20 @@ impl WarrantyTier {
                         325.0
                     } else {
                         500.0
+                    }
+                }
+            },
+            WarrantyTier::Premium => match charger_type {
+                ChargerType::AcLevel2 => 130.0,
+                ChargerType::DcFast => {
+                    if rated_power_kw <= 50.0 {
+                        350.0
+                    } else if rated_power_kw <= 100.0 {
+                        500.0
+                    } else if rated_power_kw <= 150.0 {
+                        650.0
+                    } else {
+                        1000.0
                     }
                 }
             },

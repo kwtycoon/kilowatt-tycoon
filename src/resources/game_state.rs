@@ -67,7 +67,7 @@ impl DailyRecord {
         self.total_revenue() + self.financials.carbon_credits
             - self.financials.energy_cost
             - self.financials.demand_charge
-            - self.financials.opex
+            - self.financials.total_opex_line()
             - self.financials.cable_theft_cost
             - self.financials.warranty_cost
             + self.financials.warranty_recovery
@@ -260,9 +260,21 @@ impl GameState {
         self.cash = self.ledger.cash_balance_f32();
     }
 
-    pub fn add_opex(&mut self, amount: f32) {
+    pub fn add_repair_parts(&mut self, amount: f32) {
         self.ledger
-            .record_expense(amount, Account::Opex, "Operating expense");
+            .record_expense(amount, Account::RepairParts, "Repair parts");
+        self.cash = self.ledger.cash_balance_f32();
+    }
+
+    pub fn add_repair_labor(&mut self, amount: f32) {
+        self.ledger
+            .record_expense(amount, Account::RepairLabor, "Repair labor");
+        self.cash = self.ledger.cash_balance_f32();
+    }
+
+    pub fn add_maintenance(&mut self, amount: f32) {
+        self.ledger
+            .record_expense(amount, Account::Maintenance, "Site maintenance");
         self.cash = self.ledger.cash_balance_f32();
     }
 
@@ -387,8 +399,11 @@ impl GameState {
                 );
             }
             if site.pending_opex > 0.0 {
-                self.ledger
-                    .record_expense(site.pending_opex, Account::Opex, "Operating expense");
+                self.ledger.record_expense(
+                    site.pending_opex,
+                    Account::Maintenance,
+                    "Site maintenance",
+                );
                 site.pending_opex = 0.0;
             }
             if site.pending_warranty > 0.0 {

@@ -3,10 +3,11 @@
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::prelude::*;
 
+use crate::components::BelongsToSite;
 use crate::components::charger::{Charger, ChargerState};
 use crate::resources::{
     GameClock, GameState, ImageAssets, MultiSiteManager, SelectedChargerEntity, TechStatus,
-    TechnicianState,
+    TechnicianState, WarrantyTier,
 };
 use crate::ui::sidebar::{ActivePanel, PanelContent, colors};
 
@@ -56,7 +57,7 @@ pub fn update_operations_panel(
     mut commands: Commands,
     content_query: Query<Entity, With<OperationsContent>>,
     children_query: Query<&Children>,
-    chargers: Query<(Entity, &Charger)>,
+    chargers: Query<(Entity, &Charger, &BelongsToSite)>,
     tech_state: Res<TechnicianState>,
     multi_site: Res<MultiSiteManager>,
     game_state: Res<GameState>,
@@ -78,7 +79,8 @@ pub fn update_operations_panel(
     // Collect faulted chargers
     let mut faulted: Vec<(Entity, &Charger)> = chargers
         .iter()
-        .filter(|(_, c)| c.current_fault.is_some())
+        .filter(|(_, c, _)| c.current_fault.is_some())
+        .map(|(e, c, _)| (e, c))
         .collect();
 
     // Sort by fault severity (offline first, then warning)
@@ -90,13 +92,38 @@ pub fn update_operations_panel(
 
     let fault_count = faulted.len();
 
+    let (warranty_tier, warranty_monthly_premium) =
+        if let Some(site_state) = multi_site.active_site() {
+            let tier = site_state.service_strategy.warranty_tier;
+            let premium: f32 = if tier != WarrantyTier::None {
+                chargers
+                    .iter()
+                    .filter(|(_, _, b)| Some(b.site_id) == multi_site.viewed_site_id)
+                    .map(|(_, c, _)| c.warranty_premium(tier))
+                    .sum()
+            } else {
+                0.0
+            };
+            (tier, premium)
+        } else {
+            (WarrantyTier::None, 0.0)
+        };
+
     // Build panel content
     commands.entity(content_entity).with_children(|parent| {
         // Section 1: Technician Status
         spawn_technician_section(parent, &tech_state, &multi_site, &image_assets);
 
         // Section 2: O&M Statistics
-        spawn_om_stats_section(parent, &game_state, &multi_site, fault_count, &image_assets);
+        spawn_om_stats_section(
+            parent,
+            &game_state,
+            &multi_site,
+            fault_count,
+            warranty_tier,
+            warranty_monthly_premium,
+            &image_assets,
+        );
 
         // Section 3: Active Faults (if any)
         spawn_faults_section(parent, &faulted, &tech_state, &image_assets);
@@ -213,6 +240,8 @@ fn spawn_om_stats_section(
     game_state: &GameState,
     multi_site: &MultiSiteManager,
     fault_count: usize,
+    warranty_tier: WarrantyTier,
+    warranty_monthly_premium: f32,
     image_assets: &ImageAssets,
 ) {
     // Get site-specific data
@@ -304,15 +333,21 @@ fn spawn_om_stats_section(
                 fault_color,
             );
 
-            // Tickets resolved/escalated
-            let resolved = game_state.tickets_resolved;
-            let escalated = game_state.tickets_escalated;
+            // Warranty tier and premium
             spawn_stat_row(
                 section,
-                "Tickets:",
-                &format!("{resolved} resolved / {escalated} escalated"),
+                "Warranty:",
+                warranty_tier.display_name(),
                 colors::TEXT_SECONDARY,
             );
+            if warranty_tier != WarrantyTier::None {
+                spawn_stat_row(
+                    section,
+                    "Premium:",
+                    &format!("${:.0}/mo", warranty_monthly_premium),
+                    colors::TEXT_SECONDARY,
+                );
+            }
 
             // Total OPEX
             spawn_stat_row(

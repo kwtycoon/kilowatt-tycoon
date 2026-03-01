@@ -298,6 +298,11 @@ fn spawn_price_panel(parent: &mut ChildSpawnerCommands, image_assets: &ImageAsse
 
             spawn_separator(panel);
 
+            // Demand-Responsive controls
+            spawn_slider_control(panel, "Base Price:", "$0.35", StrategyControl::SurgeBasePrice, SurgeBasePriceLabel, image_assets);
+            spawn_slider_control(panel, "Surge Mult:", "1.5x", StrategyControl::SurgeMultiplier, SurgeMultiplierLabel, image_assets);
+            spawn_slider_control(panel, "Surge @:", "75%", StrategyControl::SurgeThreshold, SurgeThresholdLabel, image_assets);
+
             // TOU-Linked controls
             spawn_slider_control(panel, "Off-Peak $/kWh:", "$0.30", StrategyControl::TouOffPeakPrice, TouOffPeakPriceLabel, image_assets);
             spawn_slider_control(panel, "On-Peak $/kWh:", "$0.55", StrategyControl::TouOnPeakPrice, TouOnPeakPriceLabel, image_assets);
@@ -306,11 +311,6 @@ fn spawn_price_panel(parent: &mut ChildSpawnerCommands, image_assets: &ImageAsse
             spawn_slider_control(panel, "Markup %:", "200%", StrategyControl::CostPlusMarkup, CostPlusMarkupLabel, image_assets);
             spawn_slider_control(panel, "Price Floor:", "$0.20", StrategyControl::CostPlusFloor, CostPlusFloorLabel, image_assets);
             spawn_slider_control(panel, "Price Ceiling:", "$1.00", StrategyControl::CostPlusCeiling, CostPlusCeilingLabel, image_assets);
-
-            // Demand-Responsive controls
-            spawn_slider_control(panel, "Base Price:", "$0.35", StrategyControl::SurgeBasePrice, SurgeBasePriceLabel, image_assets);
-            spawn_slider_control(panel, "Surge Mult:", "1.5x", StrategyControl::SurgeMultiplier, SurgeMultiplierLabel, image_assets);
-            spawn_slider_control(panel, "Surge @:", "75%", StrategyControl::SurgeThreshold, SurgeThresholdLabel, image_assets);
 
             spawn_separator(panel);
 
@@ -1141,8 +1141,9 @@ pub fn update_slider_fill_widths(
                 use crate::resources::WarrantyTier;
                 match site_state.service_strategy.warranty_tier {
                     WarrantyTier::None => 0.0,
-                    WarrantyTier::Standard => 50.0,
-                    WarrantyTier::Comprehensive => 100.0,
+                    WarrantyTier::Standard => 33.0,
+                    WarrantyTier::Comprehensive => 66.0,
+                    WarrantyTier::Premium => 100.0,
                 }
             }
         };

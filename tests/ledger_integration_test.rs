@@ -15,7 +15,9 @@ fn test_all_game_state_methods_record_to_ledger() {
     gs.add_solar_export_revenue(12.0);
     gs.add_energy_cost(200.0);
     gs.add_demand_charge(50.0);
-    gs.add_opex(30.0);
+    gs.add_repair_parts(10.0);
+    gs.add_repair_labor(12.0);
+    gs.add_maintenance(8.0);
     gs.add_cable_theft_cost(100.0);
     gs.add_warranty_cost(15.0);
     gs.add_refund(20.0);
@@ -35,7 +37,9 @@ fn test_all_game_state_methods_record_to_ledger() {
     let expected_cash = STARTING_CASH + 500.0 + 48.0 + 25.0 + 12.0
         - 200.0
         - 50.0
-        - 30.0
+        - 10.0
+        - 12.0
+        - 8.0
         - 100.0
         - 15.0
         - 20.0
@@ -123,7 +127,9 @@ fn test_full_day_simulation_with_all_transaction_types() {
     // Costs
     gs.add_energy_cost(776.21);
     gs.add_demand_charge(216.66);
-    gs.add_opex(120.0);
+    gs.add_repair_parts(40.0);
+    gs.add_repair_labor(50.0);
+    gs.add_maintenance(30.0);
     gs.add_cable_theft_cost(350.0);
     gs.add_warranty_cost(15.0);
     gs.add_refund(25.0);
@@ -157,7 +163,7 @@ fn test_daily_totals_match_tracker_revenue() {
     gs.add_ad_revenue(20.0);
     gs.add_solar_export_revenue(15.0);
     gs.add_energy_cost(40.0);
-    gs.add_opex(10.0);
+    gs.add_maintenance(10.0);
 
     let financials = gs.ledger.daily_totals(gs.ledger.current_date);
     let tracker = &gs.daily_history.current_day;
@@ -184,7 +190,7 @@ fn test_daily_totals_match_tracker_revenue() {
 
     // Expense fields live only in the ledger (not on tracker)
     assert!((financials.energy_cost - 40.0).abs() < 0.01);
-    assert!((financials.opex - 10.0).abs() < 0.01);
+    assert!((financials.maintenance - 10.0).abs() < 0.01);
 }
 
 #[test]

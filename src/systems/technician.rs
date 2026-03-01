@@ -87,7 +87,7 @@ fn start_job(
     if is_cable_theft {
         game_state.add_cable_theft_cost(original_cost);
     } else {
-        game_state.add_opex(original_cost);
+        game_state.add_repair_parts(original_cost);
     }
     if covered > 0.0 {
         game_state.add_warranty_recovery(covered);
@@ -608,6 +608,15 @@ pub fn technician_repair_system(
         // Calculate labor cost (travel + repair time at hourly rate)
         let labor_cost = tech_state.calculate_job_cost();
 
+        // Apply warranty labour coverage (Premium covers 80%)
+        let warranty_tier = multi_site
+            .get_site(belongs.site_id)
+            .map(|s| s.service_strategy.warranty_tier)
+            .unwrap_or_default();
+        let labor_multiplier = warranty_tier.labor_cost_multiplier();
+        let effective_labor = labor_cost * labor_multiplier;
+        let labor_covered = labor_cost - effective_labor;
+
         // Capture fault info before potentially clearing
         let occurred_at = charger
             .fault_occurred_at
@@ -620,12 +629,14 @@ pub fn technician_repair_system(
         );
         let charger_id = charger.id.clone();
 
-        // Labor cost is always paid (technician worked regardless of outcome)
         charger.total_repair_opex += labor_cost;
         if was_cable_theft {
-            game_state.add_cable_theft_cost(labor_cost);
+            game_state.add_cable_theft_cost(effective_labor);
         } else {
-            game_state.add_opex(labor_cost);
+            game_state.add_repair_labor(effective_labor);
+        }
+        if labor_covered > 0.0 {
+            game_state.add_warranty_recovery(labor_covered);
         }
 
         let failure_chance = multi_site
