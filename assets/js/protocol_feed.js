@@ -242,7 +242,7 @@
           if (payloads) {
             var byType = {};
             for (var ti = 0; ti < payloads.length; ti++) {
-              var pvt = payloads[ti].value_type || payloads[ti].valueType || "";
+              var pvt = payloads[ti]["type"] || payloads[ti].value_type || payloads[ti].valueType || "";
               var pv = payloads[ti].values && payloads[ti].values[0];
               if (pvt) byType[pvt] = pv;
             }
@@ -302,7 +302,7 @@
         var rName = obj.resource_name || obj.resourceName || "";
         var attrs = obj.attributes;
         if (attrs && attrs[0] && attrs[0].values && attrs[0].values[0] != null) {
-          var vt = attrs[0].value_type || attrs[0].valueType || "";
+          var vt = attrs[0]["type"] || attrs[0].value_type || attrs[0].valueType || "";
           return rName + " " + vt + "=" + Number(attrs[0].values[0]).toFixed(1);
         }
         return rName;
@@ -326,7 +326,7 @@
           var parts = [];
           for (var k = 0; k < intervals[0].payloads.length; k++) {
             var p = intervals[0].payloads[k];
-            var vt = p.value_type || p.valueType || "";
+            var vt = p["type"] || p.value_type || p.valueType || "";
             if (p.values && p.values[0] != null) {
               var label = vt.indexOf("ChargeState") !== -1 ? "SOC" : "kW";
               parts.push(Number(p.values[0]).toFixed(1) + " " + label);
