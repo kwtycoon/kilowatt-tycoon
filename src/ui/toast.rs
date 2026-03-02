@@ -43,7 +43,7 @@ pub fn spawn_fault_toasts(
 ) {
     for event in fault_events.read() {
         let message = format!(
-            "Charger {} offline: {}",
+            "Charger {} fault: {}",
             event.charger_id,
             event.fault_type.display_name()
         );

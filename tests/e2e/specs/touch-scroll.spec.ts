@@ -135,6 +135,43 @@ async function tapElement(
   await page.waitForTimeout(300);
 }
 
+/**
+ * Click at CSS coordinates with retries until the bridge condition is met.
+ * Each attempt performs a full click (down → hold → up) so placement systems
+ * that fire on release are covered. The hold duration spans multiple Bevy
+ * frames to ensure the press is registered even at very low frame rates.
+ */
+async function tapCanvasUntil(
+  page: Page,
+  x: number,
+  y: number,
+  label: string,
+  check: (b: BridgeState | null) => boolean,
+  timeout = 30_000,
+): Promise<void> {
+  const deadline = Date.now() + timeout;
+  let attempt = 0;
+  while (Date.now() < deadline) {
+    attempt++;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.waitForTimeout(2_000);
+    await page.mouse.up();
+    await page.waitForTimeout(1_000);
+
+    const s = await bridge(page);
+    if (check(s)) {
+      log(`${label} succeeded on attempt ${attempt}: ${bridgeSummary(s)}`);
+      return;
+    }
+    log(`${label} attempt ${attempt} still pending, retrying...`);
+  }
+  const final_ = await bridge(page);
+  throw new Error(
+    `${label}: failed after ${attempt} attempts (${timeout}ms). Last: ${bridgeSummary(final_)}`,
+  );
+}
+
 async function tapElementUntil(
   page: Page,
   name: string,
@@ -142,14 +179,14 @@ async function tapElementUntil(
   check: (b: BridgeState | null) => boolean,
   timeout = 60_000,
 ): Promise<void> {
-  const el = await waitForElement(page, name);
-  const cx = el.x + el.width / 2;
-  const cy = el.y + el.height / 2;
   const deadline = Date.now() + timeout;
   let attempt = 0;
 
   while (Date.now() < deadline) {
     attempt++;
+    const el = await waitForElement(page, name, Math.min(10_000, deadline - Date.now()));
+    const cx = el.x + el.width / 2;
+    const cy = el.y + el.height / 2;
     await page.mouse.move(cx, cy);
     await page.mouse.down();
 
@@ -174,10 +211,10 @@ async function tapElementUntil(
   );
 }
 
-async function tapCanvas(page: Page, x: number, y: number): Promise<void> {
+async function tapCanvas(page: Page, x: number, y: number, holdMs = 2_000): Promise<void> {
   await page.mouse.move(x, y);
   await page.mouse.down();
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(holdMs);
   await page.mouse.up();
   await page.waitForTimeout(300);
 }
@@ -273,25 +310,23 @@ test.describe("Touch scroll on iPad", () => {
       (b) => b?.selected_build_tool === "ChargerL2",
     );
 
+    const cashBefore = (await bridge(page))?.cash ?? 0;
     const chargerHint = await waitForElementPrefix(page, "PlacementHint_Charger_", 15_000);
-    await tapCanvas(
-      page,
-      chargerHint.rect.x + chargerHint.rect.width / 2,
-      chargerHint.rect.y + chargerHint.rect.height / 2,
-    );
-    await page.waitForTimeout(1_000);
+    const chargerCx = chargerHint.rect.x + chargerHint.rect.width / 2;
+    const chargerCy = chargerHint.rect.y + chargerHint.rect.height / 2;
 
-    // ── 5. Place transformer ──────────────────────────────────────
-    await page.keyboard.press("Digit5");
-    await page.waitForTimeout(500);
+    for (let placeAttempt = 0; placeAttempt < 10; placeAttempt++) {
+      await tapCanvas(page, chargerCx, chargerCy);
+      await page.waitForTimeout(1_000);
+      const s = await bridge(page);
+      if (s && s.cash < cashBefore) {
+        log(`Charger placed on attempt ${placeAttempt + 1}: ${bridgeSummary(s)}`);
+        break;
+      }
+      log(`Charger placement attempt ${placeAttempt + 1} pending...`);
+    }
 
-    const xfmrHint = await waitForElementPrefix(page, "PlacementHint_Transformer_", 15_000);
-    await tapCanvas(
-      page,
-      xfmrHint.rect.x + xfmrHint.rect.width / 2,
-      xfmrHint.rect.y + xfmrHint.rect.height / 2,
-    );
-    await page.waitForTimeout(1_000);
+    // ── 5. (Transformer skipped — L2 doesn't require one for validation)
 
     // ── 6. Start day, 10x speed, wait for DayEnd ─────────────────
     await tapElementUntil(
@@ -317,9 +352,10 @@ test.describe("Touch scroll on iPad", () => {
     // more chargers and richer data.
     const originalVp = page.viewportSize()!;
     await page.setViewportSize({ width: originalVp.width, height: 500 });
-    await page.waitForTimeout(1_500);
+    // Wait longer for Bevy to re-layout after viewport resize (CI frames can be >1s).
+    await page.waitForTimeout(3_000);
 
-    // Verify the scroll body and toggle are visible.
+    // Re-fetch scroll body rect after resize — layout coordinates have shifted.
     const scrollRect = await waitForElement(page, "DayEndScrollBody", 10_000);
     log(`Scroll body rect: x=${scrollRect.x.toFixed(0)} y=${scrollRect.y.toFixed(0)} w=${scrollRect.width.toFixed(0)} h=${scrollRect.height.toFixed(0)}`);
 
@@ -330,21 +366,27 @@ test.describe("Touch scroll on iPad", () => {
 
     // ── 9. Perform pointer drag (scroll down) ─────────────────────
     // Drag from lower region upward (finger/mouse up = content scrolls down).
+    // Use longer step delays so slow CI frames (>1s) actually see movement
+    // across multiple frames.
     const cx = scrollRect.x + scrollRect.width / 2;
     const dragStartY = scrollRect.y + scrollRect.height * 0.7;
     const dragEndY = scrollRect.y + scrollRect.height * 0.2;
 
-    await pointerDrag(page, cx, dragStartY, cx, dragEndY, 10, 80);
+    await pointerDrag(page, cx, dragStartY, cx, dragEndY, 10, IS_CI ? 300 : 80);
     log("Pointer drag complete");
 
-    // Give Bevy a couple of frames to finalize the scroll position.
-    await page.waitForTimeout(500);
-
-    // ── 10. Verify scroll position changed ───────────────────────
-    const after = await bridge(page);
-    const scrollAfter = after?.day_end_scroll_y ?? 0;
+    // Poll for scroll change — in CI the scroll update may be delayed.
+    let scrollAfter = scrollBefore;
+    const scrollDeadline = Date.now() + 10_000;
+    while (Date.now() < scrollDeadline) {
+      await page.waitForTimeout(500);
+      const s = await bridge(page);
+      scrollAfter = s?.day_end_scroll_y ?? 0;
+      if (scrollAfter > scrollBefore) break;
+    }
     log(`Scroll position after touch drag: ${scrollAfter}`);
 
+    // ── 10. Verify scroll position changed ───────────────────────
     expect(scrollAfter).toBeGreaterThan(scrollBefore);
     log(`Touch scroll verified: ${scrollBefore.toFixed(1)} → ${scrollAfter.toFixed(1)}`);
   });

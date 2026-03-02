@@ -331,25 +331,14 @@ fn spawn_character_card(
                     ..default()
                 })
                 .with_children(|perk_section| {
-                    // Perk name
+                    // Perk name only (no description — consistent across characters)
                     perk_section.spawn((
                         Text::new(format!("PERK: {}", perk.name().to_uppercase())),
                         TextFont {
-                            font_size: 13.0,
+                            font_size: 18.0,
                             ..default()
                         },
-                        TextColor(Color::srgb(0.2, 0.7, 0.2)), // Green accent
-                    ));
-
-                    // Perk description
-                    perk_section.spawn((
-                        Text::new(perk.description()),
-                        TextFont {
-                            font_size: 12.0,
-                            ..default()
-                        },
-                        TextColor(colors::TEXT_SECONDARY),
-                        TextLayout::new_with_linebreak(bevy::text::LineBreak::WordBoundary),
+                        TextColor(colors::MODAL_BORDER_GLOW), // Bright neon green so perk stands out
                     ));
                 });
 

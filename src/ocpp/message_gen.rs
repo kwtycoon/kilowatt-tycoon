@@ -9,6 +9,7 @@
 //! helper in `types.rs`.
 
 use bevy::prelude::*;
+use rust_decimal::Decimal;
 
 use crate::components::charger::{Charger, ChargerState, ChargerType, RemoteAction};
 use crate::components::driver::Driver;
@@ -586,12 +587,14 @@ pub fn ocpp_meter_values_system(
                 return None;
             }
 
-            let soc = state
-                .active_driver
-                .and_then(|de| drivers.get(de).ok())
-                .map(|d| d.charge_progress() * 100.0);
+            let active_driver = state.active_driver.and_then(|de| drivers.get(de).ok());
 
-            let energy_wh = charger.total_energy_delivered_kwh * 1000.0;
+            let soc = active_driver.map(|d| d.charge_progress() * 100.0);
+
+            let session_energy_wh = active_driver
+                .map(|d| d.charge_received_kwh * 1000.0)
+                .unwrap_or(0.0);
+            let energy_wh = state.meter_start_wh as f32 + session_energy_wh;
             let power_w = charger.current_power_kw * 1000.0;
 
             Some((
@@ -877,5 +880,97 @@ pub fn ocpp_day_end_system(
 
         let state = queue.get_or_create(entity);
         state.last_status = Some(ChargePointStatus::Available);
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  9. SetChargingProfile system (peak shave threshold)
+// ─────────────────────────────────────────────────────
+
+/// Emit `SetChargingProfile` (CSMS → CP) with a `ChargePointMaxProfile`
+/// whenever the player changes the peak shave threshold.
+///
+/// Uses a `Local` to track the last-emitted threshold so we only emit
+/// on actual changes.
+pub fn ocpp_charging_profile_system(
+    chargers: Query<(Entity, &Charger)>,
+    mut queue: ResMut<OcppMessageQueue>,
+    game_clock: Res<GameClock>,
+    multi_site: Res<crate::resources::MultiSiteManager>,
+    mut last_threshold: Local<Option<f32>>,
+) {
+    if !queue.is_active() {
+        return;
+    }
+
+    let Some(site_state) = multi_site.active_site() else {
+        return;
+    };
+
+    let current_threshold = site_state.bess_state.peak_shave_threshold;
+
+    let threshold_changed = match *last_threshold {
+        Some(prev) => (prev - current_threshold).abs() > f32::EPSILON,
+        None => true,
+    };
+
+    if !threshold_changed {
+        return;
+    }
+    *last_threshold = Some(current_threshold);
+
+    let site_capacity_kva = site_state.effective_capacity_kva();
+    let limit_watts = site_capacity_kva * current_threshold * 1000.0;
+    let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
+    let ts_iso = timestamp.to_rfc3339();
+
+    for (entity, _charger) in chargers.iter() {
+        let state = queue.get_or_create(entity);
+        if !state.boot_sent {
+            continue;
+        }
+        let charger_id = state.charger_id.clone();
+
+        let uid = new_unique_id();
+        let profile = SetChargingProfileRequest {
+            connector_id: 0,
+            cs_charging_profiles: ChargingProfile {
+                charging_profile_id: 1,
+                transaction_id: None,
+                stack_level: 0,
+                charging_profile_purpose: ChargingProfilePurposeType::ChargePointMaxProfile,
+                charging_profile_kind: ChargingProfileKindType::Absolute,
+                recurrency_kind: None,
+                valid_from: Some(timestamp),
+                valid_to: None,
+                charging_schedule: ChargingSchedule {
+                    duration: None,
+                    start_schedule: Some(timestamp),
+                    charging_rate_unit: ChargingRateUnitType::W,
+                    charging_schedule_period: vec![ChargingSchedulePeriod {
+                        start_period: 0,
+                        limit: Decimal::from(limit_watts as i64),
+                        number_phases: Some(3),
+                    }],
+                    min_charging_rate: None,
+                },
+            },
+        };
+        queue.push_with_log(
+            charger_id.clone(),
+            ts_iso.clone(),
+            "SetChargingProfile",
+            serialize_call(&uid, "SetChargingProfile", &profile),
+        );
+
+        let resp = SetChargingProfileResponse {
+            status: ChargingProfileStatus::Accepted,
+        };
+        queue.push_with_log(
+            charger_id,
+            ts_iso.clone(),
+            "",
+            serialize_callresult(&uid, &resp),
+        );
     }
 }

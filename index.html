@@ -60,13 +60,13 @@
 
     <!-- Google tag (gtag.js) — production only -->
     <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
     if (location.hostname.endsWith('tycoon.com')) {
       var s = document.createElement('script');
       s.async = true;
       s.src = 'https://www.googletagmanager.com/gtag/js?id=G-7HZ49YK3E6';
       document.head.appendChild(s);
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
       gtag('config', 'G-7HZ49YK3E6');
     }
@@ -201,7 +201,7 @@
         }
         
         function startGame() {
-            // Hide splash page and center the game
+            gtag('event', 'click_play');
             const splash = document.getElementById('splash-page');
             splash.style.display = 'none';
             document.body.classList.remove('gradient-bg', 'font-inter', 'text-white', 'overflow-x-hidden');
@@ -521,6 +521,35 @@
         </div>
     </footer>
 </div>
+
+<!-- Bridge watcher: poll __kwtycoon_bridge for state changes and fire GA events -->
+<script>
+(function() {
+  var prev = {};
+  setInterval(function() {
+    var b = window.__kwtycoon_bridge;
+    if (!b) return;
+
+    if (b.app_state !== prev.app_state) {
+      if (b.app_state === 'Playing' && prev.app_state === 'CharacterSetup') {
+        gtag('event', 'game_start');
+      }
+      if (b.app_state === 'DayEnd') {
+        gtag('event', 'day_completed', { day_number: b.day_number });
+      }
+      if (b.app_state === 'GameOver') {
+        gtag('event', 'game_over', { day_number: b.day_number });
+      }
+    }
+
+    if (b.day_number !== prev.day_number && b.app_state === 'Playing') {
+      gtag('event', 'day_started', { day_number: b.day_number });
+    }
+
+    prev = { app_state: b.app_state, day_number: b.day_number };
+  }, 1000);
+})();
+</script>
 
 </body>
 </html>

@@ -51,6 +51,7 @@
     StartTransaction: "#4ade80",
     StopTransaction: "#fb923c",
     MeterValues: "#22d3ee",
+    SetChargingProfile: "#f472b6",
   };
 
   // OpenADR action colors (by action label)
@@ -119,6 +120,16 @@
           return "";
         case "BootNotification":
           return payload.charge_point_model || payload.chargePointModel || "";
+        case "SetChargingProfile": {
+          var cp = payload.cs_charging_profiles || payload.csChargingProfiles || {};
+          var sched = cp.charging_schedule || cp.chargingSchedule || {};
+          var periods = sched.charging_schedule_period || sched.chargingSchedulePeriod || [];
+          if (periods[0] && periods[0].limit != null) {
+            var kw = (Number(periods[0].limit) / 1000).toFixed(0);
+            return "limit=" + kw + "kW";
+          }
+          return "";
+        }
         default:
           if (!action && arr[0] === 3) {
             if (payload.transaction_id != null || payload.transactionId != null)

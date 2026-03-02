@@ -161,10 +161,51 @@ async function tapElement(
 }
 
 /**
+ * Click at CSS coordinates with retries until the bridge condition is met.
+ * Each attempt performs a full click (down → hold → up) so placement systems
+ * that fire on release are covered. The hold duration spans multiple Bevy
+ * frames to ensure the press is registered even at very low frame rates.
+ */
+async function tapCanvasUntil(
+  page: Page,
+  x: number,
+  y: number,
+  label: string,
+  check: (b: BridgeState | null) => boolean,
+  timeout = 30_000,
+): Promise<void> {
+  const deadline = Date.now() + timeout;
+  let attempt = 0;
+  while (Date.now() < deadline) {
+    attempt++;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.waitForTimeout(2_000);
+    await page.mouse.up();
+    // Wait for the game to process the click and update the bridge.
+    await page.waitForTimeout(1_000);
+
+    const s = await bridge(page);
+    if (check(s)) {
+      log(`${label} succeeded on attempt ${attempt}: ${bridgeSummary(s)}`);
+      return;
+    }
+    log(`${label} attempt ${attempt} still pending, retrying...`);
+  }
+  const final_ = await bridge(page);
+  throw new Error(
+    `${label}: failed after ${attempt} attempts (${timeout}ms). Last: ${bridgeSummary(final_)}`,
+  );
+}
+
+/**
  * Tap a named element, keeping the mouse held down while polling the
  * bridge until `check` returns true.  This adapts to arbitrarily slow
  * frame rates — the mouse stays pressed until Bevy processes the frame
  * and the expected state change is observed.
+ *
+ * Re-fetches the element position on each attempt so layout shifts
+ * between retries don't cause stale coordinates.
  */
 async function tapElementUntil(
   page: Page,
@@ -173,14 +214,14 @@ async function tapElementUntil(
   check: (b: BridgeState | null) => boolean,
   timeout = 60_000,
 ): Promise<void> {
-  const el = await waitForElement(page, name);
-  const cx = el.x + el.width / 2;
-  const cy = el.y + el.height / 2;
   const deadline = Date.now() + timeout;
   let attempt = 0;
 
   while (Date.now() < deadline) {
     attempt++;
+    const el = await waitForElement(page, name, Math.min(10_000, deadline - Date.now()));
+    const cx = el.x + el.width / 2;
+    const cy = el.y + el.height / 2;
     await page.mouse.move(cx, cy);
     await page.mouse.down();
 
@@ -201,17 +242,17 @@ async function tapElementUntil(
     log(`${label} attempt ${attempt} still pending, retrying...`);
   }
 
-  const final = await bridge(page);
+  const final_ = await bridge(page);
   throw new Error(
-    `${label}: failed after ${attempt} attempts (${timeout}ms). Last: ${bridgeSummary(final)}`,
+    `${label}: failed after ${attempt} attempts (${timeout}ms). Last: ${bridgeSummary(final_)}`,
   );
 }
 
 /** Tap at arbitrary CSS coordinates on the canvas. */
-async function tapCanvas(page: Page, x: number, y: number): Promise<void> {
+async function tapCanvas(page: Page, x: number, y: number, holdMs = 2_000): Promise<void> {
   await page.mouse.move(x, y);
   await page.mouse.down();
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(holdMs);
   await page.mouse.up();
   await page.waitForTimeout(300);
 }
@@ -301,6 +342,7 @@ test.describe("Full gameplay flow", () => {
       (b) => b?.selected_build_tool === "ChargerL2",
     );
 
+    const cashBefore = (await bridge(page))?.cash ?? 0;
     const chargerHint = await waitForElementPrefix(
       page,
       "PlacementHint_Charger_",
@@ -308,14 +350,25 @@ test.describe("Full gameplay flow", () => {
     );
     const chargerCx = chargerHint.rect.x + chargerHint.rect.width / 2;
     const chargerCy = chargerHint.rect.y + chargerHint.rect.height / 2;
-    await tapCanvas(page, chargerCx, chargerCy);
-    await page.waitForTimeout(1_000);
+
+    // Retry click until bridge confirms the charger was placed (cash decreased).
+    for (let placeAttempt = 0; placeAttempt < 10; placeAttempt++) {
+      await tapCanvas(page, chargerCx, chargerCy);
+      await page.waitForTimeout(1_000);
+      const s = await bridge(page);
+      if (s && s.cash < cashBefore) {
+        log(`Charger placed on attempt ${placeAttempt + 1}: ${bridgeSummary(s)}`);
+        break;
+      }
+      log(`Charger placement attempt ${placeAttempt + 1} pending...`);
+    }
     await logBridge(page, "After charger placement");
 
     // ── 5. Place a transformer ─────────────────────────────────────
     await page.keyboard.press("Digit5");
     await page.waitForTimeout(500);
 
+    const cashBeforeXfmr = (await bridge(page))?.cash ?? 0;
     const xfmrHint = await waitForElementPrefix(
       page,
       "PlacementHint_Transformer_",
@@ -323,8 +376,17 @@ test.describe("Full gameplay flow", () => {
     );
     const xfmrCx = xfmrHint.rect.x + xfmrHint.rect.width / 2;
     const xfmrCy = xfmrHint.rect.y + xfmrHint.rect.height / 2;
-    await tapCanvas(page, xfmrCx, xfmrCy);
-    await page.waitForTimeout(1_000);
+
+    for (let placeAttempt = 0; placeAttempt < 10; placeAttempt++) {
+      await tapCanvas(page, xfmrCx, xfmrCy);
+      await page.waitForTimeout(1_000);
+      const s = await bridge(page);
+      if (s && s.cash < cashBeforeXfmr) {
+        log(`Transformer placed on attempt ${placeAttempt + 1}: ${bridgeSummary(s)}`);
+        break;
+      }
+      log(`Transformer placement attempt ${placeAttempt + 1} pending...`);
+    }
     await logBridge(page, "After transformer placement");
 
     // ── 6. Start day (retry until bridge confirms clock is running) ─
@@ -370,17 +432,19 @@ test.describe("Full gameplay flow", () => {
     const scrollBefore = (await bridge(page))?.day_end_scroll_y ?? 0;
 
     // Pointer drag: finger up = content scrolls down.
+    // Longer step delays so slow CI frames actually see movement.
+    const stepDelay = IS_CI ? 300 : 80;
     await page.mouse.move(scrollCx, dragStartY);
     await page.mouse.down();
-    await page.waitForTimeout(80);
+    await page.waitForTimeout(stepDelay);
     const dragSteps = 10;
     for (let i = 1; i <= dragSteps; i++) {
       const t = i / dragSteps;
       await page.mouse.move(scrollCx, dragStartY + (dragEndY - dragStartY) * t);
-      await page.waitForTimeout(80);
+      await page.waitForTimeout(stepDelay);
     }
     await page.mouse.up();
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1_000);
 
     const scrollAfter = (await bridge(page))?.day_end_scroll_y ?? 0;
     log(`Scroll: ${scrollBefore.toFixed(1)} → ${scrollAfter.toFixed(1)}`);

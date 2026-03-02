@@ -230,6 +230,12 @@ impl SiteUpgrades {
     pub fn upgrade_info() -> Vec<UpgradeInfo> {
         vec![
             UpgradeInfo {
+                id: UpgradeId::DemandBoost,
+                name: "Demand Blitz",
+                description: "2x customer demand for 4 hours",
+                cost: upgrade_costs::DEMAND_BOOST,
+            },
+            UpgradeInfo {
                 id: UpgradeId::Marketing,
                 name: "Marketing Campaign",
                 description: "+10% customer demand",
@@ -242,16 +248,16 @@ impl SiteUpgrades {
                 cost: upgrade_costs::TRANSFORMER_COOLING,
             },
             UpgradeInfo {
-                id: UpgradeId::AdvancedPowerManagement,
-                name: "Advanced Power Management",
-                description: "Unlocks power density + battery controls",
-                cost: upgrade_costs::ADVANCED_POWER_MANAGEMENT,
-            },
-            UpgradeInfo {
                 id: UpgradeId::DynamicPricing,
                 name: "Dynamic Pricing Engine",
                 description: "Unlocks TOU, cost-plus, and surge pricing modes",
                 cost: upgrade_costs::DYNAMIC_PRICING,
+            },
+            UpgradeInfo {
+                id: UpgradeId::AdvancedPowerManagement,
+                name: "Advanced Power Management",
+                description: "Unlocks power density + battery controls",
+                cost: upgrade_costs::ADVANCED_POWER_MANAGEMENT,
             },
             UpgradeInfo {
                 id: UpgradeId::OemDetect,
@@ -264,12 +270,6 @@ impl SiteUpgrades {
                 name: "O&M: Optimize",
                 description: "Auto-dispatch technicians, 25% faster repairs",
                 cost: upgrade_costs::OEM_OPTIMIZE,
-            },
-            UpgradeInfo {
-                id: UpgradeId::DemandBoost,
-                name: "Demand Blitz",
-                description: "2x customer demand for 4 hours",
-                cost: upgrade_costs::DEMAND_BOOST,
             },
         ]
     }

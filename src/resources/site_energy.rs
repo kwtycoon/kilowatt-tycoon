@@ -312,6 +312,15 @@ impl BessMode {
             BessMode::Manual => BessMode::Backup,
         }
     }
+
+    /// Returns `(peak_shave_threshold, charge_threshold)` defaults for this mode.
+    /// Only `PeakShaving` actually uses these thresholds in the dispatch system.
+    pub fn default_thresholds(&self) -> (f32, f32) {
+        match self {
+            BessMode::PeakShaving => (0.65, 0.35),
+            _ => (0.65, 0.35),
+        }
+    }
 }
 
 /// Battery Energy Storage System (BESS) state

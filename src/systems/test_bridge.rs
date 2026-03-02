@@ -22,7 +22,7 @@ use crate::states::{AppState, DayEndScrollBody, KpiToggleButton};
 use crate::systems::WorldCamera;
 use crate::ui::hud::SpeedButton;
 use crate::ui::sidebar::rent_panel::{CarouselButton, RentCarouselState, RentSiteButton};
-use crate::ui::sidebar::{BuildToolButton, PrimaryNav, StartDayButton};
+use crate::ui::sidebar::{BuildToolButton, PrimaryNav, SecondaryTabButton, StartDayButton};
 use crate::ui::site_tabs::SiteTab;
 use crate::ui::top_nav::PrimaryNavButton;
 use crate::ui::tutorial::{TutorialNextButton, TutorialSkipButton};
@@ -146,6 +146,15 @@ pub struct UiElementQueries<'w, 's> {
             &'static UiGlobalTransform,
             &'static ComputedNode,
             &'static BuildToolButton,
+        ),
+    >,
+    secondary_tabs: Query<
+        'w,
+        's,
+        (
+            &'static UiGlobalTransform,
+            &'static ComputedNode,
+            &'static SecondaryTabButton,
         ),
     >,
     scroll_body: Query<
@@ -285,6 +294,12 @@ pub fn update_test_bridge(
     // Build tool buttons
     for (ugt, cn, tool) in &ui.build_tool_btns {
         let name = format!("BuildTool_{:?}", tool.tool);
+        snapshot.elements.insert(name, to_rect(ugt, cn, dpr));
+    }
+
+    // Secondary navigation tabs (Chargers, Infra, Amenities, Upgrades, etc.)
+    for (ugt, cn, tab) in &ui.secondary_tabs {
+        let name = format!("SubTab_{}", tab.tab.display_name());
         snapshot.elements.insert(name, to_rect(ugt, cn, dpr));
     }
 

@@ -456,8 +456,9 @@ impl Plugin for SidebarPlugin {
                 update_summary_panel_values,
                 handle_upgrade_purchases,
                 update_upgrade_button_states,
-                // BESS mode label
+                // BESS mode / peak shave labels
                 update_bess_mode_label,
+                update_peak_shave_label,
                 // Warranty labels
                 update_warranty_labels,
                 // Dynamic pricing
@@ -469,6 +470,8 @@ impl Plugin for SidebarPlugin {
                 // Visual disabled state for upgrade-gated controls
                 update_maintenance_control_visual_state,
                 update_power_control_visual_state,
+                // Info button toggle for help text
+                handle_info_button_clicks,
             )
                 .chain()
                 .in_set(crate::systems::GameSystemSet::UiUpdate)

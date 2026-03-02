@@ -195,6 +195,9 @@ pub struct ImageAssets {
     pub icon_platform_macos: Handle<Image>,
     pub icon_platform_linux: Handle<Image>,
 
+    // Info icon (for help tooltips in strategy panels)
+    pub icon_info: Handle<Image>,
+
     // Toggle button icons
     pub icon_ruler: Handle<Image>,
     pub icon_sound_on: Handle<Image>,
@@ -432,6 +435,9 @@ pub fn load_image_assets(mut commands: Commands, asset_server: Res<AssetServer>)
         icon_platform_windows: asset_server.load("ui/icons/icon_platform_windows.png"),
         icon_platform_macos: asset_server.load("ui/icons/icon_platform_macos.png"),
         icon_platform_linux: asset_server.load("ui/icons/icon_platform_linux.png"),
+
+        // Info icon
+        icon_info: asset_server.load("ui/icons/icon_info.png"),
 
         // Toggle button icons
         icon_ruler: asset_server.load("ui/icons/icon_ruler.png"),

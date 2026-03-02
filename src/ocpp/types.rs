@@ -19,6 +19,9 @@ pub use rust_ocpp::v1_6::messages::remote_start_transaction::{
     RemoteStartTransactionRequest, RemoteStartTransactionResponse,
 };
 pub use rust_ocpp::v1_6::messages::reset::{ResetRequest, ResetResponse};
+pub use rust_ocpp::v1_6::messages::set_charging_profile::{
+    SetChargingProfileRequest, SetChargingProfileResponse,
+};
 pub use rust_ocpp::v1_6::messages::start_transaction::{
     StartTransactionRequest, StartTransactionResponse,
 };
@@ -28,7 +31,9 @@ pub use rust_ocpp::v1_6::messages::stop_transaction::StopTransactionRequest;
 // ─── Re-exports: OCPP 1.6 enums & shared types ──────────────────
 
 pub use rust_ocpp::v1_6::types::{
-    AuthorizationStatus, ChargePointErrorCode, ChargePointStatus, IdTagInfo, Location, Measurand,
+    AuthorizationStatus, ChargePointErrorCode, ChargePointStatus, ChargingProfile,
+    ChargingProfileKindType, ChargingProfilePurposeType, ChargingProfileStatus,
+    ChargingRateUnitType, ChargingSchedule, ChargingSchedulePeriod, IdTagInfo, Location, Measurand,
     MeterValue, ReadingContext, Reason, RegistrationStatus, RemoteStartStopStatus,
     ResetRequestStatus, ResetResponseStatus, SampledValue, UnitOfMeasure, ValueFormat,
 };

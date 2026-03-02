@@ -88,6 +88,7 @@ impl Plugin for OcppPlugin {
                 ocpp_status_system,
                 ocpp_meter_values_system,
                 ocpp_heartbeat_system,
+                ocpp_charging_profile_system,
             )
                 .chain()
                 .run_if(in_state(AppState::Playing)),

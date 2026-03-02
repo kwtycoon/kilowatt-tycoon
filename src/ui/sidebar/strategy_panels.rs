@@ -60,13 +60,10 @@ pub struct WarrantyCoverageLabel;
 pub struct BessModeLabel;
 
 #[derive(Component)]
-pub struct BessDischargeThresholdLabel;
-
-#[derive(Component)]
-pub struct BessChargeThresholdLabel;
-
-#[derive(Component)]
 pub struct SolarExportPolicyLabel;
+
+#[derive(Component)]
+pub struct PeakShaveThresholdLabel;
 
 #[derive(Component)]
 pub struct SummaryCashLabel;
@@ -254,10 +251,10 @@ fn spawn_price_panel(parent: &mut ChildSpawnerCommands, image_assets: &ImageAsse
             });
 
             // Mode selector (first control — hidden until upgrade purchased)
-            spawn_slider_control(panel, "Mode:", "Flat", StrategyControl::PricingMode, PricingModeLabel, image_assets);
+            spawn_slider_control(panel, "Mode:", "Flat", StrategyControl::PricingMode, PricingModeLabel, image_assets, None);
 
             // Flat price slider (visible in Flat mode or when upgrade not purchased)
-            spawn_slider_control(panel, "Energy $/kWh:", "$0.45", StrategyControl::EnergyPrice, EnergyPriceLabel, image_assets);
+            spawn_slider_control(panel, "Energy $/kWh:", "$0.45", StrategyControl::EnergyPrice, EnergyPriceLabel, image_assets, None);
 
             // Dynamic pricing lock overlay
             panel.spawn((
@@ -302,24 +299,24 @@ fn spawn_price_panel(parent: &mut ChildSpawnerCommands, image_assets: &ImageAsse
             spawn_separator(panel);
 
             // Demand-Responsive controls
-            spawn_slider_control(panel, "Base Price:", "$0.35", StrategyControl::SurgeBasePrice, SurgeBasePriceLabel, image_assets);
-            spawn_slider_control(panel, "Surge Mult:", "1.5x", StrategyControl::SurgeMultiplier, SurgeMultiplierLabel, image_assets);
-            spawn_slider_control(panel, "Surge @:", "75%", StrategyControl::SurgeThreshold, SurgeThresholdLabel, image_assets);
+            spawn_slider_control(panel, "Base Price:", "$0.35", StrategyControl::SurgeBasePrice, SurgeBasePriceLabel, image_assets, None);
+            spawn_slider_control(panel, "Surge Mult:", "1.5x", StrategyControl::SurgeMultiplier, SurgeMultiplierLabel, image_assets, None);
+            spawn_slider_control(panel, "Surge @:", "75%", StrategyControl::SurgeThreshold, SurgeThresholdLabel, image_assets, None);
 
             // TOU-Linked controls
-            spawn_slider_control(panel, "Off-Peak $/kWh:", "$0.30", StrategyControl::TouOffPeakPrice, TouOffPeakPriceLabel, image_assets);
-            spawn_slider_control(panel, "On-Peak $/kWh:", "$0.55", StrategyControl::TouOnPeakPrice, TouOnPeakPriceLabel, image_assets);
+            spawn_slider_control(panel, "Off-Peak $/kWh:", "$0.30", StrategyControl::TouOffPeakPrice, TouOffPeakPriceLabel, image_assets, None);
+            spawn_slider_control(panel, "On-Peak $/kWh:", "$0.55", StrategyControl::TouOnPeakPrice, TouOnPeakPriceLabel, image_assets, None);
 
             // Cost-Plus controls
-            spawn_slider_control(panel, "Markup %:", "200%", StrategyControl::CostPlusMarkup, CostPlusMarkupLabel, image_assets);
-            spawn_slider_control(panel, "Price Floor:", "$0.20", StrategyControl::CostPlusFloor, CostPlusFloorLabel, image_assets);
-            spawn_slider_control(panel, "Price Ceiling:", "$1.00", StrategyControl::CostPlusCeiling, CostPlusCeilingLabel, image_assets);
+            spawn_slider_control(panel, "Markup %:", "200%", StrategyControl::CostPlusMarkup, CostPlusMarkupLabel, image_assets, None);
+            spawn_slider_control(panel, "Price Floor:", "$0.20", StrategyControl::CostPlusFloor, CostPlusFloorLabel, image_assets, None);
+            spawn_slider_control(panel, "Price Ceiling:", "$1.00", StrategyControl::CostPlusCeiling, CostPlusCeilingLabel, image_assets, None);
 
             spawn_separator(panel);
 
             // Common controls
-            spawn_slider_control(panel, "Idle Fee $/min:", "$0.50", StrategyControl::IdleFee, IdleFeeLabel, image_assets);
-            spawn_slider_control(panel, "Sell Video Ad Space:", "$2.00/hr", StrategyControl::VideoAdPrice, VideoAdPriceLabel, image_assets);
+            spawn_slider_control(panel, "Idle Fee $/min:", "$0.50", StrategyControl::IdleFee, IdleFeeLabel, image_assets, None);
+            spawn_slider_control(panel, "Sell Video Ad Space:", "$2.00/hr", StrategyControl::VideoAdPrice, VideoAdPriceLabel, image_assets, None);
 
             panel.spawn((
                 Text::new("Higher prices = more profit per session, but may scare away price-sensitive customers. Higher ad prices = more revenue but fewer advertisers."),
@@ -371,62 +368,29 @@ fn spawn_power_strategy_panel(parent: &mut ChildSpawnerCommands, image_assets: &
                 TextColor(Color::srgb(0.9, 0.7, 0.3)),
             ));
 
-            // Power Density control
-            spawn_slider_control(panel, "Power Density:", "100%", StrategyControl::PowerDensity, PowerDensityLabel, image_assets);
+            spawn_slider_control(
+                panel, "Power Density:", "100%",
+                StrategyControl::PowerDensity, PowerDensityLabel, image_assets,
+                Some("Higher = faster charging but more heat stress and demand charges. Lower = gentler on infrastructure."),
+            );
 
-            // Power density explanation
-            panel.spawn((
-                Text::new("Power Density controls how aggressively chargers draw power. Higher density = faster charging but increases heat stress on equipment and higher demand charges. Lower density = slower charging but gentler on infrastructure."),
-                TextFont { font_size: 10.0, ..default() },
-                TextColor(colors::TEXT_SECONDARY),
-            ));
+            spawn_slider_control(
+                panel, "BESS Mode:", "Peak Shaving",
+                StrategyControl::BessMode, BessModeLabel, image_assets,
+                Some("Peak Shaving: shave demand spikes & store solar. TOU Arbitrage: charge off-peak, discharge on-peak. Backup: reserve for outages. Manual: idle."),
+            );
 
-            spawn_separator(panel);
+            spawn_slider_control(
+                panel, "Peak Shave:", "65%",
+                StrategyControl::PeakShaveThreshold, PeakShaveThresholdLabel, image_assets,
+                Some("Threshold (% of site capacity) above which the battery discharges to shave peaks. Lower = more aggressive shaving."),
+            );
 
-            // Battery Controls section
-            panel.spawn((
-                Text::new("Battery Controls:"),
-                TextFont { font_size: 12.0, ..default() },
-                TextColor(colors::TEXT_SECONDARY),
-            ));
-
-            // BESS operating mode
-            spawn_slider_control(panel, "BESS Mode:", "Peak Shaving", StrategyControl::BessMode, BessModeLabel, image_assets);
-
-            panel.spawn((
-                Text::new("Peak Shaving: prevent demand spikes and store solar. TOU Arbitrage: charge off-peak, discharge on-peak. Backup: reserve for outages. Manual: battery idle."),
-                TextFont { font_size: 10.0, ..default() },
-                TextColor(colors::TEXT_SECONDARY),
-            ));
-
-            // Discharge threshold
-            spawn_slider_control(panel, "Discharge @:", "65%", StrategyControl::BessDischargeThreshold, BessDischargeThresholdLabel, image_assets);
-
-            // Charge threshold
-            spawn_slider_control(panel, "Charge below:", "35%", StrategyControl::BessChargeThreshold, BessChargeThresholdLabel, image_assets);
-
-            panel.spawn((
-                Text::new("Discharge: Battery discharges when load exceeds this % of capacity to shave peak demand. Charge: Battery charges when load is below this % to store energy for later."),
-                TextFont { font_size: 10.0, ..default() },
-                TextColor(colors::TEXT_SECONDARY),
-            ));
-
-            spawn_separator(panel);
-
-            // Solar Export section
-            panel.spawn((
-                Text::new("Solar Export:"),
-                TextFont { font_size: 12.0, ..default() },
-                TextColor(colors::TEXT_SECONDARY),
-            ));
-
-            spawn_slider_control(panel, "Grid Sellback:", "Never", StrategyControl::SolarExportPolicy, SolarExportPolicyLabel, image_assets);
-
-            panel.spawn((
-                Text::new("Never: excess solar is curtailed. Excess Only: export surplus after self-consumption and battery charging. Max Export: prioritize grid export over battery storage."),
-                TextFont { font_size: 10.0, ..default() },
-                TextColor(colors::TEXT_SECONDARY),
-            ));
+            spawn_slider_control(
+                panel, "Grid Sellback:", "Never",
+                StrategyControl::SolarExportPolicy, SolarExportPolicyLabel, image_assets,
+                Some("Never: excess solar curtailed. Excess Only: export surplus after self-use & battery. Max Export: prioritize grid export over battery storage."),
+            );
         });
 }
 
@@ -473,10 +437,10 @@ fn spawn_opex_panel(parent: &mut ChildSpawnerCommands, image_assets: &ImageAsset
             ));
 
             // Maintenance
-            spawn_slider_control(panel, "Maintenance $/hr:", "$10", StrategyControl::Maintenance, MaintenanceLabel, image_assets);
+            spawn_slider_control(panel, "Maintenance $/hr:", "$10", StrategyControl::Maintenance, MaintenanceLabel, image_assets, None);
 
             // Warranty tier selector
-            spawn_slider_control(panel, "Warranty:", "None", StrategyControl::WarrantyTier, WarrantyTierLabel, image_assets);
+            spawn_slider_control(panel, "Warranty:", "None", StrategyControl::WarrantyTier, WarrantyTierLabel, image_assets, None);
 
             // Warranty premium (read-only)
             spawn_labeled_row(panel, "Warranty Premium:", "$0/mo", WarrantyPremiumLabel);
@@ -572,34 +536,6 @@ pub fn update_strategy_panel_values(
             Without<AmenityLevelLabel>,
         ),
     >,
-    mut bess_discharge: Query<
-        &mut Text,
-        (
-            With<BessDischargeThresholdLabel>,
-            Without<EnergyPriceLabel>,
-            Without<IdleFeeLabel>,
-            Without<VideoAdPriceLabel>,
-            Without<PowerDensityLabel>,
-            Without<MaintenanceLabel>,
-            Without<AmenityLevelLabel>,
-            Without<HourlyOpexLabel>,
-        ),
-    >,
-    mut bess_charge: Query<
-        &mut Text,
-        (
-            With<BessChargeThresholdLabel>,
-            Without<EnergyPriceLabel>,
-            Without<IdleFeeLabel>,
-            Without<VideoAdPriceLabel>,
-            Without<PowerDensityLabel>,
-            Without<MaintenanceLabel>,
-            Without<AmenityLevelLabel>,
-            Without<HourlyOpexLabel>,
-            Without<BessDischargeThresholdLabel>,
-            Without<SolarExportPolicyLabel>,
-        ),
-    >,
     mut solar_export: Query<
         &mut Text,
         (
@@ -611,8 +547,6 @@ pub fn update_strategy_panel_values(
             Without<MaintenanceLabel>,
             Without<AmenityLevelLabel>,
             Without<HourlyOpexLabel>,
-            Without<BessDischargeThresholdLabel>,
-            Without<BessChargeThresholdLabel>,
         ),
     >,
 ) {
@@ -655,13 +589,6 @@ pub fn update_strategy_panel_values(
             site_state.service_strategy.hourly_maintenance_cost()
         );
     }
-    // BESS threshold labels
-    for mut text in &mut bess_discharge {
-        **text = format!("{:.0}%", site_state.bess_state.peak_shave_threshold * 100.0);
-    }
-    for mut text in &mut bess_charge {
-        **text = format!("{:.0}%", site_state.bess_state.charge_threshold * 100.0);
-    }
     for mut text in &mut solar_export {
         **text = site_state
             .service_strategy
@@ -682,6 +609,23 @@ pub fn update_bess_mode_label(
     };
     for mut text in &mut label {
         **text = site_state.bess_state.mode.display_name().to_string();
+    }
+}
+
+/// Update peak shave threshold label (separate system to avoid query filter explosion in
+/// `update_strategy_panel_values`).
+pub fn update_peak_shave_label(
+    multi_site: Res<crate::resources::MultiSiteManager>,
+    mut label: Query<&mut Text, With<PeakShaveThresholdLabel>>,
+) {
+    let Some(site_state) = multi_site.active_site() else {
+        return;
+    };
+    for mut text in &mut label {
+        **text = format!(
+            "{}%",
+            (site_state.bess_state.peak_shave_threshold * 100.0) as u32
+        );
     }
 }
 
@@ -948,24 +892,6 @@ pub fn handle_strategy_panel_buttons(
                     site_state.service_strategy.warranty_tier.next()
                 };
             }
-            StrategyControl::BessDischargeThreshold => {
-                // Requires Advanced Power Management upgrade
-                if !has_power_management {
-                    continue;
-                }
-                // Range: 50% - 90%
-                site_state.bess_state.peak_shave_threshold =
-                    (site_state.bess_state.peak_shave_threshold + delta).clamp(0.50, 0.90);
-            }
-            StrategyControl::BessChargeThreshold => {
-                // Requires Advanced Power Management upgrade
-                if !has_power_management {
-                    continue;
-                }
-                // Range: 20% - 50%
-                site_state.bess_state.charge_threshold =
-                    (site_state.bess_state.charge_threshold + delta).clamp(0.20, 0.50);
-            }
             StrategyControl::BessMode => {
                 if !has_power_management {
                     continue;
@@ -975,6 +901,13 @@ pub fn handle_strategy_panel_buttons(
                 } else {
                     site_state.bess_state.mode.next()
                 };
+            }
+            StrategyControl::PeakShaveThreshold => {
+                if !has_power_management {
+                    continue;
+                }
+                site_state.bess_state.peak_shave_threshold =
+                    (site_state.bess_state.peak_shave_threshold + delta).clamp(0.40, 0.90);
             }
             StrategyControl::SolarExportPolicy => {
                 if !has_power_management {
@@ -1105,17 +1038,6 @@ pub fn update_slider_fill_widths(
                 let normalized = site_state.service_strategy.maintenance_investment / 50.0;
                 (normalized * 100.0).clamp(0.0, 100.0)
             }
-            StrategyControl::BessDischargeThreshold => {
-                // Range: 0.50 - 0.90
-                let normalized =
-                    (site_state.bess_state.peak_shave_threshold - 0.50) / (0.90 - 0.50);
-                (normalized * 100.0).clamp(0.0, 100.0)
-            }
-            StrategyControl::BessChargeThreshold => {
-                // Range: 0.20 - 0.50
-                let normalized = (site_state.bess_state.charge_threshold - 0.20) / (0.50 - 0.20);
-                (normalized * 100.0).clamp(0.0, 100.0)
-            }
             StrategyControl::PricingMode => {
                 use crate::resources::PricingMode;
                 match site_state.service_strategy.pricing.mode {
@@ -1190,6 +1112,11 @@ pub fn update_slider_fill_widths(
                     BessMode::Backup => 66.0,
                     BessMode::Manual => 100.0,
                 }
+            }
+            StrategyControl::PeakShaveThreshold => {
+                let normalized =
+                    (site_state.bess_state.peak_shave_threshold - 0.40) / (0.90 - 0.40);
+                (normalized * 100.0).clamp(0.0, 100.0)
             }
         };
 
@@ -1447,8 +1374,7 @@ pub fn update_power_control_visual_state(
             With<PowerDensityLabel>,
             Without<SliderLabelText>,
             Without<BessModeLabel>,
-            Without<BessDischargeThresholdLabel>,
-            Without<BessChargeThresholdLabel>,
+            Without<PeakShaveThresholdLabel>,
             Without<SolarExportPolicyLabel>,
         ),
     >,
@@ -1458,30 +1384,17 @@ pub fn update_power_control_visual_state(
             With<BessModeLabel>,
             Without<SliderLabelText>,
             Without<PowerDensityLabel>,
-            Without<BessDischargeThresholdLabel>,
-            Without<BessChargeThresholdLabel>,
+            Without<PeakShaveThresholdLabel>,
             Without<SolarExportPolicyLabel>,
         ),
     >,
-    mut discharge_threshold_value: Query<
+    mut peak_shave_value: Query<
         &mut TextColor,
         (
-            With<BessDischargeThresholdLabel>,
+            With<PeakShaveThresholdLabel>,
             Without<SliderLabelText>,
             Without<PowerDensityLabel>,
             Without<BessModeLabel>,
-            Without<BessChargeThresholdLabel>,
-            Without<SolarExportPolicyLabel>,
-        ),
-    >,
-    mut charge_threshold_value: Query<
-        &mut TextColor,
-        (
-            With<BessChargeThresholdLabel>,
-            Without<SliderLabelText>,
-            Without<PowerDensityLabel>,
-            Without<BessModeLabel>,
-            Without<BessDischargeThresholdLabel>,
             Without<SolarExportPolicyLabel>,
         ),
     >,
@@ -1492,8 +1405,7 @@ pub fn update_power_control_visual_state(
             Without<SliderLabelText>,
             Without<PowerDensityLabel>,
             Without<BessModeLabel>,
-            Without<BessDischargeThresholdLabel>,
-            Without<BessChargeThresholdLabel>,
+            Without<PeakShaveThresholdLabel>,
         ),
     >,
 ) {
@@ -1506,13 +1418,11 @@ pub fn update_power_control_visual_state(
             control,
             StrategyControl::PowerDensity
                 | StrategyControl::BessMode
-                | StrategyControl::BessDischargeThreshold
-                | StrategyControl::BessChargeThreshold
+                | StrategyControl::PeakShaveThreshold
                 | StrategyControl::SolarExportPolicy
         )
     };
 
-    // Update button colors for power controls
     for (control, mut bg) in &mut button_query {
         if is_power_control(control) {
             *bg = if has_upgrade {
@@ -1523,7 +1433,6 @@ pub fn update_power_control_visual_state(
         }
     }
 
-    // Update slider fill color for power controls
     for (slider_fill, mut bg) in &mut slider_fill_query {
         if is_power_control(&slider_fill.0) {
             *bg = if has_upgrade {
@@ -1534,7 +1443,6 @@ pub fn update_power_control_visual_state(
         }
     }
 
-    // Update slider track color for power controls
     for (slider_track, mut bg) in &mut slider_track_query {
         if is_power_control(&slider_track.0) {
             *bg = if has_upgrade {
@@ -1545,7 +1453,6 @@ pub fn update_power_control_visual_state(
         }
     }
 
-    // Update label text color for power controls
     for (label_text, mut text_color) in &mut label_text_query {
         if is_power_control(&label_text.0) {
             *text_color = if has_upgrade {
@@ -1556,7 +1463,6 @@ pub fn update_power_control_visual_state(
         }
     }
 
-    // Update value text color for power controls
     let value_color = if has_upgrade {
         TextColor(colors::TYCOON_GREEN)
     } else {
@@ -1569,10 +1475,7 @@ pub fn update_power_control_visual_state(
     for mut text_color in &mut bess_mode_value {
         *text_color = value_color;
     }
-    for mut text_color in &mut discharge_threshold_value {
-        *text_color = value_color;
-    }
-    for mut text_color in &mut charge_threshold_value {
+    for mut text_color in &mut peak_shave_value {
         *text_color = value_color;
     }
     for mut text_color in &mut solar_export_value {

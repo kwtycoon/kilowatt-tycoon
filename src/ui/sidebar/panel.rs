@@ -74,15 +74,13 @@ pub fn spawn_labeled_row<M: Component>(
 }
 
 /// Component linking a control to what it adjusts
-#[derive(Component, Clone, Copy)]
+#[derive(Component, Clone, Copy, PartialEq, Eq)]
 pub enum StrategyControl {
     EnergyPrice,
     IdleFee,
     VideoAdPrice,
     PowerDensity,
     Maintenance,
-    BessDischargeThreshold,
-    BessChargeThreshold,
     SolarExportPolicy,
     PricingMode,
     TouOffPeakPrice,
@@ -95,6 +93,7 @@ pub enum StrategyControl {
     SurgeThreshold,
     WarrantyTier,
     BessMode,
+    PeakShaveThreshold,
 }
 
 /// Marker for minus buttons
@@ -122,7 +121,19 @@ pub struct SliderLabelText(pub StrategyControl);
 #[derive(Component, Clone, Copy)]
 pub struct SliderContainer(pub StrategyControl);
 
-/// Spawn a slider control with +/- buttons and a visual bar
+/// Marker for the info icon button that toggles help text.
+#[derive(Component, Clone, Copy)]
+pub struct InfoButton(pub StrategyControl);
+
+/// Marker for the collapsible help text below a slider control.
+#[derive(Component, Clone, Copy)]
+pub struct InfoHelpText(pub StrategyControl);
+
+/// Spawn a slider control with +/- buttons and a visual bar.
+///
+/// If `help_text` is `Some`, an info icon is added to the label row and a
+/// hidden help text block is spawned below the slider (toggled via
+/// `handle_info_button_clicks`).
 pub fn spawn_slider_control<M: Component>(
     parent: &mut ChildSpawnerCommands,
     label: &str,
@@ -130,6 +141,7 @@ pub fn spawn_slider_control<M: Component>(
     control: StrategyControl,
     label_marker: M,
     image_assets: &ImageAssets,
+    help_text: Option<&str>,
 ) {
     parent
         .spawn((
@@ -142,24 +154,56 @@ pub fn spawn_slider_control<M: Component>(
             SliderContainer(control),
         ))
         .with_children(|container| {
-            // Label row with value
+            // Label row with value (and optional info icon)
             container
                 .spawn(Node {
                     flex_direction: FlexDirection::Row,
                     justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center,
                     width: Val::Percent(100.0),
                     ..default()
                 })
                 .with_children(|row| {
-                    row.spawn((
-                        Text::new(label),
-                        TextFont {
-                            font_size: 12.0,
-                            ..default()
-                        },
-                        TextColor(colors::TEXT_SECONDARY),
-                        SliderLabelText(control),
-                    ));
+                    // Left group: label + optional info icon
+                    row.spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(4.0),
+                        ..default()
+                    })
+                    .with_children(|left| {
+                        left.spawn((
+                            Text::new(label),
+                            TextFont {
+                                font_size: 12.0,
+                                ..default()
+                            },
+                            TextColor(colors::TEXT_SECONDARY),
+                            SliderLabelText(control),
+                        ));
+                        if help_text.is_some() {
+                            left.spawn((
+                                Button,
+                                Node {
+                                    width: Val::Px(14.0),
+                                    height: Val::Px(14.0),
+                                    justify_content: JustifyContent::Center,
+                                    align_items: AlignItems::Center,
+                                    ..default()
+                                },
+                                BackgroundColor(Color::NONE),
+                                InfoButton(control),
+                            ))
+                            .with_child((
+                                ImageNode::new(image_assets.icon_info.clone()),
+                                Node {
+                                    width: Val::Px(12.0),
+                                    height: Val::Px(12.0),
+                                    ..default()
+                                },
+                            ));
+                        }
+                    });
                     row.spawn((
                         Text::new(initial_value),
                         TextFont {
@@ -247,6 +291,23 @@ pub fn spawn_slider_control<M: Component>(
                         },
                     ));
                 });
+
+            // Collapsible help text (hidden by default)
+            if let Some(text) = help_text {
+                container.spawn((
+                    Text::new(text),
+                    TextFont {
+                        font_size: 10.0,
+                        ..default()
+                    },
+                    TextColor(colors::TEXT_SECONDARY),
+                    Node {
+                        display: Display::None,
+                        ..default()
+                    },
+                    InfoHelpText(control),
+                ));
+            }
         });
 }
 
@@ -281,5 +342,25 @@ pub fn update_panel_visibility(
         } else {
             Display::None
         };
+    }
+}
+
+/// Toggle help text visibility when an info button is clicked.
+pub fn handle_info_button_clicks(
+    info_buttons: Query<(&Interaction, &InfoButton), Changed<Interaction>>,
+    mut help_texts: Query<(&InfoHelpText, &mut Node)>,
+) {
+    for (interaction, info_btn) in &info_buttons {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        for (help, mut node) in &mut help_texts {
+            if help.0 == info_btn.0 {
+                node.display = match node.display {
+                    Display::None => Display::Flex,
+                    _ => Display::None,
+                };
+            }
+        }
     }
 }
