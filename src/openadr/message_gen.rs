@@ -305,6 +305,14 @@ pub fn openadr_solar_telemetry_system(
         let ts_iso = timestamp.to_rfc3339();
         let ven_name = format!("solar-site-{}", site_id.0);
 
+        let export_rate = if site_state.challenge_level >= 2 {
+            site_state.spot_market.current_price_per_kwh
+        } else {
+            site_state
+                .site_energy_config
+                .current_export_rate(game_clock.game_time)
+        };
+
         let report = ReportContent {
             program_id: program_id.clone(),
             event_id: "solar-telemetry"
@@ -338,6 +346,8 @@ pub fn openadr_solar_telemetry_system(
                             "TOTAL_GENERATED_KWH",
                             site_state.solar_state.total_generated_kwh,
                         ),
+                        values_map_f32("EXPORT_KW", site_state.grid_import.export_kw),
+                        values_map_f32("EXPORT_RATE", export_rate),
                     ],
                 }],
             }],
@@ -482,6 +492,14 @@ pub fn openadr_grid_telemetry_system(
 
         let op_state = grid_operating_state(dr_active);
 
+        let export_rate = if site_state.challenge_level >= 2 {
+            site_state.spot_market.current_price_per_kwh
+        } else {
+            site_state
+                .site_energy_config
+                .current_export_rate(game_clock.game_time)
+        };
+
         let report = ReportContent {
             program_id: program_id.clone(),
             event_id: "grid-telemetry"
@@ -512,6 +530,7 @@ pub fn openadr_grid_telemetry_system(
                         values_map_f32("EXPORT_KW", site_state.grid_import.export_kw),
                         values_map_f32("PEAK_DEMAND_KW", site_state.utility_meter.peak_demand_kw),
                         values_map_str("OPERATING_STATE", &format!("{op_state:?}")),
+                        values_map_f32("EXPORT_RATE", export_rate),
                     ],
                 }],
             }],

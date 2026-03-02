@@ -12,7 +12,7 @@ use bevy::prelude::*;
 use crate::components::BelongsToSite;
 use crate::components::charger::Charger;
 use crate::resources::{
-    CharacterPerk, EnvironmentState, GameClock, MultiSiteManager, PlayerProfile,
+    CharacterPerk, EnvironmentState, GameClock, ImageAssets, MultiSiteManager, PlayerProfile,
 };
 
 /// Minimum challenge level required for spot market pricing.
@@ -25,10 +25,12 @@ const SPOT_MARKET_MIN_CHALLENGE_LEVEL: u8 = 2;
 /// export revenue is calculated.  Sites with `challenge_level < 2` are
 /// skipped -- they keep the fixed TOU export rates.
 pub fn spot_market_system(
+    mut commands: Commands,
     mut multi_site: ResMut<MultiSiteManager>,
     game_clock: Res<GameClock>,
     time: Res<Time>,
     environment: Res<EnvironmentState>,
+    image_assets: Res<ImageAssets>,
 ) {
     if game_clock.is_paused() {
         return;
@@ -53,6 +55,8 @@ pub fn spot_market_system(
         return;
     };
     if site_state.challenge_level >= SPOT_MARKET_MIN_CHALLENGE_LEVEL {
+        let had_event = site_state.spot_market.grid_event.is_some();
+
         site_state.spot_market.tick(
             day_fraction,
             weather_multiplier,
@@ -60,6 +64,21 @@ pub fn spot_market_system(
             game_time,
             &mut rng,
         );
+
+        if !had_event && let Some(ref event) = site_state.spot_market.grid_event {
+            let price = site_state.spot_market.current_price_per_kwh;
+            let multiplier = event.price_multiplier;
+            let name = event.name;
+            crate::ui::toast::spawn_grid_event_toast(
+                &mut commands,
+                name,
+                price,
+                multiplier,
+                game_clock.game_time,
+                time.elapsed_secs(),
+                image_assets.icon_bolt.clone(),
+            );
+        }
     }
 }
 

@@ -176,6 +176,71 @@ fn spawn_achievement_toast(
         });
 }
 
+const GRID_EVENT_TOAST_DURATION_REAL: f32 = 8.0;
+
+/// Spawn a prominent toast when a grid event starts and spot prices spike.
+pub fn spawn_grid_event_toast(
+    commands: &mut Commands,
+    event_name: &str,
+    spot_price: f32,
+    multiplier: f32,
+    game_time: f32,
+    real_time: f32,
+    icon: Handle<Image>,
+) {
+    let message = format!(
+        "{event_name}!\nSpot price ${spot_price:.2}/kWh ({multiplier:.0}x) — export solar now!"
+    );
+
+    let bg_color = Color::srgba(0.1, 0.55, 0.85, 0.95);
+
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(142.0),
+                right: Val::Px(20.0),
+                width: Val::Px(320.0),
+                padding: UiRect::all(Val::Px(15.0)),
+                flex_direction: FlexDirection::Row,
+                column_gap: Val::Px(10.0),
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(bg_color),
+            BorderRadius::all(Val::Px(8.0)),
+            ZIndex(9999),
+            ToastNotification {
+                created_at: game_time,
+                duration: GRID_EVENT_TOAST_DURATION_REAL * 100.0,
+            },
+            RealTimeToast {
+                created_at_real: real_time,
+                duration_real: GRID_EVENT_TOAST_DURATION_REAL,
+            },
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                ImageNode::new(icon),
+                Node {
+                    width: Val::Px(24.0),
+                    height: Val::Px(24.0),
+                    ..default()
+                },
+            ));
+
+            parent.spawn((
+                Text::new(message),
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 1.0, 1.0)),
+                ToastText,
+            ));
+        });
+}
+
 fn spawn_toast(
     commands: &mut Commands,
     message: String,

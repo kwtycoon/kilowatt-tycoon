@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use crate::resources::LeaderboardData;
+use crate::resources::{GameState, LeaderboardData};
 
 // ============ Components ============
 
@@ -29,6 +29,10 @@ pub struct LeaderboardLoadingText;
 /// Error text component
 #[derive(Component)]
 pub struct LeaderboardErrorText;
+
+/// Marker for the player's own score value text
+#[derive(Component)]
+pub struct YourScoreText;
 
 // ============ Resource ============
 
@@ -59,6 +63,7 @@ pub fn spawn_leaderboard_modal(
     mut commands: Commands,
     modal_state: Res<LeaderboardModalState>,
     existing_modal: Query<Entity, With<LeaderboardModalUI>>,
+    game_state: Res<GameState>,
 ) {
     // Only spawn if open and doesn't already exist
     if !modal_state.is_open || !existing_modal.is_empty() {
@@ -203,6 +208,54 @@ pub fn spawn_leaderboard_modal(
                             // Entries will be spawned/updated dynamically
                         });
 
+                    // "Your Score" bar
+                    let current_score = game_state.calculate_cumulative_score();
+                    let score_color = if current_score >= 0 {
+                        Color::srgb(0.4, 0.9, 0.4)
+                    } else {
+                        Color::srgb(0.9, 0.4, 0.4)
+                    };
+
+                    modal
+                        .spawn((
+                            Node {
+                                width: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Row,
+                                justify_content: JustifyContent::SpaceBetween,
+                                align_items: AlignItems::Center,
+                                padding: UiRect::new(
+                                    Val::Px(12.0),
+                                    Val::Px(12.0),
+                                    Val::Px(10.0),
+                                    Val::Px(10.0),
+                                ),
+                                margin: UiRect::top(Val::Px(4.0)),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgba(1.0, 0.84, 0.0, 0.08)),
+                            BorderRadius::all(Val::Px(6.0)),
+                        ))
+                        .with_children(|row| {
+                            row.spawn((
+                                Text::new("Your Score"),
+                                TextFont {
+                                    font_size: 15.0,
+                                    ..default()
+                                },
+                                TextColor(Color::srgb(0.85, 0.85, 0.85)),
+                            ));
+
+                            row.spawn((
+                                Text::new(format_score(current_score)),
+                                TextFont {
+                                    font_size: 15.0,
+                                    ..default()
+                                },
+                                TextColor(score_color),
+                                YourScoreText,
+                            ));
+                        });
+
                     // Help text
                     modal.spawn((
                         Text::new("Your score is automatically submitted at the end of each day!"),
@@ -254,12 +307,29 @@ pub fn update_leaderboard_modal_content(
     entry_rows: Query<Entity, With<LeaderboardEntryRow>>,
     mut loading_text: Query<
         &mut Node,
-        (With<LeaderboardLoadingText>, Without<LeaderboardErrorText>),
+        (
+            With<LeaderboardLoadingText>,
+            Without<LeaderboardErrorText>,
+            Without<YourScoreText>,
+        ),
     >,
     mut error_text: Query<
         (&mut Node, &mut Text),
-        (With<LeaderboardErrorText>, Without<LeaderboardLoadingText>),
+        (
+            With<LeaderboardErrorText>,
+            Without<LeaderboardLoadingText>,
+            Without<YourScoreText>,
+        ),
     >,
+    mut your_score_text: Query<
+        (&mut Text, &mut TextColor),
+        (
+            With<YourScoreText>,
+            Without<LeaderboardLoadingText>,
+            Without<LeaderboardErrorText>,
+        ),
+    >,
+    game_state: Res<GameState>,
     time: Res<Time>,
 ) {
     let now = time.elapsed_secs_f64();
@@ -298,6 +368,17 @@ pub fn update_leaderboard_modal_content(
         } else {
             node.display = Display::None;
         }
+    }
+
+    // Update "Your Score" display
+    let current_score = game_state.calculate_cumulative_score();
+    for (mut text, mut color) in &mut your_score_text {
+        text.0 = format_score(current_score);
+        *color = if current_score >= 0 {
+            TextColor(Color::srgb(0.4, 0.9, 0.4))
+        } else {
+            TextColor(Color::srgb(0.9, 0.4, 0.4))
+        };
     }
 
     // Rebuild entries when data changes or the container was freshly spawned with no

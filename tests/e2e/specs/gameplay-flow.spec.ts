@@ -161,44 +161,6 @@ async function tapElement(
 }
 
 /**
- * Click at CSS coordinates with retries until the bridge condition is met.
- * Each attempt performs a full click (down → hold → up) so placement systems
- * that fire on release are covered. The hold duration spans multiple Bevy
- * frames to ensure the press is registered even at very low frame rates.
- */
-async function tapCanvasUntil(
-  page: Page,
-  x: number,
-  y: number,
-  label: string,
-  check: (b: BridgeState | null) => boolean,
-  timeout = 30_000,
-): Promise<void> {
-  const deadline = Date.now() + timeout;
-  let attempt = 0;
-  while (Date.now() < deadline) {
-    attempt++;
-    await page.mouse.move(x, y);
-    await page.mouse.down();
-    await page.waitForTimeout(2_000);
-    await page.mouse.up();
-    // Wait for the game to process the click and update the bridge.
-    await page.waitForTimeout(1_000);
-
-    const s = await bridge(page);
-    if (check(s)) {
-      log(`${label} succeeded on attempt ${attempt}: ${bridgeSummary(s)}`);
-      return;
-    }
-    log(`${label} attempt ${attempt} still pending, retrying...`);
-  }
-  const final_ = await bridge(page);
-  throw new Error(
-    `${label}: failed after ${attempt} attempts (${timeout}ms). Last: ${bridgeSummary(final_)}`,
-  );
-}
-
-/**
  * Tap a named element, keeping the mouse held down while polling the
  * bridge until `check` returns true.  This adapts to arbitrarily slow
  * frame rates — the mouse stays pressed until Bevy processes the frame

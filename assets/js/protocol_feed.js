@@ -148,6 +148,70 @@
     }
   }
 
+  // ─── Telemetry unit formatting ───
+
+  var TELEMETRY_UNITS = {
+    GENERATION_KW: " kW",
+    TOTAL_GENERATED_KWH: " kWh",
+    EXPORT_KW: " kW",
+    EXPORT_RATE: " $/kWh",
+    NET_IMPORT_KW: " kW",
+    NET_IMPORT_KVA: " kVA",
+    PEAK_DEMAND_KW: " kW",
+    SOC_PERCENT: "%",
+    POWER_KW: " kW",
+  };
+
+  function fmtVal(vt, v) {
+    if (v == null) return null;
+    if (typeof v === "string") return v;
+    var unit = TELEMETRY_UNITS[vt] || "";
+    if (vt === "EXPORT_RATE") return "$" + Number(v).toFixed(3) + unit;
+    if (vt === "SOC_PERCENT") return Number(v).toFixed(1) + unit;
+    return Number(v).toFixed(1) + unit;
+  }
+
+  function formatTelemetryDetail(action, byType) {
+    var parts = [];
+    if (action === "Grid Telemetry") {
+      var exportKw = Number(byType.EXPORT_KW || 0);
+      if (exportKw > 0.1) {
+        var ek = fmtVal("EXPORT_KW", byType.EXPORT_KW);
+        if (ek) parts.push(ek + " export");
+        var er = fmtVal("EXPORT_RATE", byType.EXPORT_RATE);
+        if (er) parts.push(er);
+      } else {
+        var ni = fmtVal("NET_IMPORT_KW", byType.NET_IMPORT_KW);
+        if (ni) parts.push(ni);
+        var pk = fmtVal("PEAK_DEMAND_KW", byType.PEAK_DEMAND_KW);
+        if (pk) parts.push(pk + " peak");
+      }
+    } else if (action === "Solar Telemetry") {
+      var gen = fmtVal("GENERATION_KW", byType.GENERATION_KW);
+      if (gen) parts.push(gen);
+      var solarExport = Number(byType.EXPORT_KW || 0);
+      if (solarExport > 0.1) {
+        var se = fmtVal("EXPORT_KW", byType.EXPORT_KW);
+        if (se) parts.push(se + " export");
+      } else {
+        var tot = fmtVal("TOTAL_GENERATED_KWH", byType.TOTAL_GENERATED_KWH);
+        if (tot) parts.push(tot + " total");
+      }
+    } else if (action === "BESS Telemetry") {
+      var soc = fmtVal("SOC_PERCENT", byType.SOC_PERCENT);
+      if (soc) parts.push(soc);
+      var pw = fmtVal("POWER_KW", byType.POWER_KW);
+      if (pw) parts.push(pw);
+    } else {
+      for (var key in byType) {
+        var fv = fmtVal(key, byType[key]);
+        if (fv) parts.push(fv);
+        if (parts.length >= 2) break;
+      }
+    }
+    return parts.join(" ");
+  }
+
   // ─── OpenADR detail extraction ───
 
   function extractOpenAdrDetail(entry) {
@@ -176,16 +240,13 @@
         if (resources && resources[0] && resources[0].intervals) {
           var payloads = resources[0].intervals[0].payloads;
           if (payloads) {
-            var parts = [];
-            for (var i = 0; i < payloads.length && i < 2; i++) {
-              var vt = payloads[i].value_type || payloads[i].valueType || "";
-              var v = payloads[i].values && payloads[i].values[0];
-              if (v != null) {
-                if (typeof v === "number") v = v.toFixed(1);
-                parts.push(vt + "=" + v);
-              }
+            var byType = {};
+            for (var ti = 0; ti < payloads.length; ti++) {
+              var pvt = payloads[ti].value_type || payloads[ti].valueType || "";
+              var pv = payloads[ti].values && payloads[ti].values[0];
+              if (pvt) byType[pvt] = pv;
             }
-            return parts.join(" ");
+            return formatTelemetryDetail(action, byType);
           }
         }
         return "";
