@@ -778,6 +778,10 @@ pub fn openadr_event_system(
 
 /// Emit `DispatchSetpoint` and `ChargeStateSetpoint` events from the VTN side,
 /// plus the existing BESS DR Response report as VEN-side acknowledgment.
+///
+/// Fires whenever the BESS is actively discharging (not only during demand
+/// limit events) so that TOU Arbitrage and PeakShaving discharge cycles
+/// produce the expected OpenADR message stream.
 pub fn openadr_event_response_system(
     multi_site: Res<MultiSiteManager>,
     mut queue: ResMut<OpenAdrMessageQueue>,
@@ -798,16 +802,63 @@ pub fn openadr_event_response_system(
             continue;
         }
 
-        let der_state = queue.get_or_create(*site_id);
-        if !der_state.demand_event_active {
-            continue;
-        }
-
         let bess_power = site_state.bess_state.current_power_kw;
-        if bess_power <= 0.0 {
+        let is_discharging = bess_power > 0.0;
+
+        let der_state = queue.get_or_create(*site_id);
+
+        // Emit a one-shot event on discharge start/stop transitions
+        if is_discharging && !der_state.bess_discharging {
+            der_state.bess_discharging = true;
+
+            let timestamp =
+                sim_start + chrono::Duration::seconds(game_clock.total_game_time as i64);
+            let ts_iso = timestamp.to_rfc3339();
+            let ven_name = format!("bess-site-{}", site_id.0);
+
+            let event_content = EventContent {
+                program_id: program_id.clone(),
+                event_name: Some("BESS Discharge Start".to_string()),
+                priority: Priority::new(3),
+                targets: resource_target(&ven_name, "bess-unit"),
+                report_descriptors: None,
+                payload_descriptors: Some(vec![EventPayloadDescriptor {
+                    payload_type: EventType::DispatchSetpoint,
+                    units: Some(Unit::KW),
+                    currency: None,
+                }]),
+                interval_period: Some(IntervalPeriod {
+                    start: timestamp,
+                    duration: None,
+                    randomize_start: None,
+                }),
+                intervals: vec![EventInterval {
+                    id: 0,
+                    interval_period: None,
+                    payloads: vec![
+                        EventValuesMap {
+                            value_type: EventType::DispatchSetpoint,
+                            values: vec![ovalue_f32(bess_power)],
+                        },
+                        EventValuesMap {
+                            value_type: EventType::ChargeStateSetpoint,
+                            values: vec![ovalue_f32(site_state.bess_state.soc_percent())],
+                        },
+                    ],
+                }],
+            };
+
+            let json = serialize_openadr(&event_content);
+            queue.push_log(ven_name, ts_iso, "Event", "BESS Discharge Start", json);
+        } else if !is_discharging && der_state.bess_discharging {
+            der_state.bess_discharging = false;
+        }
+
+        if !is_discharging {
             continue;
         }
 
+        let der_state = queue.get_or_create(*site_id);
         if game_clock.total_game_time - der_state.last_demand_event_game_time
             < TELEMETRY_INTERVAL_GAME_SECS
         {
@@ -820,10 +871,16 @@ pub fn openadr_event_response_system(
         let ts_iso = timestamp.to_rfc3339();
         let ven_name = format!("bess-site-{}", site_id.0);
 
+        let action_label = if der_state.demand_event_active {
+            "Dispatch Setpoint"
+        } else {
+            "BESS Dispatch"
+        };
+
         // VTN-side: DispatchSetpoint event targeting the BESS
         let dispatch_event = EventContent {
             program_id: program_id.clone(),
-            event_name: Some("BESS Dispatch".to_string()),
+            event_name: Some(action_label.to_string()),
             priority: Priority::new(2),
             targets: resource_target(&ven_name, "bess-unit"),
             report_descriptors: None,
@@ -858,11 +915,11 @@ pub fn openadr_event_response_system(
             ven_name.clone(),
             ts_iso.clone(),
             "Event",
-            "Dispatch Setpoint",
+            action_label,
             dispatch_json,
         );
 
-        // VEN-side: DR response report (existing behavior, retained)
+        // VEN-side: DR response report
         let report = ReportContent {
             program_id: program_id.clone(),
             event_id: "demand-response"
@@ -901,8 +958,11 @@ pub fn openadr_event_response_system(
 //  7. Solar export event system (+ TargetMap)
 // ─────────────────────────────────────────────────────
 
-/// Emit an `ExportCapacityAvailable` event when excess solar transitions
+/// Emit an `ExportCapacityAvailable` event when the site transitions
 /// from not-exporting to exporting (and clear when it stops).
+///
+/// Fires for both solar-driven and BESS-driven export so that BESS
+/// discharge that spills to the grid is properly signaled.
 pub fn openadr_export_event_system(
     multi_site: Res<MultiSiteManager>,
     mut queue: ResMut<OpenAdrMessageQueue>,
@@ -919,10 +979,17 @@ pub fn openadr_export_event_system(
     let sim_start = queue.sim_start;
 
     for (site_id, site_state) in &multi_site.owned_sites {
-        if site_state.service_strategy.solar_export_policy == SolarExportPolicy::Never {
-            continue;
-        }
-        if site_state.solar_state.installed_kw_peak <= 0.0 {
+        let has_solar_export = site_state.solar_state.installed_kw_peak > 0.0
+            && site_state.service_strategy.solar_export_policy != SolarExportPolicy::Never;
+        let bess_exporting =
+            site_state.bess_state.current_power_kw > 0.0 && site_state.grid_import.export_kw > 0.1;
+
+        if !has_solar_export && !bess_exporting {
+            // Clear state if neither source can export
+            let der_state = queue.get_or_create(*site_id);
+            if der_state.export_active {
+                der_state.export_active = false;
+            }
             continue;
         }
 
@@ -937,13 +1004,28 @@ pub fn openadr_export_event_system(
             let timestamp =
                 sim_start + chrono::Duration::seconds(game_clock.total_game_time as i64);
             let ts_iso = timestamp.to_rfc3339();
-            let solar_ven = format!("solar-site-{}", site_id.0);
+
+            let (ven_name, resource_name, event_label, action_label) = if has_solar_export {
+                (
+                    format!("solar-site-{}", site_id.0),
+                    "solar-array",
+                    "Solar Export Active",
+                    "Solar Export",
+                )
+            } else {
+                (
+                    format!("bess-site-{}", site_id.0),
+                    "bess-unit",
+                    "BESS Export Active",
+                    "BESS Export",
+                )
+            };
 
             let event_content = EventContent {
                 program_id: program_id.clone(),
-                event_name: Some("Solar Export Active".to_string()),
+                event_name: Some(event_label.to_string()),
                 priority: Priority::new(5),
-                targets: resource_target(&solar_ven, "solar-array"),
+                targets: resource_target(&ven_name, resource_name),
                 report_descriptors: None,
                 payload_descriptors: Some(vec![EventPayloadDescriptor {
                     payload_type: EventType::ExportCapacityAvailable,
@@ -966,7 +1048,7 @@ pub fn openadr_export_event_system(
             };
 
             let json = serialize_openadr(&event_content);
-            queue.push_log(solar_ven, ts_iso, "Event", "Solar Export", json);
+            queue.push_log(ven_name, ts_iso, "Event", action_label, json);
         } else if !is_exporting && der_state.export_active {
             der_state.export_active = false;
         }

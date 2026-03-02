@@ -420,9 +420,22 @@ impl GameState {
 
     // ============ Leaderboard Score Calculation ============
 
-    /// Calculate the score for a single day
+    /// Calculate the score for a single day.
+    ///
+    /// Excludes rent and upgrades so that fixed/one-time site costs
+    /// don't penalise the leaderboard — those still appear in `net_profit()`.
     pub fn calculate_daily_score(&self, daily_record: &DailyRecord) -> i64 {
-        daily_record.net_profit() as i64
+        let f = &daily_record.financials;
+        let score = daily_record.total_revenue() + f.carbon_credits
+            - f.energy_cost
+            - f.demand_charge
+            - f.total_opex_line()
+            - f.cable_theft_cost
+            - f.warranty_cost
+            + f.warranty_recovery
+            - f.refunds
+            - f.penalties;
+        score as i64
     }
 
     /// Calculate the cumulative score across all days

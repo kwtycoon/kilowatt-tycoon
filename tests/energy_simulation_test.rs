@@ -625,3 +625,76 @@ fn test_utility_meter_export_tracking() {
     assert!((meter.total_exported_kwh - 15.0).abs() < 0.01);
     assert!((meter.total_export_revenue - 0.80).abs() < 0.01);
 }
+
+// ============ TOU Arbitrage Capping Tests ============
+//
+// The dispatch system caps TOU Arbitrage discharge to load_after_solar_kw.
+// These GridImport-level tests verify that capped BESS contributions
+// produce the correct export / import split.
+
+#[test]
+fn test_tou_arbitrage_no_export_when_bess_capped_to_load() {
+    let mut grid = GridImport::default();
+
+    // Scenario: 100 kW charger load, 50 kW solar, BESS capped to remaining 50 kW
+    grid.gross_load_kw = 100.0;
+    grid.solar_kw = 50.0;
+    grid.bess_kw = 50.0; // Capped to load_after_solar (100 - 50)
+
+    grid.calculate();
+
+    assert_eq!(grid.current_kw, 0.0);
+    assert_eq!(grid.export_kw, 0.0);
+}
+
+#[test]
+fn test_tou_arbitrage_no_discharge_when_solar_exceeds_load() {
+    let mut grid = GridImport::default();
+
+    // Scenario: 30 kW charger load, 80 kW solar -> load_after_solar = 0
+    // TOU Arbitrage should not discharge at all (capped to 0)
+    grid.gross_load_kw = 30.0;
+    grid.solar_kw = 80.0;
+    grid.bess_kw = 0.0; // No discharge: load_after_solar_kw = 0
+
+    grid.calculate();
+
+    // Solar surplus still exports, but BESS doesn't contribute
+    assert_eq!(grid.current_kw, 0.0);
+    assert!((grid.export_kw - 50.0).abs() < 0.01);
+}
+
+#[test]
+fn test_tou_arbitrage_partial_discharge_caps_to_load() {
+    let mut grid = GridImport::default();
+
+    // Scenario: 60 kW load, 20 kW solar -> load_after_solar = 40 kW
+    // BESS max discharge = 100 kW, but capped to 40 kW
+    grid.gross_load_kw = 60.0;
+    grid.solar_kw = 20.0;
+    grid.bess_kw = 40.0; // Capped to load_after_solar (60 - 20)
+
+    grid.calculate();
+
+    // Perfectly balanced: no import, no export
+    assert_eq!(grid.current_kw, 0.0);
+    assert_eq!(grid.export_kw, 0.0);
+}
+
+// ============ OpenADR Site State Tests ============
+
+#[test]
+fn test_openadr_site_state_bess_discharging_default() {
+    use kilowatt_tycoon::openadr::queue::OpenAdrSiteState;
+    let state = OpenAdrSiteState::default();
+    assert!(!state.bess_discharging);
+}
+
+#[test]
+fn test_openadr_site_state_interval_counter() {
+    use kilowatt_tycoon::openadr::queue::OpenAdrSiteState;
+    let mut state = OpenAdrSiteState::default();
+    assert_eq!(state.next_interval(), 1);
+    assert_eq!(state.next_interval(), 2);
+    assert_eq!(state.next_interval(), 3);
+}

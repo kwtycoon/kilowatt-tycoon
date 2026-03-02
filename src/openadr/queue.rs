@@ -61,6 +61,8 @@ pub struct OpenAdrSiteState {
     pub demand_event_active: bool,
     /// Whether a solar export event is currently active.
     pub export_active: bool,
+    /// Whether the BESS is currently discharging (for start/stop transition events).
+    pub bess_discharging: bool,
     /// Last emitted customer-facing price (to detect changes).
     pub last_customer_price: Option<f32>,
     /// Whether a spot-market grid event signal is currently active.
@@ -85,6 +87,7 @@ impl Default for OpenAdrSiteState {
             last_demand_event_game_time: 0.0,
             demand_event_active: false,
             export_active: false,
+            bess_discharging: false,
             last_customer_price: None,
             spot_grid_event_active: false,
             grid_alert_emitted: false,

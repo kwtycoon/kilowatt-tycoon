@@ -187,12 +187,15 @@ pub fn power_dispatch_system(
         match site_state.bess_state.mode {
             BessMode::TouArbitrage => {
                 // TOU Arbitrage: charge during off-peak, discharge during on-peak.
-                // Purely schedule-driven (does not react to load levels).
+                // Discharge is capped to actual load (after solar) so stored
+                // energy offsets expensive on-peak imports rather than being
+                // dumped to the grid at lower wholesale rates.
                 if tou_period == TouPeriod::OnPeak
                     && site_state.bess_state.soc_kwh > 0.0
                     && available_discharge > 0.0
+                    && load_after_solar_kw > 0.0
                 {
-                    bess_contribution_kw = available_discharge;
+                    bess_contribution_kw = available_discharge.min(load_after_solar_kw);
                 } else if tou_period == TouPeriod::OffPeak
                     && site_state.bess_state.soc_percent() < 95.0
                     && available_charge > 0.0
