@@ -281,6 +281,9 @@ pub enum BessMode {
     PeakShaving,
     /// Charge during off-peak, discharge during on-peak (TOU schedule driven).
     TouArbitrage,
+    /// Discharge to grid when spot price is high, charge when low.
+    /// Requires challenge_level >= 2 (spot market active).
+    SpotExport,
     Backup,
     Manual,
 }
@@ -290,6 +293,7 @@ impl BessMode {
         match self {
             BessMode::PeakShaving => "Peak Shaving",
             BessMode::TouArbitrage => "TOU Arbitrage",
+            BessMode::SpotExport => "Spot Export",
             BessMode::Backup => "Backup",
             BessMode::Manual => "Manual",
         }
@@ -298,7 +302,8 @@ impl BessMode {
     pub fn next(&self) -> Self {
         match self {
             BessMode::PeakShaving => BessMode::TouArbitrage,
-            BessMode::TouArbitrage => BessMode::Backup,
+            BessMode::TouArbitrage => BessMode::SpotExport,
+            BessMode::SpotExport => BessMode::Backup,
             BessMode::Backup => BessMode::Manual,
             BessMode::Manual => BessMode::PeakShaving,
         }
@@ -308,7 +313,8 @@ impl BessMode {
         match self {
             BessMode::PeakShaving => BessMode::Manual,
             BessMode::TouArbitrage => BessMode::PeakShaving,
-            BessMode::Backup => BessMode::TouArbitrage,
+            BessMode::SpotExport => BessMode::TouArbitrage,
+            BessMode::Backup => BessMode::SpotExport,
             BessMode::Manual => BessMode::Backup,
         }
     }
@@ -521,6 +527,14 @@ pub struct SpotMarket {
     pub price_24h_low: f32,
     /// Game time of the last grid-event roll (to throttle rolls to ~1/hr)
     pub last_event_roll_time: f32,
+    /// Export revenue accumulated during grid events today (reset at day boundary)
+    pub grid_event_revenue_today: f32,
+    /// Revenue accumulated during the current grid event (reset when event ends)
+    pub current_event_revenue: f32,
+    /// Name of the highest-price grid event seen today
+    pub best_event_name: Option<&'static str>,
+    /// Price of the highest-price grid event seen today
+    pub best_event_price: f32,
 }
 
 /// Minimum spot price floor ($/kWh) -- overnight surplus
@@ -536,6 +550,10 @@ impl Default for SpotMarket {
             price_24h_high: 0.06,
             price_24h_low: 0.06,
             last_event_roll_time: 0.0,
+            grid_event_revenue_today: 0.0,
+            current_event_revenue: 0.0,
+            best_event_name: None,
+            best_event_price: 0.0,
         }
     }
 }
@@ -636,6 +654,7 @@ impl SpotMarket {
                     price_multiplier: multiplier,
                 });
                 self.grid_event_end_time = game_time + duration_seconds;
+                self.current_event_revenue = 0.0;
             }
         }
 
@@ -657,6 +676,14 @@ impl SpotMarket {
             self.price_24h_low = self.current_price_per_kwh;
         }
 
+        // 6. Track best grid event today
+        if let Some(ref event) = self.grid_event
+            && self.current_price_per_kwh > self.best_event_price
+        {
+            self.best_event_price = self.current_price_per_kwh;
+            self.best_event_name = Some(event.name);
+        }
+
         // Suppress unused warning -- delta_game_seconds reserved for future smoothing
         let _ = delta_game_seconds;
     }
@@ -668,6 +695,10 @@ impl SpotMarket {
         self.grid_event = None;
         self.grid_event_end_time = 0.0;
         self.last_event_roll_time = 0.0;
+        self.grid_event_revenue_today = 0.0;
+        self.current_event_revenue = 0.0;
+        self.best_event_name = None;
+        self.best_event_price = 0.0;
     }
 }
 

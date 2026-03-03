@@ -534,7 +534,7 @@ pub fn update_power_panel_resources(
         ),
     >,
     mut solar_export: Query<
-        &mut Text,
+        (&mut Text, &mut TextColor),
         (
             With<PowerSolarExportLabel>,
             Without<PowerSolarLabel>,
@@ -601,16 +601,33 @@ pub fn update_power_panel_resources(
         );
     }
 
-    // Solar export display
-    for mut text in &mut solar_export {
+    // Solar export display with spot price feedback
+    let spot_price = site_state.spot_market.current_price_per_kwh;
+    let has_spot = site_state.challenge_level >= 2;
+    let grid_event_active = site_state.spot_market.grid_event.is_some();
+
+    for (mut text, mut color) in &mut solar_export {
         use crate::resources::SolarExportPolicy;
         let export_kw = site_state.grid_import.export_kw;
         let policy = site_state.service_strategy.solar_export_policy;
         if policy == SolarExportPolicy::Never || site_state.grid.total_solar_kw <= 0.0 {
-            **text = "\u{2014}".to_string(); // em-dash
+            **text = "\u{2014}".to_string();
+            *color = TextColor(Color::srgb(0.7, 0.7, 0.7));
+        } else if export_kw > 0.1 && has_spot {
+            let revenue_per_hr = export_kw * spot_price;
+            **text =
+                format!("{export_kw:.0} kW @ ${spot_price:.2} \u{2014} ${revenue_per_hr:.0}/hr");
+            if spot_price >= 0.50 || grid_event_active {
+                *color = TextColor(Color::srgb(1.0, 0.78, 0.1));
+            } else if spot_price >= 0.15 {
+                *color = TextColor(Color::srgb(1.0, 0.9, 0.4));
+            } else {
+                *color = TextColor(Color::srgb(0.8, 0.8, 0.8));
+            }
         } else if export_kw > 0.1 {
             let revenue = site_state.utility_meter.total_export_revenue;
             **text = format!("{export_kw:.0} kW (${revenue:.2})");
+            *color = TextColor(Color::srgb(0.8, 0.8, 0.8));
         } else {
             let revenue = site_state.utility_meter.total_export_revenue;
             if revenue > 0.0 {
@@ -618,6 +635,7 @@ pub fn update_power_panel_resources(
             } else {
                 **text = "0 kW".to_string();
             }
+            *color = TextColor(Color::srgb(0.7, 0.7, 0.7));
         }
     }
 }

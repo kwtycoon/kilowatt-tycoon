@@ -377,7 +377,7 @@ fn spawn_power_strategy_panel(parent: &mut ChildSpawnerCommands, image_assets: &
             spawn_slider_control(
                 panel, "BESS Mode:", "Peak Shaving",
                 StrategyControl::BessMode, BessModeLabel, image_assets,
-                Some("Peak Shaving: shave demand spikes & store solar. TOU Arbitrage: charge off-peak, discharge on-peak. Backup: reserve for outages. Manual: idle."),
+                Some("Peak Shaving: shave demand spikes & store solar. TOU Arbitrage: charge off-peak, discharge on-peak. Spot Export: sell stored energy when spot prices spike. Backup: reserve for outages. Manual: idle."),
             );
 
             spawn_slider_control(
@@ -1108,8 +1108,9 @@ pub fn update_slider_fill_widths(
                 use crate::resources::site_energy::BessMode;
                 match site_state.bess_state.mode {
                     BessMode::PeakShaving => 0.0,
-                    BessMode::TouArbitrage => 33.0,
-                    BessMode::Backup => 66.0,
+                    BessMode::TouArbitrage => 25.0,
+                    BessMode::SpotExport => 50.0,
+                    BessMode::Backup => 75.0,
                     BessMode::Manual => 100.0,
                 }
             }

@@ -184,6 +184,7 @@ impl Plugin for UiPlugin {
                     toast::spawn_achievement_toasts,
                     update_toasts,
                     handle_toast_clicks,
+                    toast::handle_sell_now_button,
                     // Demand warning toast systems
                     demand_toasts::spawn_demand_burden_toast,
                     demand_toasts::update_toast_action_button_styles,

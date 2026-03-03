@@ -71,6 +71,8 @@ pub struct OpenAdrSiteState {
     pub grid_alert_emitted: bool,
     /// Last emitted carbon credit rate (quantised, to detect changes).
     pub last_carbon_rate: Option<f32>,
+    /// Whether BESS is actively exporting to the grid via SpotExport mode.
+    pub bess_grid_export_active: bool,
     /// Whether a transformer fire/overload alert is currently active.
     pub fire_alert_active: bool,
     /// Whether a fire-induced ImportCapacityLimit=0 event has been emitted.
@@ -97,6 +99,7 @@ impl Default for OpenAdrSiteState {
             last_customer_price: None,
             spot_grid_event_active: false,
             grid_alert_emitted: false,
+            bess_grid_export_active: false,
             last_carbon_rate: None,
             fire_alert_active: false,
             fire_capacity_zeroed: false,

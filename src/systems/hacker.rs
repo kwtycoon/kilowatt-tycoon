@@ -148,16 +148,7 @@ pub fn hacker_spawn_system(
         _ => 1.5,
     };
 
-    let mut site_chance = base_chance * challenge_mult;
-
-    let infosec_mult = if site_state.site_upgrades.has_agentic_soc {
-        0.1
-    } else if site_state.site_upgrades.has_cyber_firewall {
-        0.4
-    } else {
-        1.0
-    };
-    site_chance *= infosec_mult;
+    let site_chance = base_chance * challenge_mult;
 
     if rng.random::<f32>() >= site_chance {
         return;
@@ -382,7 +373,7 @@ pub fn hacker_attack_system(
             .unwrap_or(false);
 
         let success_chance = if has_soc {
-            0.05
+            0.02
         } else if has_firewall {
             0.50
         } else {

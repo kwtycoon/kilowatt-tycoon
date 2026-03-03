@@ -1456,6 +1456,87 @@ pub fn openadr_transformer_fire_system(
 }
 
 // ─────────────────────────────────────────────────────
+//  11b. BESS Spot Export event system
+// ─────────────────────────────────────────────────────
+
+/// Emit an `ExportCapacityAvailable` event when BESS SpotExport mode begins
+/// discharging to the grid, and clear when it stops.
+pub fn openadr_bess_spot_export_system(
+    multi_site: Res<MultiSiteManager>,
+    mut queue: ResMut<OpenAdrMessageQueue>,
+    game_clock: Res<GameClock>,
+) {
+    if !queue.is_active() {
+        return;
+    }
+
+    let program_id = match make_program_id(DR_PROGRAM_ID) {
+        Some(id) => id,
+        None => return,
+    };
+    let sim_start = queue.sim_start;
+
+    for (site_id, site_state) in &multi_site.owned_sites {
+        if site_state.bess_state.capacity_kwh <= 0.0 {
+            continue;
+        }
+
+        use crate::resources::site_energy::BessMode;
+        let is_spot_exporting = site_state.bess_state.mode == BessMode::SpotExport
+            && site_state.bess_state.current_power_kw > 0.0
+            && site_state.grid_import.export_kw > 0.1;
+
+        let der_state = queue.get_or_create(*site_id);
+
+        if is_spot_exporting && !der_state.bess_grid_export_active {
+            der_state.bess_grid_export_active = true;
+
+            let timestamp =
+                sim_start + chrono::Duration::seconds(game_clock.total_game_time as i64);
+            let ts_iso = timestamp.to_rfc3339();
+            let ven_name = format!("bess-site-{}", site_id.0);
+
+            let event_content = EventContent {
+                program_id: program_id.clone(),
+                event_name: Some("BESS Spot Export Active".to_string()),
+                priority: Priority::new(3),
+                targets: resource_target(&ven_name, "bess-unit"),
+                report_descriptors: None,
+                payload_descriptors: Some(vec![EventPayloadDescriptor {
+                    payload_type: EventType::ExportCapacityAvailable,
+                    units: Some(Unit::KW),
+                    currency: None,
+                }]),
+                interval_period: Some(IntervalPeriod {
+                    start: timestamp,
+                    duration: None,
+                    randomize_start: None,
+                }),
+                intervals: vec![EventInterval {
+                    id: 0,
+                    interval_period: None,
+                    payloads: vec![
+                        EventValuesMap {
+                            value_type: EventType::ExportCapacityAvailable,
+                            values: vec![ovalue_f32(site_state.grid_import.export_kw)],
+                        },
+                        EventValuesMap {
+                            value_type: EventType::ExportPrice,
+                            values: vec![ovalue_f32(site_state.spot_market.current_price_per_kwh)],
+                        },
+                    ],
+                }],
+            };
+
+            let json = serialize_openadr(&event_content);
+            queue.push_log(ven_name, ts_iso, "Event", "BESS Spot Export", json);
+        } else if !is_spot_exporting && der_state.bess_grid_export_active {
+            der_state.bess_grid_export_active = false;
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────
 //  12. Hacker security event system
 // ─────────────────────────────────────────────────────
 

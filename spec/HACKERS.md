@@ -116,7 +116,6 @@ The spawn model mirrors the robber system with different base rates.
 effective_chance = BASE_HACK_CHANCE_PER_HOUR
                    × night_multiplier
                    × challenge_multiplier
-                   × infosec_multiplier
                    × delta_hours
 ```
 
@@ -131,8 +130,6 @@ effective_chance = BASE_HACK_CHANCE_PER_HOUR
 | Challenge level 3 | 1.0× |
 | Challenge level 4 | 1.25× |
 | Challenge level 5+ | 1.5× |
-| Cyber Firewall installed | 0.4× |
-| Agentic SOC installed | 0.1× |
 
 ### 4.3 Constraints
 
@@ -153,7 +150,6 @@ Two tiered upgrades added to the existing `SiteUpgrades` system.
 |----------|-------|
 | Cost | $12,000 |
 | Prerequisite | None |
-| Spawn chance reduction | 0.4× (60% reduction) |
 | Attack success chance | 50% (down from 100%) |
 | Detection | Instant toast alert when attack begins |
 
@@ -163,8 +159,7 @@ Two tiered upgrades added to the existing `SiteUpgrades` system.
 |----------|-------|
 | Cost | $35,000 |
 | Prerequisite | Cyber Firewall |
-| Spawn chance reduction | 0.1× (90% reduction, replaces Firewall's 0.4×) |
-| Attack success chance | 5% (down from 50%) |
+| Attack success chance | 2% (down from 50%) |
 | Auto-terminate | Active attacks cancelled after 5 game-minutes |
 | Detection | Instant toast alert with "AUTO-BLOCKED" label |
 
@@ -175,7 +170,7 @@ When the hack timer expires:
 ```
 base_success = 1.0
 if has_cyber_firewall:  base_success = 0.50
-if has_agentic_soc:     base_success = 0.05
+if has_agentic_soc:     base_success = 0.02
 
 roll = random(0.0 .. 1.0)
 if roll < base_success:

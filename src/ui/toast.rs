@@ -36,6 +36,10 @@ struct ToastText;
 #[derive(Component)]
 pub struct FaultToast(pub String);
 
+/// Marker on the "SELL NOW" button inside a grid event toast.
+#[derive(Component)]
+pub struct SellNowButton;
+
 // ============ Constants ============
 
 const TOAST_DURATION_REAL: f32 = 5.0;
@@ -226,6 +230,7 @@ fn spawn_achievement_toast(
 const GRID_EVENT_TOAST_DURATION_REAL: f32 = 8.0;
 
 /// Spawn a prominent toast when a grid event starts and spot prices spike.
+/// When `has_power_management` is true, includes a "SELL NOW" action button.
 pub fn spawn_grid_event_toast(
     commands: &mut Commands,
     container: Entity,
@@ -235,10 +240,9 @@ pub fn spawn_grid_event_toast(
     game_time: f32,
     real_time: f32,
     icon: Handle<Image>,
+    has_power_management: bool,
 ) {
-    let message = format!(
-        "{event_name}!\nSpot price ${spot_price:.2}/kWh ({multiplier:.0}x) — export solar now!"
-    );
+    let message = format!("{event_name}!\nSpot price ${spot_price:.2}/kWh ({multiplier:.0}x)");
 
     let bg_color = Color::srgba(0.1, 0.55, 0.85, 0.95);
 
@@ -247,9 +251,8 @@ pub fn spawn_grid_event_toast(
             Node {
                 width: Val::Px(320.0),
                 padding: UiRect::all(Val::Px(15.0)),
-                flex_direction: FlexDirection::Row,
-                column_gap: Val::Px(10.0),
-                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(8.0),
                 ..default()
             },
             BackgroundColor(bg_color),
@@ -264,27 +267,81 @@ pub fn spawn_grid_event_toast(
             },
         ))
         .with_children(|parent| {
-            parent.spawn((
-                ImageNode::new(icon),
-                Node {
-                    width: Val::Px(24.0),
-                    height: Val::Px(24.0),
+            parent
+                .spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(10.0),
+                    align_items: AlignItems::Center,
                     ..default()
-                },
-            ));
+                })
+                .with_children(|row| {
+                    row.spawn((
+                        ImageNode::new(icon),
+                        Node {
+                            width: Val::Px(24.0),
+                            height: Val::Px(24.0),
+                            ..default()
+                        },
+                    ));
 
-            parent.spawn((
-                Text::new(message),
-                TextFont {
-                    font_size: 14.0,
-                    ..default()
-                },
-                TextColor(Color::srgb(1.0, 1.0, 1.0)),
-                ToastText,
-            ));
+                    row.spawn((
+                        Text::new(message),
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(1.0, 1.0, 1.0)),
+                        ToastText,
+                    ));
+                });
+
+            if has_power_management {
+                parent
+                    .spawn((
+                        Button,
+                        SellNowButton,
+                        Node {
+                            padding: UiRect::axes(Val::Px(16.0), Val::Px(6.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            align_self: AlignSelf::FlexEnd,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(1.0, 0.78, 0.1)),
+                        BorderRadius::all(Val::Px(4.0)),
+                    ))
+                    .with_child((
+                        Text::new("SELL NOW"),
+                        TextFont {
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.1, 0.1, 0.1)),
+                    ));
+            }
         })
         .id();
 
+    commands.entity(container).add_child(entity);
+}
+
+/// Spawn a toast summarising a grid event that just ended.
+pub fn spawn_grid_event_end_toast(
+    commands: &mut Commands,
+    container: Entity,
+    message: &str,
+    game_time: f32,
+    real_time: f32,
+    icon: Handle<Image>,
+) {
+    let entity = spawn_toast_custom(
+        commands,
+        message.to_string(),
+        game_time,
+        real_time,
+        icon,
+        Color::srgba(0.15, 0.55, 0.35, 0.95),
+    );
     commands.entity(container).add_child(entity);
 }
 
@@ -438,6 +495,27 @@ pub fn handle_toast_clicks(
             for entity in &toast_query {
                 commands.entity(entity).try_despawn();
             }
+        }
+    }
+}
+
+/// Handle SELL NOW button presses from grid event toasts.
+/// Switches the active site to MaxExport + SpotExport for maximum revenue.
+pub fn handle_sell_now_button(
+    mut multi_site: ResMut<crate::resources::MultiSiteManager>,
+    interaction_query: Query<&Interaction, (Changed<Interaction>, With<SellNowButton>)>,
+) {
+    for interaction in &interaction_query {
+        if *interaction == Interaction::Pressed {
+            let Some(viewed_id) = multi_site.viewed_site_id else {
+                continue;
+            };
+            let Some(site_state) = multi_site.owned_sites.get_mut(&viewed_id) else {
+                continue;
+            };
+            site_state.service_strategy.solar_export_policy =
+                crate::resources::SolarExportPolicy::MaxExport;
+            site_state.bess_state.mode = crate::resources::site_energy::BessMode::SpotExport;
         }
     }
 }

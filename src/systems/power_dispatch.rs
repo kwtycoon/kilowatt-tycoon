@@ -204,6 +204,35 @@ pub fn power_dispatch_system(
                     bess_contribution_kw = -available_charge;
                 }
             }
+            BessMode::SpotExport => {
+                // Spot Export: discharge to grid when spot price is high, charge when low.
+                // Unlike other modes, discharge is NOT capped to local load -- excess
+                // flows to the grid as export_kw via GridImport::calculate().
+                let spot_price = site_state.spot_market.current_price_per_kwh;
+
+                const SPOT_HIGH_THRESHOLD: f32 = 0.30;
+                const SPOT_LOW_THRESHOLD: f32 = 0.06;
+
+                if spot_price >= SPOT_HIGH_THRESHOLD
+                    && site_state.bess_state.soc_kwh > 0.0
+                    && available_discharge > 0.0
+                {
+                    // Discharge at max rate -- uncapped so surplus goes to grid
+                    bess_contribution_kw = available_discharge;
+                } else if spot_price < SPOT_LOW_THRESHOLD
+                    && site_state.bess_state.soc_percent() < 95.0
+                    && available_charge > 0.0
+                {
+                    bess_contribution_kw = -available_charge;
+                } else if export_policy != SolarExportPolicy::MaxExport
+                    && solar_kw > gross_charger_load_kw
+                    && site_state.bess_state.soc_percent() < 95.0
+                    && available_charge > 0.0
+                {
+                    let excess_solar = solar_kw - gross_charger_load_kw;
+                    bess_contribution_kw = -excess_solar.min(available_charge);
+                }
+            }
             BessMode::Backup | BessMode::Manual => {
                 // Backup/Manual: do nothing automatically
             }

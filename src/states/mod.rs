@@ -753,6 +753,21 @@ fn on_enter_day_end(
         .filter(|s| s.challenge_level >= 2)
         .map(|s| (s.spot_market.price_24h_low, s.spot_market.price_24h_high));
 
+    // Grid event revenue breakdown for expanded view
+    let grid_event_revenue: f32 = multi_site
+        .active_site()
+        .filter(|s| s.challenge_level >= 2)
+        .map(|s| s.spot_market.grid_event_revenue_today)
+        .unwrap_or(0.0);
+    let best_spike: Option<(&'static str, f32)> = multi_site
+        .active_site()
+        .filter(|s| s.challenge_level >= 2)
+        .and_then(|s| {
+            s.spot_market
+                .best_event_name
+                .map(|name| (name, s.spot_market.best_event_price))
+        });
+
     // Revenue/cost hints for collapsed view
     let revenue_hint: Option<&str> = if charging_revenue < energy_cost && energy_cost > 0.01 {
         Some("(Pricing: Too Low?)")
@@ -1271,6 +1286,22 @@ fn on_enter_day_end(
                                                             &format!("${low:.2} - ${high:.2}/kWh"),
                                                             Color::srgb(0.4, 0.8, 1.0),
                                                         );
+                                                        if grid_event_revenue > 0.01 {
+                                                            spawn_indented_row(
+                                                                section,
+                                                                "  Event Revenue",
+                                                                &format!("+${grid_event_revenue:.2}"),
+                                                                Color::srgb(1.0, 0.78, 0.1),
+                                                            );
+                                                        }
+                                                        if let Some((name, price)) = best_spike {
+                                                            spawn_indented_row(
+                                                                section,
+                                                                "  Best Spike",
+                                                                &format!("{name} ${price:.2}/kWh"),
+                                                                Color::srgb(1.0, 0.78, 0.1),
+                                                            );
+                                                        }
                                                         spawn_insight_row(
                                                             section,
                                                             "Wholesale spot price fluctuates with demand and grid events.",
