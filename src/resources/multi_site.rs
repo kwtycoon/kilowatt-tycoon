@@ -235,13 +235,14 @@ impl SiteState {
             voltage_state: VoltageState::default(),
             charger_queue: ChargerQueue::default(),
             driver_schedule: DriverSchedule::default(),
-            demand_state: {
-                let mut ds = DemandState::default();
-                ds.base_customers_per_hour =
-                    crate::resources::demand::base_demand_for_archetype(archetype);
-                ds.time_until_next_spawn =
-                    crate::resources::demand::initial_spawn_delay_for_archetype(archetype);
-                ds
+            demand_state: DemandState {
+                base_customers_per_hour: crate::resources::demand::base_demand_for_archetype(
+                    archetype,
+                ),
+                time_until_next_spawn: crate::resources::demand::initial_spawn_delay_for_archetype(
+                    archetype,
+                ),
+                ..DemandState::default()
             },
             solar_state: SolarState::default(),
             bess_state: BessState::default(),

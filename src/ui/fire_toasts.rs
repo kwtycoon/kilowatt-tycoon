@@ -9,7 +9,7 @@ use bevy::prelude::*;
 
 use crate::events::{OverloadSeverity, TransformerFireEvent, TransformerOverloadWarningEvent};
 use crate::resources::{GameClock, ImageAssets, MultiSiteManager};
-use crate::ui::toast::ToastNotification;
+use crate::ui::toast::{ToastContainer, ToastNotification};
 
 #[derive(Component)]
 pub struct OverloadWarningToast;
@@ -30,7 +30,9 @@ pub fn spawn_overload_warning_toast(
     time: Res<Time>,
     image_assets: Res<ImageAssets>,
     existing: Query<Entity, With<OverloadWarningToast>>,
+    container: Single<Entity, With<ToastContainer>>,
 ) {
+    let container = *container;
     for event in events.read() {
         for entity in &existing {
             commands.entity(entity).try_despawn();
@@ -69,12 +71,9 @@ pub fn spawn_overload_warning_toast(
 
         let has_apm = event.has_power_management;
 
-        commands
+        let toast_entity = commands
             .spawn((
                 Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(142.0),
-                    right: Val::Px(20.0),
                     width: Val::Px(340.0),
                     padding: UiRect::all(Val::Px(14.0)),
                     flex_direction: FlexDirection::Column,
@@ -83,7 +82,6 @@ pub fn spawn_overload_warning_toast(
                 },
                 BackgroundColor(bg_color),
                 BorderRadius::all(Val::Px(8.0)),
-                ZIndex(9999),
                 ToastNotification {
                     created_at: game_clock.game_time,
                     duration: 15.0,
@@ -184,7 +182,9 @@ pub fn spawn_overload_warning_toast(
                                 TextColor(Color::WHITE),
                             ));
                     });
-            });
+            })
+            .id();
+        commands.entity(container).add_child(toast_entity);
     }
 }
 
@@ -196,7 +196,9 @@ pub fn spawn_fire_started_toast(
     image_assets: Res<ImageAssets>,
     existing_overload: Query<Entity, With<OverloadWarningToast>>,
     existing_fire: Query<Entity, With<FireStartedToast>>,
+    container: Single<Entity, With<ToastContainer>>,
 ) {
+    let container = *container;
     for _event in events.read() {
         for entity in &existing_overload {
             commands.entity(entity).try_despawn();
@@ -207,12 +209,9 @@ pub fn spawn_fire_started_toast(
 
         let real_duration = 10.0;
 
-        commands
+        let toast_entity = commands
             .spawn((
                 Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(142.0),
-                    right: Val::Px(20.0),
                     width: Val::Px(340.0),
                     padding: UiRect::all(Val::Px(14.0)),
                     flex_direction: FlexDirection::Column,
@@ -221,7 +220,6 @@ pub fn spawn_fire_started_toast(
                 },
                 BackgroundColor(Color::srgba(0.75, 0.1, 0.05, 0.95)),
                 BorderRadius::all(Val::Px(8.0)),
-                ZIndex(9999),
                 ToastNotification {
                     created_at: game_clock.game_time,
                     duration: 15.0,
@@ -278,7 +276,9 @@ pub fn spawn_fire_started_toast(
                     },
                     TextColor(Color::srgb(1.0, 0.75, 0.7)),
                 ));
-            });
+            })
+            .id();
+        commands.entity(container).add_child(toast_entity);
     }
 }
 

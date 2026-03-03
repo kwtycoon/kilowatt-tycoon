@@ -65,6 +65,9 @@ pub struct ChargerFaultEvent {
     pub charger_entity: Entity,
     pub charger_id: String,
     pub fault_type: FaultType,
+    /// When true the fault was instantly cleared by O&M auto-remediation;
+    /// UI systems should suppress the notification.
+    pub auto_remediated: bool,
 }
 
 #[derive(Event, Message, Debug, Clone)]

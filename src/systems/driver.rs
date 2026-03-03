@@ -674,6 +674,7 @@ pub fn driver_arrival_system(
                                 charger_entity,
                                 charger_id: charger.id.clone(),
                                 fault_type,
+                                auto_remediated: false,
                             });
                             info!(
                                 "  Driver discovered fault on {}: {:?}",
@@ -998,6 +999,7 @@ pub fn charging_system(
                         charger_entity,
                         charger_id: charger.id.clone(),
                         fault_type,
+                        auto_remediated: false,
                     });
                     info!(
                         "  O&M Software detected connector jam immediately on {}",

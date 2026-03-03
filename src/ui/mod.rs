@@ -84,8 +84,8 @@ impl Plugin for UiPlugin {
                 setup_power_panel,
                 setup_top_nav,
                 setup_tutorial,
+                toast::setup_toast_container,
                 crate::states::setup_character_selection,
-                // start_tutorial_on_first_play removed -- triggered by handle_start_button
             )
                 .chain(),
         );

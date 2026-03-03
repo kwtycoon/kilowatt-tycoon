@@ -505,11 +505,14 @@ pub fn fault_detection_system(
                 charger.id, fault_type, elapsed, oem_tier
             );
 
-            // Emit the fault event (now the player sees it in UI)
+            let will_auto_remediate =
+                oem_tier.has_auto_remediation() && !fault_type.requires_technician();
+
             fault_events.write(ChargerFaultEvent {
                 charger_entity: entity,
                 charger_id: charger.id.clone(),
                 fault_type,
+                auto_remediated: will_auto_remediate,
             });
 
             // Achievement tracking: reset fleet session streak on fault at a fleet site
@@ -520,7 +523,7 @@ pub fn fault_detection_system(
             }
 
             // Auto-remediation: directly fix software faults (no cooldown, no player action)
-            if oem_tier.has_auto_remediation() && !fault_type.requires_technician() {
+            if will_auto_remediate {
                 info!(
                     "Auto-remediation: instantly clearing {:?} on {}",
                     fault_type, charger.id
@@ -577,10 +580,14 @@ pub fn handle_oem_upgrade_existing_faults(
                 charger.fault_discovered = true;
                 charger.fault_detected_at = Some(game_clock.total_game_time);
 
+                let will_auto_remediate =
+                    event.new_tier.has_auto_remediation() && !fault_type.requires_technician();
+
                 fault_events.write(ChargerFaultEvent {
                     charger_entity: entity,
                     charger_id: charger.id.clone(),
                     fault_type,
+                    auto_remediated: will_auto_remediate,
                 });
 
                 info!(

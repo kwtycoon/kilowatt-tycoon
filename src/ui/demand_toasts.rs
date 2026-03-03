@@ -9,7 +9,7 @@ use bevy::prelude::*;
 
 use crate::events::DemandBurdenEvent;
 use crate::resources::{GameClock, ImageAssets, MultiSiteManager};
-use crate::ui::toast::ToastNotification;
+use crate::ui::toast::{ToastContainer, ToastNotification};
 
 // ============ Components ============
 
@@ -39,22 +39,20 @@ pub fn spawn_demand_burden_toast(
     time: Res<Time>,
     image_assets: Res<ImageAssets>,
     existing: Query<Entity, With<DemandBurdenToast>>,
+    container: Single<Entity, With<ToastContainer>>,
 ) {
+    let container = *container;
     for event in events.read() {
-        // Single-instance: remove existing toast before spawning.
         for entity in &existing {
             commands.entity(entity).try_despawn();
         }
 
-        let real_duration = 10.0; // real seconds
+        let real_duration = 10.0;
         let share_pct = (event.demand_share * 100.0).round() as i32;
 
-        commands
+        let toast_entity = commands
             .spawn((
                 Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(142.0),
-                    right: Val::Px(20.0),
                     width: Val::Px(340.0),
                     padding: UiRect::all(Val::Px(14.0)),
                     flex_direction: FlexDirection::Column,
@@ -63,10 +61,9 @@ pub fn spawn_demand_burden_toast(
                 },
                 BackgroundColor(Color::srgba(0.95, 0.4, 0.2, 0.95)),
                 BorderRadius::all(Val::Px(8.0)),
-                ZIndex(9999),
                 ToastNotification {
                     created_at: game_clock.game_time,
-                    duration: 15.0, // compatibility
+                    duration: 15.0,
                 },
                 crate::ui::toast::RealTimeToast {
                     created_at_real: time.elapsed_secs(),
@@ -217,7 +214,9 @@ pub fn spawn_demand_burden_toast(
                                 TextColor(Color::WHITE),
                             ));
                     });
-            });
+            })
+            .id();
+        commands.entity(container).add_child(toast_entity);
     }
 }
 

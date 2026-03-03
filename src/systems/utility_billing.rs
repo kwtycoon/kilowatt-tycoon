@@ -31,6 +31,7 @@ pub fn spot_market_system(
     time: Res<Time>,
     environment: Res<EnvironmentState>,
     image_assets: Res<ImageAssets>,
+    toast_container: Single<Entity, With<crate::ui::toast::ToastContainer>>,
 ) {
     if game_clock.is_paused() {
         return;
@@ -71,6 +72,7 @@ pub fn spot_market_system(
             let name = event.name;
             crate::ui::toast::spawn_grid_event_toast(
                 &mut commands,
+                *toast_container,
                 name,
                 price,
                 multiplier,
