@@ -17,7 +17,7 @@ use bevy_northstar::prelude::*;
 use crate::components::BelongsToSite;
 use crate::components::driver::{Driver, DriverState, VehicleMovement};
 use crate::components::technician::{Technician, TechnicianMovement};
-use crate::resources::{GameClock, GameState, MultiSiteManager};
+use crate::resources::{GameClock, GameState, MultiSiteManager, TileContent};
 use crate::states::AppState;
 use crate::systems::ambient_traffic::AmbientVehicle;
 use crate::systems::northstar_movement::RerouteCooldown;
@@ -451,12 +451,23 @@ fn print_traffic_debug(
                 DriverState::Arriving => {
                     if let Some((bx, by)) = driver.assigned_bay {
                         format!("bay({bx},{by})")
+                    } else if let Some((wx, wy)) = driver.waiting_tile {
+                        format!("wait({wx},{wy})")
                     } else {
                         "bay(?)".to_string()
                     }
                 }
                 DriverState::Leaving | DriverState::LeftAngry | DriverState::Complete => {
                     format!("exit({},{})", grid.exit_pos.0, grid.exit_pos.1)
+                }
+                DriverState::Queued => {
+                    if let Some((wx, wy)) = driver.waiting_tile {
+                        format!("queued@wait({wx},{wy})")
+                    } else if let Some((bx, by)) = driver.assigned_bay {
+                        format!("queued@bay({bx},{by})")
+                    } else {
+                        "queued".to_string()
+                    }
                 }
                 _ => "parked".to_string(),
             };
@@ -539,10 +550,29 @@ fn print_traffic_debug(
             let blocking_str = if blocking.is_some() { "yes" } else { "no" };
 
             let _ = writeln!(out, "  status: {status_str} | blocking: {blocking_str}");
+
+            let wait_str = driver
+                .waiting_tile
+                .map(|(wx, wy)| format!("({wx},{wy})"))
+                .unwrap_or_else(|| "NONE".to_string());
+            let charger_str = driver
+                .assigned_charger
+                .map(|e| format!("Entity {}", e.index()))
+                .unwrap_or_else(|| "NONE".to_string());
+            let bay_str = driver
+                .assigned_bay
+                .map(|(bx, by)| format!("({bx},{by})"))
+                .unwrap_or_else(|| "NONE".to_string());
+
             let _ = writeln!(
                 out,
                 "  driver_state: {} | patience: {:.0}",
                 state_str, driver.patience
+            );
+            let _ = writeln!(
+                out,
+                "  bay: {} | wait_tile: {} | charger: {}",
+                bay_str, wait_str, charger_str
             );
             let _ = writeln!(out);
 
@@ -688,6 +718,105 @@ fn print_traffic_debug(
             }
             let _ = writeln!(out);
         }
+    }
+
+    // ASCII grid dump with vehicle positions for each site
+    for (site_id, site_state) in multi_site.owned_sites.iter() {
+        let grid = &site_state.grid;
+
+        // Collect driver grid positions
+        let mut vehicle_positions: std::collections::HashMap<(u32, u32), char> =
+            std::collections::HashMap::new();
+        for (_, driver, _, belongs, agent_pos, ..) in &drivers {
+            if belongs.site_id != *site_id {
+                continue;
+            }
+            let Some(agent) = agent_pos else { continue };
+            let key = (agent.0.x, agent.0.y);
+            let ch = match driver.state {
+                DriverState::Arriving => 'a',
+                DriverState::Charging => 'c',
+                DriverState::Queued => 'q',
+                DriverState::WaitingForCharger => 'w',
+                DriverState::Frustrated => 'f',
+                DriverState::Leaving | DriverState::Complete => 'd',
+                DriverState::LeftAngry => 'x',
+            };
+            vehicle_positions.insert(key, ch);
+        }
+
+        let _ = writeln!(
+            out,
+            "=== Grid Map {:?} (vehicles: a=arriving c=charging q=queued w=waiting f=frustrated d=departing x=angry) ===",
+            site_id
+        );
+        for y in (0..grid.height).rev() {
+            let _ = write!(out, "y={:>2} | ", y);
+            for x in 0..grid.width {
+                if let Some(&ch) = vehicle_positions.get(&(x as u32, y as u32)) {
+                    let _ = write!(out, "{}", ch.to_ascii_uppercase());
+                } else if (x, y) == grid.entry_pos {
+                    let _ = write!(out, "E");
+                } else if (x, y) == grid.exit_pos {
+                    let _ = write!(out, "X");
+                } else {
+                    let ch = match grid.get_content(x, y) {
+                        TileContent::Road => 'r',
+                        TileContent::Lot => '.',
+                        TileContent::ParkingBayNorth | TileContent::ParkingBaySouth => 'p',
+                        TileContent::ChargerPad => 'c',
+                        TileContent::Grass | TileContent::Empty => ' ',
+                        _ => '~',
+                    };
+                    let _ = write!(out, "{ch}");
+                }
+            }
+            let _ = writeln!(out);
+        }
+        let _ = writeln!(out);
+
+        // Queue summary
+        let _ = writeln!(
+            out,
+            "Queue: DCFC={} L2={}",
+            site_state.charger_queue.dcfc_queue_len(),
+            site_state.charger_queue.l2_queue_len(),
+        );
+
+        // Charger bay occupancy
+        let charger_bays = grid.get_charger_bays();
+        let occupied_bays: Vec<(i32, i32)> = drivers
+            .iter()
+            .filter(|(_, _, _, b, ..)| b.site_id == *site_id)
+            .filter(|(_, d, ..)| {
+                !matches!(
+                    d.state,
+                    DriverState::Leaving | DriverState::LeftAngry | DriverState::Complete
+                )
+            })
+            .filter_map(|(_, d, ..)| d.assigned_bay)
+            .collect();
+
+        let occupied_waiting: Vec<(i32, i32)> = drivers
+            .iter()
+            .filter(|(_, _, _, b, ..)| b.site_id == *site_id)
+            .filter(|(_, d, ..)| {
+                !matches!(
+                    d.state,
+                    DriverState::Leaving | DriverState::LeftAngry | DriverState::Complete
+                )
+            })
+            .filter_map(|(_, d, ..)| d.waiting_tile)
+            .collect();
+
+        let _ = writeln!(
+            out,
+            "Charger bays: {} total, {} occupied | Waiting tiles: {} occupied",
+            charger_bays.len(),
+            occupied_bays.len(),
+            occupied_waiting.len(),
+        );
+        let _ = writeln!(out);
     }
 
     let _ = writeln!(out, "========== END TRAFFIC DEBUG ==========\n");
