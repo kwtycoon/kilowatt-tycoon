@@ -158,6 +158,7 @@ pub fn day_ending_system(
             // Queued / waiting / frustrated drivers leave immediately
             DriverState::Queued | DriverState::WaitingForCharger | DriverState::Frustrated => {
                 driver.state = DriverState::Leaving;
+                driver.waiting_tile = None;
                 any_remaining = true;
             }
 
@@ -166,6 +167,7 @@ pub fn day_ending_system(
             DriverState::Arriving => {
                 if movement.phase == MovementPhase::Parked {
                     driver.state = DriverState::Leaving;
+                    driver.waiting_tile = None;
                 }
                 any_remaining = true;
             }

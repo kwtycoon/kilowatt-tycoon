@@ -163,13 +163,20 @@ pub fn northstar_arrival_detection(
     for (agent_pos, driver, mut movement, belongs) in query.iter_mut() {
         match movement.phase {
             MovementPhase::Arriving => {
-                // Check if we've reached our assigned bay
                 if let Some((bay_x, bay_y)) = driver.assigned_bay {
                     let at_bay = agent_pos.0.x == bay_x as u32 && agent_pos.0.y == bay_y as u32;
                     if at_bay {
                         movement.phase = MovementPhase::Parked;
-                        // Blocking component is already present from spawn
                         info!("Vehicle {} arrived at bay and parked", driver.id);
+                    }
+                } else if let Some((wx, wy)) = driver.waiting_tile {
+                    let at_wait = agent_pos.0.x == wx as u32 && agent_pos.0.y == wy as u32;
+                    if at_wait {
+                        movement.phase = MovementPhase::Parked;
+                        info!(
+                            "Vehicle {} arrived at waiting tile ({}, {})",
+                            driver.id, wx, wy
+                        );
                     }
                 }
             }

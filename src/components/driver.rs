@@ -164,6 +164,8 @@ pub struct Driver {
     pub target_charger_id: Option<String>,
     pub assigned_charger: Option<Entity>,
     pub assigned_bay: Option<(i32, i32)>,
+    /// Grid tile where the driver is waiting for a bay to open (no bay assigned yet).
+    pub waiting_tile: Option<(i32, i32)>,
     pub mood: DriverMood,
     /// Whether this driver arrived via an eMSP roaming app (OCPI START_SESSION).
     pub is_roaming: bool,
@@ -184,6 +186,7 @@ impl Default for Driver {
             target_charger_id: None,
             assigned_charger: None,
             assigned_bay: None,
+            waiting_tile: None,
             mood: DriverMood::Neutral,
             is_roaming: false,
         }

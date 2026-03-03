@@ -1232,6 +1232,90 @@ impl SiteGrid {
         bays
     }
 
+    /// Find a driveable tile near the charging area for a vehicle to wait on.
+    ///
+    /// BFS outward from all parking-bay positions (charger-agnostic). Returns
+    /// the best candidate by priority: `Lot` > other driveable > `Road`.
+    /// Tiles in `occupied_waiting` or `occupied_bays` are excluded.
+    pub fn find_waiting_tile(
+        &self,
+        occupied_waiting: &[(i32, i32)],
+        occupied_bays: &[(i32, i32)],
+    ) -> Option<(i32, i32)> {
+        use std::collections::{HashSet, VecDeque};
+
+        const MAX_DEPTH: u32 = 5;
+        const CARDINAL: [(i32, i32); 4] = [(0, 1), (0, -1), (1, 0), (-1, 0)];
+
+        let occupied_set: HashSet<(i32, i32)> = occupied_waiting
+            .iter()
+            .chain(occupied_bays.iter())
+            .copied()
+            .collect();
+
+        let mut visited: HashSet<(i32, i32)> = HashSet::new();
+        let mut queue: VecDeque<((i32, i32), u32)> = VecDeque::new();
+
+        // Seed BFS from every parking bay tile
+        for ((x, y), tile) in &self.tiles {
+            if tile.content.is_parking() {
+                visited.insert((*x, *y));
+                queue.push_back(((*x, *y), 0));
+            }
+        }
+
+        // Sort seeds for deterministic BFS order across runs
+        let mut seeds: Vec<_> = queue.drain(..).collect();
+        seeds.sort_by_key(|&((x, y), _)| (x, y));
+        queue.extend(seeds);
+
+        let mut lot_candidate: Option<(i32, i32)> = None;
+        let mut other_candidate: Option<(i32, i32)> = None;
+        let mut road_candidate: Option<(i32, i32)> = None;
+
+        while let Some(((x, y), depth)) = queue.pop_front() {
+            if depth >= MAX_DEPTH {
+                continue;
+            }
+
+            for (dx, dy) in CARDINAL {
+                let nx = x + dx;
+                let ny = y + dy;
+
+                if !self.is_valid(nx, ny) || !visited.insert((nx, ny)) {
+                    continue;
+                }
+
+                if occupied_set.contains(&(nx, ny)) {
+                    queue.push_back(((nx, ny), depth + 1));
+                    continue;
+                }
+
+                let content = self.get_content(nx, ny);
+
+                if content == TileContent::Lot && lot_candidate.is_none() {
+                    lot_candidate = Some((nx, ny));
+                } else if content.is_driveable()
+                    && !content.is_parking()
+                    && !content.is_public_road()
+                    && other_candidate.is_none()
+                {
+                    other_candidate = Some((nx, ny));
+                } else if content == TileContent::Road && road_candidate.is_none() {
+                    road_candidate = Some((nx, ny));
+                }
+
+                if lot_candidate.is_some() {
+                    return lot_candidate;
+                }
+
+                queue.push_back(((nx, ny), depth + 1));
+            }
+        }
+
+        lot_candidate.or(other_candidate).or(road_candidate)
+    }
+
     /// Validate if station can open
     pub fn validate_for_open(&self) -> super::build_state::OpenValidation {
         let mut issues = Vec::new();
@@ -1381,5 +1465,49 @@ mod tests {
             grid.revision > initial_revision,
             "Revision should increment after set_tile_content"
         );
+    }
+
+    #[test]
+    fn find_waiting_tile_prefers_lot() {
+        let mut grid = SiteGrid::default();
+        // Road row at y=4
+        for x in 0..6 {
+            grid.set_tile_content(x, 4, TileContent::Road);
+        }
+        // Lot tiles adjacent to bays
+        grid.set_tile_content(2, 3, TileContent::Lot);
+        grid.set_tile_content(3, 3, TileContent::Lot);
+        grid.set_tile_content(4, 3, TileContent::Lot);
+        // Parking bay with charger
+        grid.set_tile_content(3, 2, TileContent::ParkingBaySouth);
+        if let Some(tile) = grid.get_tile_mut(3, 2) {
+            tile.linked_charger_pad = Some((3, 3));
+        }
+
+        let result = grid.find_waiting_tile(&[], &[]);
+        assert!(result.is_some(), "Should find a waiting tile");
+        let (rx, ry) = result.unwrap();
+        let content = grid.get_content(rx, ry);
+        assert_eq!(content, TileContent::Lot, "Should prefer Lot tiles");
+    }
+
+    #[test]
+    fn find_waiting_tile_skips_occupied() {
+        let mut grid = SiteGrid::default();
+        grid.set_tile_content(3, 3, TileContent::Lot);
+        grid.set_tile_content(4, 3, TileContent::Lot);
+        grid.set_tile_content(3, 2, TileContent::ParkingBaySouth);
+
+        // Occupy the closest lot tile
+        let occupied_waiting = vec![(3, 3)];
+        let result = grid.find_waiting_tile(&occupied_waiting, &[]);
+        // Should return the other lot tile
+        assert_eq!(result, Some((4, 3)));
+    }
+
+    #[test]
+    fn find_waiting_tile_returns_none_on_empty_grid() {
+        let grid = SiteGrid::default();
+        assert_eq!(grid.find_waiting_tile(&[], &[]), None);
     }
 }

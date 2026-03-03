@@ -113,6 +113,7 @@ pub fn create_test_driver(id: &str) -> Driver {
         target_charger_id: None,
         assigned_charger: None,
         assigned_bay: None,
+        waiting_tile: None,
         mood: DriverMood::Neutral,
         is_roaming: false,
     }

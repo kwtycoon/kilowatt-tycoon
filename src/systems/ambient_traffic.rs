@@ -547,6 +547,7 @@ pub fn ambient_to_customer_system(
             target_charger_id: None,
             assigned_charger: None,
             assigned_bay: Some((*bay_x, *bay_y)),
+            waiting_tile: None,
             state: DriverState::Arriving,
             mood: DriverMood::Neutral,
             is_roaming,

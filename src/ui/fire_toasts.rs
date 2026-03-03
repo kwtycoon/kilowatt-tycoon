@@ -51,7 +51,7 @@ pub fn spawn_overload_warning_toast(
             } else {
                 (
                     "FIRE IMMINENT",
-                    "Purchase Advanced Power Management to enable load shedding!",
+                    "Add more capacity or reduce load with Power Management!",
                     Color::srgba(0.85, 0.15, 0.1, 0.95),
                 )
             }
