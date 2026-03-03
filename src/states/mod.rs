@@ -747,25 +747,24 @@ fn on_enter_day_end(
         .values()
         .any(|s| s.grid.total_solar_kw > 0.0);
 
-    // Spot market stats for the viewed site (only meaningful for challenge_level >= 2)
-    let spot_stats: Option<(f32, f32)> = multi_site
-        .active_site()
-        .filter(|s| s.challenge_level >= 2)
-        .map(|s| (s.spot_market.price_24h_low, s.spot_market.price_24h_high));
-
-    // Grid event revenue breakdown for expanded view
+    // Grid event stats for the viewed site (only meaningful for challenge_level >= 2)
     let grid_event_revenue: f32 = multi_site
         .active_site()
         .filter(|s| s.challenge_level >= 2)
-        .map(|s| s.spot_market.grid_event_revenue_today)
+        .map(|s| s.grid_events.event_revenue_today)
+        .unwrap_or(0.0);
+    let grid_event_import_surcharge: f32 = multi_site
+        .active_site()
+        .filter(|s| s.challenge_level >= 2)
+        .map(|s| s.grid_events.event_import_surcharge_today)
         .unwrap_or(0.0);
     let best_spike: Option<(&'static str, f32)> = multi_site
         .active_site()
         .filter(|s| s.challenge_level >= 2)
         .and_then(|s| {
-            s.spot_market
-                .best_event_name
-                .map(|name| (name, s.spot_market.best_event_price))
+            s.grid_events
+                .best_event_type
+                .map(|e| (e.name(), s.grid_events.best_event_export_multiplier))
         });
 
     // Revenue/cost hints for collapsed view
@@ -1279,39 +1278,34 @@ fn on_enter_day_end(
                                                         &format!("+${solar_export_revenue:.2}"),
                                                         Color::srgb(0.4, 0.9, 0.4),
                                                     );
-                                                    if let Some((low, high)) = spot_stats {
+                                                    if grid_event_revenue > 0.01 {
                                                         spawn_indented_row(
                                                             section,
-                                                            "  Spot Range",
-                                                            &format!("${low:.2} - ${high:.2}/kWh"),
-                                                            Color::srgb(0.4, 0.8, 1.0),
-                                                        );
-                                                        if grid_event_revenue > 0.01 {
-                                                            spawn_indented_row(
-                                                                section,
-                                                                "  Event Revenue",
-                                                                &format!("+${grid_event_revenue:.2}"),
-                                                                Color::srgb(1.0, 0.78, 0.1),
-                                                            );
-                                                        }
-                                                        if let Some((name, price)) = best_spike {
-                                                            spawn_indented_row(
-                                                                section,
-                                                                "  Best Spike",
-                                                                &format!("{name} ${price:.2}/kWh"),
-                                                                Color::srgb(1.0, 0.78, 0.1),
-                                                            );
-                                                        }
-                                                        spawn_insight_row(
-                                                            section,
-                                                            "Wholesale spot price fluctuates with demand and grid events.",
-                                                        );
-                                                    } else {
-                                                        spawn_insight_row(
-                                                            section,
-                                                            "Excess solar sold back to the grid at wholesale rates.",
+                                                            "  Event Revenue",
+                                                            &format!("+${grid_event_revenue:.2}"),
+                                                            Color::srgb(1.0, 0.78, 0.1),
                                                         );
                                                     }
+                                                    if grid_event_import_surcharge > 0.01 {
+                                                        spawn_indented_row(
+                                                            section,
+                                                            "  Event Surcharge",
+                                                            &format!("-${grid_event_import_surcharge:.2}"),
+                                                            Color::srgb(1.0, 0.4, 0.4),
+                                                        );
+                                                    }
+                                                    if let Some((name, mult)) = best_spike {
+                                                        spawn_indented_row(
+                                                            section,
+                                                            "  Best Event",
+                                                            &format!("{name} ({mult:.1}x export)"),
+                                                            Color::srgb(1.0, 0.78, 0.1),
+                                                        );
+                                                    }
+                                                    spawn_insight_row(
+                                                        section,
+                                                        "Grid events temporarily raise import and export rates.",
+                                                    );
                                                 } else {
                                                     spawn_indented_row(
                                                         section,
@@ -1319,17 +1313,10 @@ fn on_enter_day_end(
                                                         "+$0.00",
                                                         Color::srgb(0.7, 0.7, 0.7),
                                                     );
-                                                    if spot_stats.is_some() {
-                                                        spawn_insight_row(
-                                                            section,
-                                                            "All solar consumed on-site. Try MaxExport to sell at spot prices!",
-                                                        );
-                                                    } else {
-                                                        spawn_insight_row(
-                                                            section,
-                                                            "All solar consumed on-site -- no excess to export.",
-                                                        );
-                                                    }
+                                                    spawn_insight_row(
+                                                        section,
+                                                        "All solar consumed on-site -- no excess to export.",
+                                                    );
                                                 }
                                             }
                                         });
@@ -1741,7 +1728,7 @@ fn day_title(
         if warranty_recovery > warranty_cost * 5.0 && warranty_recovery > 500.0 {
             return (
                 "Insurance Payday",
-                "The warranty just earned its keep \u{2014} and then some.",
+                "The warranty just earned its keep - and then some.",
             );
         }
         return ("Smooth Operations", "A good day at the station.");
@@ -1798,7 +1785,7 @@ fn generate_pro_tip(
     } else if opex > charging_revenue && opex > 0.01 {
         "Our repair budget could fund a small space program."
     } else if warranty_cost > 0.01 && opex > warranty_recovery && opex > 0.01 {
-        "Consider the Premium warranty \u{2014} it covers 80% of labor too."
+        "Consider the Premium warranty - it covers 80% of labor too."
     } else if reputation_delta < -20 {
         "The local EV forum has created a dedicated thread about us. It's not flattering."
     } else if reputation_delta < -5 {
@@ -2123,7 +2110,7 @@ fn on_exit_day_end(
     if let Some(site) = multi_site.active_site_mut() {
         site.charger_queue.clear();
         site.utility_meter.reset();
-        site.spot_market.reset_daily();
+        site.grid_events.reset_daily();
         site.driver_schedule.next_driver_index = 0;
         site.driver_schedule.next_event_index = 0;
     }

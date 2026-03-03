@@ -6,8 +6,8 @@ use std::collections::HashMap;
 
 use super::site_grid::SiteGrid;
 use super::{
-    BessState, ChargerQueue, DemandState, DriverSchedule, GridImport, ServiceStrategy,
-    SiteEnergyConfig, SiteUpgrades, SolarState, SpotMarket, UtilityMeter,
+    BessState, ChargerQueue, DemandState, DriverSchedule, GridEventState, GridImport,
+    ServiceStrategy, SiteEnergyConfig, SiteUpgrades, SolarState, UtilityMeter,
 };
 use crate::components::power::{PhaseLoads, VoltageState};
 
@@ -170,7 +170,7 @@ pub struct SiteState {
     pub grid_import: GridImport,
     pub utility_meter: UtilityMeter,
     pub site_energy_config: SiteEnergyConfig,
-    pub spot_market: SpotMarket,
+    pub grid_events: GridEventState,
 
     // Site configuration
     pub service_strategy: ServiceStrategy,
@@ -253,7 +253,7 @@ impl SiteState {
             grid_import: GridImport::default(),
             utility_meter: UtilityMeter::default(),
             site_energy_config: SiteEnergyConfig::default(),
-            spot_market: SpotMarket::default(),
+            grid_events: GridEventState::default(),
             service_strategy: ServiceStrategy::default(),
             site_upgrades: SiteUpgrades::default(),
             charger_utilization: 0.0,

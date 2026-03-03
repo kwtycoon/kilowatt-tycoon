@@ -281,9 +281,9 @@ pub enum BessMode {
     PeakShaving,
     /// Charge during off-peak, discharge during on-peak (TOU schedule driven).
     TouArbitrage,
-    /// Discharge to grid when spot price is high, charge when low.
-    /// Requires challenge_level >= 2 (spot market active).
-    SpotExport,
+    /// Discharge to grid when a grid event makes export profitable, charge when idle.
+    /// Requires challenge_level >= 2 (grid events active).
+    GridExport,
     Backup,
     Manual,
 }
@@ -293,7 +293,7 @@ impl BessMode {
         match self {
             BessMode::PeakShaving => "Peak Shaving",
             BessMode::TouArbitrage => "TOU Arbitrage",
-            BessMode::SpotExport => "Spot Export",
+            BessMode::GridExport => "Grid Export",
             BessMode::Backup => "Backup",
             BessMode::Manual => "Manual",
         }
@@ -302,8 +302,8 @@ impl BessMode {
     pub fn next(&self) -> Self {
         match self {
             BessMode::PeakShaving => BessMode::TouArbitrage,
-            BessMode::TouArbitrage => BessMode::SpotExport,
-            BessMode::SpotExport => BessMode::Backup,
+            BessMode::TouArbitrage => BessMode::GridExport,
+            BessMode::GridExport => BessMode::Backup,
             BessMode::Backup => BessMode::Manual,
             BessMode::Manual => BessMode::PeakShaving,
         }
@@ -313,8 +313,8 @@ impl BessMode {
         match self {
             BessMode::PeakShaving => BessMode::Manual,
             BessMode::TouArbitrage => BessMode::PeakShaving,
-            BessMode::SpotExport => BessMode::TouArbitrage,
-            BessMode::Backup => BessMode::SpotExport,
+            BessMode::GridExport => BessMode::TouArbitrage,
+            BessMode::Backup => BessMode::GridExport,
             BessMode::Manual => BessMode::Backup,
         }
     }
@@ -497,208 +497,189 @@ impl GridImport {
     }
 }
 
-/// Active grid event causing a wholesale price spike at a specific site.
-#[derive(Debug, Clone)]
-pub struct GridEvent {
-    /// Human-readable event headline
-    pub name: &'static str,
-    /// Multiplier applied to the base spot price during this event (5x-20x)
-    pub price_multiplier: f32,
+/// Type of grid event that temporarily modifies import and export rates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GridEventType {
+    RecordDemand,
+    GeneratorTrip,
+    TransmissionConstraint,
+    HeatEmergency,
+    UnexpectedPlantOutage,
+    RenewableShortfall,
+    GridCongestion,
 }
 
-/// Per-site wholesale electricity spot market state.
+impl GridEventType {
+    pub const ALL: &[GridEventType] = &[
+        GridEventType::RecordDemand,
+        GridEventType::GeneratorTrip,
+        GridEventType::TransmissionConstraint,
+        GridEventType::HeatEmergency,
+        GridEventType::UnexpectedPlantOutage,
+        GridEventType::RenewableShortfall,
+        GridEventType::GridCongestion,
+    ];
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            GridEventType::RecordDemand => "Record Demand",
+            GridEventType::GeneratorTrip => "Generator Trip",
+            GridEventType::TransmissionConstraint => "Transmission Constraint",
+            GridEventType::HeatEmergency => "Heat Emergency",
+            GridEventType::UnexpectedPlantOutage => "Plant Outage",
+            GridEventType::RenewableShortfall => "Renewable Shortfall",
+            GridEventType::GridCongestion => "Grid Congestion",
+        }
+    }
+
+    pub fn headline(&self) -> &'static str {
+        match self {
+            GridEventType::RecordDemand => "Everyone's cranking the AC - grid maxed out!",
+            GridEventType::GeneratorTrip => "Major generator tripped offline - prices spiking!",
+            GridEventType::TransmissionConstraint => "Power lines jammed - local rates surging!",
+            GridEventType::HeatEmergency => "Heat wave declared - grid operator calls emergency!",
+            GridEventType::UnexpectedPlantOutage => "Power plant down - wholesale prices soaring!",
+            GridEventType::RenewableShortfall => {
+                "Wind died, clouds rolled in - renewables tanking!"
+            }
+            GridEventType::GridCongestion => "Grid bottleneck - congestion fees kicking in!",
+        }
+    }
+
+    pub fn import_multiplier(&self) -> f32 {
+        match self {
+            GridEventType::RecordDemand => 1.5,
+            GridEventType::GeneratorTrip => 1.3,
+            GridEventType::TransmissionConstraint => 1.4,
+            GridEventType::HeatEmergency => 2.0,
+            GridEventType::UnexpectedPlantOutage => 1.5,
+            GridEventType::RenewableShortfall => 1.2,
+            GridEventType::GridCongestion => 1.3,
+        }
+    }
+
+    pub fn export_multiplier(&self) -> f32 {
+        match self {
+            GridEventType::RecordDemand => 3.0,
+            GridEventType::GeneratorTrip => 4.0,
+            GridEventType::TransmissionConstraint => 3.5,
+            GridEventType::HeatEmergency => 5.0,
+            GridEventType::UnexpectedPlantOutage => 6.0,
+            GridEventType::RenewableShortfall => 2.5,
+            GridEventType::GridCongestion => 2.0,
+        }
+    }
+}
+
+/// Per-site grid event state.
 ///
-/// Tracks the real-time fluctuating export price that replaces fixed TOU
-/// export rates for sites with `challenge_level >= 2`.  Level 1 sites
-/// never tick this and fall back to the fixed rates in `SiteEnergyConfig`.
+/// Tracks active grid events that apply temporary multipliers to both
+/// import and export TOU rates for sites with `challenge_level >= 2`.
+/// Level 1 sites never tick this and use plain TOU rates.
 #[derive(Debug, Clone)]
-pub struct SpotMarket {
-    /// Current effective export price ($/kWh) after all multipliers
-    pub current_price_per_kwh: f32,
-    /// Base price from time-of-day curve before weather/event multipliers
-    pub base_price_per_kwh: f32,
-    /// Active grid event causing a price spike (if any)
-    pub grid_event: Option<GridEvent>,
+pub struct GridEventState {
+    /// Active grid event (if any)
+    pub active_event: Option<GridEventType>,
     /// Game time at which the active grid event expires
-    pub grid_event_end_time: f32,
-    /// Highest price seen today (reset at day boundary)
-    pub price_24h_high: f32,
-    /// Lowest price seen today (reset at day boundary)
-    pub price_24h_low: f32,
+    pub event_end_time: f32,
     /// Game time of the last grid-event roll (to throttle rolls to ~1/hr)
     pub last_event_roll_time: f32,
     /// Export revenue accumulated during grid events today (reset at day boundary)
-    pub grid_event_revenue_today: f32,
+    pub event_revenue_today: f32,
     /// Revenue accumulated during the current grid event (reset when event ends)
     pub current_event_revenue: f32,
-    /// Name of the highest-price grid event seen today
-    pub best_event_name: Option<&'static str>,
-    /// Price of the highest-price grid event seen today
-    pub best_event_price: f32,
+    /// Import surcharge cost accumulated during grid events today (reset at day boundary)
+    pub event_import_surcharge_today: f32,
+    /// Best (highest export multiplier) grid event seen today
+    pub best_event_type: Option<GridEventType>,
+    /// Export multiplier of the best grid event seen today
+    pub best_event_export_multiplier: f32,
 }
 
-/// Minimum spot price floor ($/kWh) -- overnight surplus
-const SPOT_PRICE_FLOOR: f32 = 0.02;
-
-impl Default for SpotMarket {
+impl Default for GridEventState {
     fn default() -> Self {
         Self {
-            current_price_per_kwh: 0.06,
-            base_price_per_kwh: 0.06,
-            grid_event: None,
-            grid_event_end_time: 0.0,
-            price_24h_high: 0.06,
-            price_24h_low: 0.06,
+            active_event: None,
+            event_end_time: 0.0,
             last_event_roll_time: 0.0,
-            grid_event_revenue_today: 0.0,
+            event_revenue_today: 0.0,
             current_event_revenue: 0.0,
-            best_event_name: None,
-            best_event_price: 0.0,
+            event_import_surcharge_today: 0.0,
+            best_event_type: None,
+            best_event_export_multiplier: 0.0,
         }
     }
 }
 
-impl SpotMarket {
-    /// Catalogue of possible grid events with their price multipliers.
-    const GRID_EVENTS: &[(&'static str, f32)] = &[
-        ("Record Demand", 8.0),
-        ("Generator Trip", 12.0),
-        ("Transmission Constraint", 10.0),
-        ("Heat Emergency", 15.0),
-        ("Unexpected Plant Outage", 20.0),
-        ("Renewable Shortfall", 6.0),
-        ("Grid Congestion", 5.0),
-    ];
-
-    /// Compute the base spot price from the time-of-day demand curve.
-    ///
-    /// The curve peaks in the late afternoon / early evening (5-7 pm,
-    /// day_fraction ~0.71-0.79) when residential AC load is highest and
-    /// solar generation is declining.
-    ///
-    /// Returns $/kWh in the range ~$0.02 (overnight) to ~$0.18 (peak evening).
-    pub fn base_price_for_time(day_fraction: f32) -> f32 {
-        // Demand curve parameters
-        let overnight_base = 0.03; // $/kWh overnight floor
-        let peak_premium = 0.15; // additional $/kWh at peak
-
-        // Two peaks: morning (8-9am, ~0.35) and evening (5-7pm, ~0.75)
-        // Evening peak is dominant
-        let morning_peak = 0.35_f32;
-        let evening_peak = 0.75_f32;
-
-        // Gaussian-ish bumps using cos^2
-        let morning_dist = (day_fraction - morning_peak).abs().min(0.5);
-        let morning_factor = if morning_dist < 0.08 {
-            let t = morning_dist / 0.08 * std::f32::consts::FRAC_PI_2;
-            let c = ops::cos(t);
-            c * c * 0.4 // morning peak is 40% of evening
-        } else {
-            0.0
-        };
-
-        let evening_dist = (day_fraction - evening_peak).abs().min(0.5);
-        let evening_factor = if evening_dist < 0.10 {
-            let t = evening_dist / 0.10 * std::f32::consts::FRAC_PI_2;
-            let c = ops::cos(t);
-            c * c
-        } else {
-            0.0
-        };
-
-        let demand_factor = morning_factor.max(evening_factor);
-
-        (overnight_base + peak_premium * demand_factor).max(SPOT_PRICE_FLOOR)
+impl GridEventState {
+    /// Current import multiplier (1.0 when no event is active).
+    pub fn current_import_multiplier(&self) -> f32 {
+        self.active_event.map_or(1.0, |e| e.import_multiplier())
     }
 
-    /// Update the spot price for this tick.
+    /// Current export multiplier (1.0 when no event is active).
+    pub fn current_export_multiplier(&self) -> f32 {
+        self.active_event.map_or(1.0, |e| e.export_multiplier())
+    }
+
+    /// Advance grid event state for this tick.
     ///
-    /// `day_fraction`: 0.0-1.0 position within the day
-    /// `weather_multiplier`: from `WeatherType::spot_price_multiplier()`
-    /// `delta_game_seconds`: elapsed game time this tick
+    /// `challenge_level`: site difficulty -- controls event probability
     /// `game_time`: current absolute game time (for event timing)
     /// `rng`: random number generator
-    pub fn tick(
-        &mut self,
-        day_fraction: f32,
-        weather_multiplier: f32,
-        delta_game_seconds: f32,
-        game_time: f32,
-        rng: &mut impl rand::Rng,
-    ) {
-        // 1. Base price from time-of-day curve
-        self.base_price_per_kwh = Self::base_price_for_time(day_fraction);
-
-        // 2. Expire active grid event if past its end time
-        if self.grid_event.is_some() && game_time >= self.grid_event_end_time {
-            self.grid_event = None;
+    pub fn tick(&mut self, challenge_level: u8, game_time: f32, rng: &mut impl rand::Rng) {
+        // 1. Expire active grid event if past its end time
+        if self.active_event.is_some() && game_time >= self.event_end_time {
+            self.active_event = None;
         }
 
-        // 3. Roll for new grid event (~5% chance per game-hour, throttled to 1 roll/hr)
+        // 2. Roll for new grid event (throttled to 1 roll per game-hour)
+        let event_chance = match challenge_level {
+            0..=1 => 0.0,
+            2 => 0.05,
+            3 => 0.12,
+            4 => 0.18,
+            _ => 0.25,
+        };
+
         let hours_since_last_roll = (game_time - self.last_event_roll_time) / 3600.0;
-        if self.grid_event.is_none() && hours_since_last_roll >= 1.0 {
+        if self.active_event.is_none() && hours_since_last_roll >= 1.0 && event_chance > 0.0 {
             self.last_event_roll_time = game_time;
 
             let roll: f32 = rng.random();
-            if roll < 0.05 {
-                let event_idx = (rng.random::<f32>() * Self::GRID_EVENTS.len() as f32) as usize
-                    % Self::GRID_EVENTS.len();
-                let (name, multiplier) = Self::GRID_EVENTS[event_idx];
+            if roll < event_chance {
+                let all = GridEventType::ALL;
+                let event_idx = (rng.random::<f32>() * all.len() as f32) as usize % all.len();
+                let event_type = all[event_idx];
 
-                // Duration: 1-4 game hours
-                let duration_hours: f32 = 1.0 + rng.random::<f32>() * 3.0;
+                let duration_hours: f32 = 2.0 + rng.random::<f32>() * 4.0;
                 let duration_seconds = duration_hours * 3600.0;
 
-                self.grid_event = Some(GridEvent {
-                    name,
-                    price_multiplier: multiplier,
-                });
-                self.grid_event_end_time = game_time + duration_seconds;
+                self.active_event = Some(event_type);
+                self.event_end_time = game_time + duration_seconds;
                 self.current_event_revenue = 0.0;
             }
         }
 
-        // 4. Compute final price: base * weather * event * noise
-        let event_multiplier = self.grid_event.as_ref().map_or(1.0, |e| e.price_multiplier);
-
-        // Small random noise: +/- 5%
-        let noise = 0.95 + rng.random::<f32>() * 0.10;
-
-        self.current_price_per_kwh =
-            (self.base_price_per_kwh * weather_multiplier * event_multiplier * noise)
-                .max(SPOT_PRICE_FLOOR);
-
-        // 5. Update daily high/low
-        if self.current_price_per_kwh > self.price_24h_high {
-            self.price_24h_high = self.current_price_per_kwh;
-        }
-        if self.current_price_per_kwh < self.price_24h_low {
-            self.price_24h_low = self.current_price_per_kwh;
-        }
-
-        // 6. Track best grid event today
-        if let Some(ref event) = self.grid_event
-            && self.current_price_per_kwh > self.best_event_price
+        // 3. Track best grid event today
+        if let Some(event) = self.active_event
+            && event.export_multiplier() > self.best_event_export_multiplier
         {
-            self.best_event_price = self.current_price_per_kwh;
-            self.best_event_name = Some(event.name);
+            self.best_event_export_multiplier = event.export_multiplier();
+            self.best_event_type = Some(event);
         }
-
-        // Suppress unused warning -- delta_game_seconds reserved for future smoothing
-        let _ = delta_game_seconds;
     }
 
     /// Reset daily tracking (call at day boundary)
     pub fn reset_daily(&mut self) {
-        self.price_24h_high = self.current_price_per_kwh;
-        self.price_24h_low = self.current_price_per_kwh;
-        self.grid_event = None;
-        self.grid_event_end_time = 0.0;
+        self.active_event = None;
+        self.event_end_time = 0.0;
         self.last_event_roll_time = 0.0;
-        self.grid_event_revenue_today = 0.0;
+        self.event_revenue_today = 0.0;
         self.current_event_revenue = 0.0;
-        self.best_event_name = None;
-        self.best_event_price = 0.0;
+        self.event_import_surcharge_today = 0.0;
+        self.best_event_type = None;
+        self.best_event_export_multiplier = 0.0;
     }
 }
 

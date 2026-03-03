@@ -47,7 +47,13 @@ const MAX_VISIBLE_TOASTS: usize = 3;
 
 // ============ Container Setup ============
 
-pub fn setup_toast_container(mut commands: Commands) {
+pub fn setup_toast_container(
+    mut commands: Commands,
+    existing: Query<Entity, With<ToastContainer>>,
+) {
+    if !existing.is_empty() {
+        return;
+    }
     commands.spawn((
         ToastContainer,
         Node {
@@ -229,20 +235,24 @@ fn spawn_achievement_toast(
 
 const GRID_EVENT_TOAST_DURATION_REAL: f32 = 8.0;
 
-/// Spawn a prominent toast when a grid event starts and spot prices spike.
+/// Spawn a prominent toast when a grid event starts.
+/// Shows a fun headline plus import/export multipliers so the player sees opportunity and cost.
 /// When `has_power_management` is true, includes a "SELL NOW" action button.
 pub fn spawn_grid_event_toast(
     commands: &mut Commands,
     container: Entity,
-    event_name: &str,
-    spot_price: f32,
-    multiplier: f32,
+    event: crate::resources::GridEventType,
     game_time: f32,
     real_time: f32,
     icon: Handle<Image>,
     has_power_management: bool,
 ) {
-    let message = format!("{event_name}!\nSpot price ${spot_price:.2}/kWh ({multiplier:.0}x)");
+    let name = event.name();
+    let headline = event.headline();
+    let export_mult = event.export_multiplier();
+    let import_mult = event.import_multiplier();
+    let message =
+        format!("{name}: {headline}\nExport {export_mult:.1}x | Import {import_mult:.1}x");
 
     let bg_color = Color::srgba(0.1, 0.55, 0.85, 0.95);
 
@@ -500,12 +510,17 @@ pub fn handle_toast_clicks(
 }
 
 /// Handle SELL NOW button presses from grid event toasts.
-/// Switches the active site to MaxExport + SpotExport for maximum revenue.
+/// Switches the active site to MaxExport + GridExport for maximum revenue.
+/// Updates the button text/color to confirm the action was taken.
 pub fn handle_sell_now_button(
     mut multi_site: ResMut<crate::resources::MultiSiteManager>,
-    interaction_query: Query<&Interaction, (Changed<Interaction>, With<SellNowButton>)>,
+    mut interaction_query: Query<
+        (&Interaction, &Children, &mut BackgroundColor),
+        (Changed<Interaction>, With<SellNowButton>),
+    >,
+    mut text_query: Query<(&mut Text, &mut TextColor)>,
 ) {
-    for interaction in &interaction_query {
+    for (interaction, children, mut bg) in &mut interaction_query {
         if *interaction == Interaction::Pressed {
             let Some(viewed_id) = multi_site.viewed_site_id else {
                 continue;
@@ -515,7 +530,15 @@ pub fn handle_sell_now_button(
             };
             site_state.service_strategy.solar_export_policy =
                 crate::resources::SolarExportPolicy::MaxExport;
-            site_state.bess_state.mode = crate::resources::site_energy::BessMode::SpotExport;
+            site_state.bess_state.mode = crate::resources::site_energy::BessMode::GridExport;
+
+            *bg = BackgroundColor(Color::srgb(0.2, 0.75, 0.3));
+            for child in children.iter() {
+                if let Ok((mut text, mut text_color)) = text_query.get_mut(child) {
+                    **text = "[OK] SELLING".to_string();
+                    *text_color = TextColor(Color::srgb(1.0, 1.0, 1.0));
+                }
+            }
         }
     }
 }

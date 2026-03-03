@@ -51,12 +51,14 @@ pub struct DailyRobberyTracker {
 
 /// Generate a random world-space position on one of the four map edges.
 /// The position is slightly outside the visible grid so the robber walks in/out of view.
-fn random_edge_position(rng: &mut impl Rng, grid_w: i32, grid_h: i32) -> Vec2 {
+fn random_edge_position(rng: &mut impl Rng, grid_w: i32, grid_h: i32, world_offset: Vec2) -> Vec2 {
     let margin = 40.0;
-    let grid_min_x = GRID_OFFSET_X - margin;
-    let grid_max_x = GRID_OFFSET_X + (grid_w as f32) * TILE_SIZE + margin;
-    let grid_min_y = GRID_OFFSET_Y - margin;
-    let grid_max_y = GRID_OFFSET_Y + (grid_h as f32) * TILE_SIZE + margin;
+    let base_x = world_offset.x + GRID_OFFSET_X;
+    let base_y = world_offset.y + GRID_OFFSET_Y;
+    let grid_min_x = base_x - margin;
+    let grid_max_x = base_x + (grid_w as f32) * TILE_SIZE + margin;
+    let grid_min_y = base_y - margin;
+    let grid_max_y = base_y + (grid_h as f32) * TILE_SIZE + margin;
 
     match rng.random_range(0..4) {
         0 => Vec2::new(rng.random_range(grid_min_x..grid_max_x), grid_max_y),
@@ -212,7 +214,12 @@ pub fn cable_theft_system(
     let steal_duration = rng.random_range(STEAL_DURATION_MIN..=STEAL_DURATION_MAX);
 
     // Random spawn position on a map edge
-    let spawn_pos = random_edge_position(&mut rng, site_state.grid.width, site_state.grid.height);
+    let spawn_pos = random_edge_position(
+        &mut rng,
+        site_state.grid.width,
+        site_state.grid.height,
+        site_state.world_offset(),
+    );
 
     // Spawn robber (NOT as child of site root — free-floating in world space)
     let charger_id = target_charger.id.clone();
@@ -503,11 +510,11 @@ pub fn robber_stealing_system(
         robber.anim_timer = 0.0;
 
         // Pick a random exit edge (different direction!)
-        let (gw, gh) = multi_site
+        let (gw, gh, wo) = multi_site
             .get_site(belongs.site_id)
-            .map(|s| (s.grid.width, s.grid.height))
-            .unwrap_or((GRID_WIDTH, GRID_HEIGHT));
-        let exit_pos = random_edge_position(&mut rng, gw, gh);
+            .map(|s| (s.grid.width, s.grid.height, s.world_offset()))
+            .unwrap_or((GRID_WIDTH, GRID_HEIGHT, Vec2::ZERO));
+        let exit_pos = random_edge_position(&mut rng, gw, gh, wo);
         robber.move_target = exit_pos;
 
         // Switch back to walking sprite

@@ -100,7 +100,7 @@ pub fn spawn_power_panel(parent: &mut ChildSpawnerCommands, image_assets: &Image
             });
 
         spawn_labeled_row(panel, "Grid Draw:", "0 kVA", PowerGridDrawLabel);
-        spawn_labeled_row(panel, "Peak Demand:", "0 kW → $0", PowerPeakDemandLabel);
+        spawn_labeled_row(panel, "Peak Demand:", "0 kW | $0", PowerPeakDemandLabel);
 
         // Progress bar for current load vs peak threshold
         panel
@@ -146,7 +146,7 @@ pub fn spawn_power_panel(parent: &mut ChildSpawnerCommands, image_assets: &Image
                 ));
             });
 
-        spawn_labeled_row(panel, "Transformer:", "25°C", PowerTransformerLabel);
+        spawn_labeled_row(panel, "Transformer:", "25C", PowerTransformerLabel);
 
         spawn_separator(panel);
 
@@ -228,7 +228,7 @@ pub fn spawn_power_panel(parent: &mut ChildSpawnerCommands, image_assets: &Image
                 ));
             });
 
-        spawn_labeled_row(panel, "Solar Export:", "—", PowerSolarExportLabel);
+        spawn_labeled_row(panel, "Solar Export:", "--", PowerSolarExportLabel);
 
         // Battery bar with SOC and rate indicator
         panel.spawn((
@@ -417,7 +417,7 @@ pub fn update_power_panel_basic(
         let peak_kw = site_state.utility_meter.peak_demand_kw;
         let demand_rate = site_state.site_energy_config.demand_rate_per_kw;
         let cost = peak_kw * demand_rate;
-        **text = format!("{peak_kw:.0} kW → ${cost:.0}");
+        **text = format!("{peak_kw:.0} kW | ${cost:.0}");
     }
 
     // Transformer temp - find hottest transformer at this site
@@ -447,9 +447,9 @@ pub fn update_power_panel_basic(
     for (mut text, mut color) in &mut transformer_label {
         // Show count if multiple transformers
         if transformer_count > 1 {
-            **text = format!("{transformer_count}x @ {temp:.0}°C");
+            **text = format!("{transformer_count}x @ {temp:.0}C");
         } else {
-            **text = format!("{temp:.0}°C");
+            **text = format!("{temp:.0}C");
         }
 
         if temp >= 90.0 {
@@ -503,6 +503,7 @@ pub fn update_power_panel_capacity(
 #[allow(clippy::type_complexity)]
 pub fn update_power_panel_resources(
     multi_site: Res<crate::resources::MultiSiteManager>,
+    game_clock: Res<crate::resources::GameClock>,
     mut solar: Query<&mut Text, With<PowerSolarLabel>>,
     mut battery: Query<&mut Text, (With<PowerBatteryLabel>, Without<PowerSolarLabel>)>,
     mut off_peak_rate: Query<
@@ -601,27 +602,34 @@ pub fn update_power_panel_resources(
         );
     }
 
-    // Solar export display with spot price feedback
-    let spot_price = site_state.spot_market.current_price_per_kwh;
-    let has_spot = site_state.challenge_level >= 2;
-    let grid_event_active = site_state.spot_market.grid_event.is_some();
+    // Solar export display with grid event feedback
+    let export_mult = site_state.grid_events.current_export_multiplier();
+    let has_events = site_state.challenge_level >= 2;
+    let grid_event_active = site_state.grid_events.active_event.is_some();
 
     for (mut text, mut color) in &mut solar_export {
         use crate::resources::SolarExportPolicy;
         let export_kw = site_state.grid_import.export_kw;
         let policy = site_state.service_strategy.solar_export_policy;
+        let base_export_rate = site_state
+            .site_energy_config
+            .current_export_rate(game_clock.game_time);
+        let effective_export_rate = base_export_rate * export_mult;
+
         if policy == SolarExportPolicy::Never || site_state.grid.total_solar_kw <= 0.0 {
-            **text = "\u{2014}".to_string();
+            **text = "--".to_string();
             *color = TextColor(Color::srgb(0.7, 0.7, 0.7));
-        } else if export_kw > 0.1 && has_spot {
-            let revenue_per_hr = export_kw * spot_price;
-            **text =
-                format!("{export_kw:.0} kW @ ${spot_price:.2} \u{2014} ${revenue_per_hr:.0}/hr");
-            if spot_price >= 0.50 || grid_event_active {
+        } else if export_kw > 0.1 && has_events {
+            let revenue_per_hr = export_kw * effective_export_rate;
+            if grid_event_active {
+                **text = format!(
+                    "{export_kw:.0} kW @ ${effective_export_rate:.2} ({export_mult:.1}x) - ${revenue_per_hr:.0}/hr"
+                );
                 *color = TextColor(Color::srgb(1.0, 0.78, 0.1));
-            } else if spot_price >= 0.15 {
-                *color = TextColor(Color::srgb(1.0, 0.9, 0.4));
             } else {
+                **text = format!(
+                    "{export_kw:.0} kW @ ${effective_export_rate:.2} - ${revenue_per_hr:.0}/hr"
+                );
                 *color = TextColor(Color::srgb(0.8, 0.8, 0.8));
             }
         } else if export_kw > 0.1 {

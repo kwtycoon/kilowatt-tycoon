@@ -5,31 +5,28 @@
 //! - Rolling 15-minute demand average
 //! - Peak demand tracking
 //! - Cost application to game state
-//! - Wholesale spot market pricing for solar export (level 2+ sites)
+//! - Grid event multipliers on import/export rates (level 2+ sites)
 
 use bevy::prelude::*;
 
 use crate::components::BelongsToSite;
 use crate::components::charger::Charger;
-use crate::resources::{
-    CharacterPerk, EnvironmentState, GameClock, ImageAssets, MultiSiteManager, PlayerProfile,
-};
+use crate::resources::{CharacterPerk, GameClock, ImageAssets, MultiSiteManager, PlayerProfile};
 
-/// Minimum challenge level required for spot market pricing.
-/// Level 1 (starter) keeps fixed TOU export rates.
-const SPOT_MARKET_MIN_CHALLENGE_LEVEL: u8 = 2;
+/// Minimum challenge level required for grid events.
+/// Level 1 (starter) keeps fixed TOU rates with no events.
+const GRID_EVENT_MIN_CHALLENGE_LEVEL: u8 = 2;
 
-/// Tick each site's wholesale spot market price.
+/// Tick grid event state for the viewed site.
 ///
-/// Runs before `utility_billing_system` so the spot price is fresh when
-/// export revenue is calculated.  Sites with `challenge_level < 2` are
-/// skipped -- they keep the fixed TOU export rates.
-pub fn spot_market_system(
+/// Runs before `utility_billing_system` so event multipliers are fresh
+/// when import/export costs are calculated. Sites with `challenge_level < 2`
+/// are skipped -- they keep plain TOU rates.
+pub fn grid_event_system(
     mut commands: Commands,
     mut multi_site: ResMut<MultiSiteManager>,
     game_clock: Res<GameClock>,
     time: Res<Time>,
-    environment: Res<EnvironmentState>,
     image_assets: Res<ImageAssets>,
     toast_container: Single<Entity, With<crate::ui::toast::ToastContainer>>,
 ) {
@@ -42,9 +39,6 @@ pub fn spot_market_system(
         return;
     }
 
-    let day_length = 86400.0_f32;
-    let day_fraction = (game_clock.game_time % day_length) / day_length;
-    let weather_multiplier = environment.current_weather.spot_price_multiplier();
     let game_time = game_clock.game_time;
 
     let mut rng = rand::rng();
@@ -55,31 +49,21 @@ pub fn spot_market_system(
     let Some(site_state) = multi_site.owned_sites.get_mut(&viewed_id) else {
         return;
     };
-    if site_state.challenge_level >= SPOT_MARKET_MIN_CHALLENGE_LEVEL {
-        let had_event = site_state.spot_market.grid_event.is_some();
-        let prev_event_name = site_state.spot_market.grid_event.as_ref().map(|e| e.name);
-        let prev_event_revenue = site_state.spot_market.current_event_revenue;
+    if site_state.challenge_level >= GRID_EVENT_MIN_CHALLENGE_LEVEL {
+        let had_event = site_state.grid_events.active_event.is_some();
+        let prev_event_type = site_state.grid_events.active_event;
+        let prev_event_revenue = site_state.grid_events.current_event_revenue;
 
-        site_state.spot_market.tick(
-            day_fraction,
-            weather_multiplier,
-            delta_game_seconds,
-            game_time,
-            &mut rng,
-        );
+        site_state
+            .grid_events
+            .tick(site_state.challenge_level, game_time, &mut rng);
 
-        // Grid event just started -- show spike toast
-        if !had_event && let Some(ref event) = site_state.spot_market.grid_event {
-            let price = site_state.spot_market.current_price_per_kwh;
-            let multiplier = event.price_multiplier;
-            let name = event.name;
+        if !had_event && let Some(event) = site_state.grid_events.active_event {
             let has_pm = site_state.site_upgrades.has_power_management();
             crate::ui::toast::spawn_grid_event_toast(
                 &mut commands,
                 *toast_container,
-                name,
-                price,
-                multiplier,
+                event,
                 game_clock.game_time,
                 time.elapsed_secs(),
                 image_assets.icon_bolt.clone(),
@@ -87,15 +71,13 @@ pub fn spot_market_system(
             );
         }
 
-        // Grid event just ended -- show summary toast
         if had_event
-            && site_state.spot_market.grid_event.is_none()
-            && let Some(event_name) = prev_event_name
+            && site_state.grid_events.active_event.is_none()
+            && let Some(prev) = prev_event_type
         {
+            let event_name = prev.name();
             let msg = if prev_event_revenue > 0.01 {
-                format!(
-                    "{event_name} ended \u{2014} you earned ${prev_event_revenue:.2} from the spike!"
-                )
+                format!("{event_name} ended - you earned ${prev_event_revenue:.2} from the spike!")
             } else {
                 format!("{event_name} ended.")
             };
@@ -154,39 +136,43 @@ pub fn utility_billing_system(
     let energy_kwh = grid_kw * (delta_game_seconds / 3600.0);
 
     if energy_kwh > 0.0 {
-        // Determine TOU period and rate
         let tou_period = site_state
             .site_energy_config
             .current_tou_period(game_clock.game_time);
-        let rate = site_state
+        let base_rate = site_state
             .site_energy_config
             .current_rate(game_clock.game_time);
+        let import_mult = site_state.grid_events.current_import_multiplier();
+        let rate = base_rate * import_mult;
 
-        // Accumulate on meter (dollar total flushed to ledger at day-end)
         site_state
             .utility_meter
             .add_energy(energy_kwh, tou_period, rate);
+
+        // Track import surcharge cost during grid events
+        if import_mult > 1.0 {
+            let surcharge = energy_kwh * base_rate * (import_mult - 1.0);
+            site_state.grid_events.event_import_surcharge_today += surcharge;
+        }
     }
 
     // Solar export: accumulate on meter (flushed to ledger at day-end)
     let export_kw = site_state.grid_import.export_kw;
     if export_kw > 0.0 {
         let export_kwh = export_kw * (delta_game_seconds / 3600.0);
-        let export_rate = if site_state.challenge_level >= SPOT_MARKET_MIN_CHALLENGE_LEVEL {
-            site_state.spot_market.current_price_per_kwh
-        } else {
-            site_state
-                .site_energy_config
-                .current_export_rate(game_clock.game_time)
-        };
+        let base_export_rate = site_state
+            .site_energy_config
+            .current_export_rate(game_clock.game_time);
+        let export_mult = site_state.grid_events.current_export_multiplier();
+        let export_rate = base_export_rate * export_mult;
 
         site_state.utility_meter.add_export(export_kwh, export_rate);
 
         // Track revenue earned during grid events for day-end breakdown
-        if site_state.spot_market.grid_event.is_some() {
+        if site_state.grid_events.active_event.is_some() {
             let event_tick_revenue = export_kwh * export_rate;
-            site_state.spot_market.grid_event_revenue_today += event_tick_revenue;
-            site_state.spot_market.current_event_revenue += event_tick_revenue;
+            site_state.grid_events.event_revenue_today += event_tick_revenue;
+            site_state.grid_events.current_event_revenue += event_tick_revenue;
         }
     }
 

@@ -13,6 +13,7 @@ use crate::resources::{
     EnvironmentState, GameClock, GameState, MultiSiteManager, SiteConfig, SolarExportPolicy,
     TouPeriod,
 };
+use crate::systems::hacker::HACKER_OVERLOAD_POWER_DENSITY;
 
 /// Power dispatch system - allocates power to chargers within site constraints
 /// Now respects ServiceStrategy.target_power_density, EnvironmentState, and per-site grid capacity
@@ -75,8 +76,13 @@ pub fn power_dispatch_system(
     let mut total_requested_kva = 0.0_f32;
 
     // Calculate effective multipliers
-    // Higher power density = faster charging but more heat/stress on equipment
-    let power_density_mult = site_state.service_strategy.target_power_density;
+    // Higher power density = faster charging but more heat/stress on equipment.
+    // During a hacker overload the density is forced beyond the player's 200% cap.
+    let power_density_mult = if site_state.hacker_overload_remaining_secs > 0.0 {
+        HACKER_OVERLOAD_POWER_DENSITY
+    } else {
+        site_state.service_strategy.target_power_density
+    };
     let health_mult = environment.current_weather.charger_health_multiplier();
     // Cold temperatures reduce charging speed (battery chemistry limitation)
     let cold_mult = site_state
@@ -204,22 +210,22 @@ pub fn power_dispatch_system(
                     bess_contribution_kw = -available_charge;
                 }
             }
-            BessMode::SpotExport => {
-                // Spot Export: discharge to grid when spot price is high, charge when low.
+            BessMode::GridExport => {
+                // Grid Export: discharge to grid when a grid event makes export profitable,
+                // charge when no event is active and off-peak.
                 // Unlike other modes, discharge is NOT capped to local load -- excess
                 // flows to the grid as export_kw via GridImport::calculate().
-                let spot_price = site_state.spot_market.current_price_per_kwh;
+                let export_mult = site_state.grid_events.current_export_multiplier();
 
-                const SPOT_HIGH_THRESHOLD: f32 = 0.30;
-                const SPOT_LOW_THRESHOLD: f32 = 0.06;
+                const EXPORT_MULT_DISCHARGE_THRESHOLD: f32 = 2.0;
 
-                if spot_price >= SPOT_HIGH_THRESHOLD
+                if export_mult >= EXPORT_MULT_DISCHARGE_THRESHOLD
                     && site_state.bess_state.soc_kwh > 0.0
                     && available_discharge > 0.0
                 {
-                    // Discharge at max rate -- uncapped so surplus goes to grid
                     bess_contribution_kw = available_discharge;
-                } else if spot_price < SPOT_LOW_THRESHOLD
+                } else if export_mult <= 1.0
+                    && tou_period == TouPeriod::OffPeak
                     && site_state.bess_state.soc_percent() < 95.0
                     && available_charge > 0.0
                 {

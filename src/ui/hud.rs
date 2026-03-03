@@ -46,7 +46,7 @@ pub struct EffectivePriceBadge;
 pub struct PowerTotalLabel;
 
 #[derive(Component)]
-pub struct SpotPriceBadge;
+pub struct GridEventBadge;
 
 #[derive(Component)]
 pub struct ReputationLabel;
@@ -322,7 +322,7 @@ pub fn setup_hud(
                             ..default()
                         },
                         TextColor(Color::srgb(0.4, 0.8, 1.0)),
-                        SpotPriceBadge,
+                        GridEventBadge,
                     ));
                 });
 
@@ -741,12 +741,12 @@ pub fn update_effective_price_badge(
     }
 }
 
-/// Update the wholesale spot price badge in the HUD top bar.
+/// Update the grid event badge in the HUD top bar.
 /// Only visible when the viewed site has `challenge_level >= 2`.
-pub fn update_spot_price_badge(
+pub fn update_grid_event_badge(
     multi_site: Res<crate::resources::MultiSiteManager>,
-    mut badge_q: Query<(&mut Text, &mut TextColor, &ChildOf), With<SpotPriceBadge>>,
-    mut parent_q: Query<&mut Node, Without<SpotPriceBadge>>,
+    mut badge_q: Query<(&mut Text, &mut TextColor, &ChildOf), With<GridEventBadge>>,
+    mut parent_q: Query<&mut Node, Without<GridEventBadge>>,
 ) {
     let Some(site) = multi_site.active_site() else {
         return;
@@ -763,24 +763,24 @@ pub fn update_spot_price_badge(
             continue;
         }
 
-        let price = site.spot_market.current_price_per_kwh;
+        if let Some(event) = site.grid_events.active_event {
+            **text = format!(
+                "{} Export {:.1}x | Import {:.1}x",
+                event.name(),
+                event.export_multiplier(),
+                event.import_multiplier()
+            );
 
-        // Show grid event name when active, otherwise "SPOT"
-        let label = if let Some(ref event) = site.spot_market.grid_event {
-            event.name
+            *text_color = if event.export_multiplier() >= 5.0 {
+                TextColor(Color::srgb(1.0, 0.2, 0.2))
+            } else if event.export_multiplier() >= 3.0 {
+                TextColor(Color::srgb(1.0, 0.8, 0.2))
+            } else {
+                TextColor(Color::srgb(0.4, 0.8, 1.0))
+            };
         } else {
-            "SPOT"
-        };
-
-        **text = format!("{label} ${price:.2}");
-
-        // Color-code: green = low, yellow = moderate, red = spike
-        *text_color = if price >= 0.50 {
-            TextColor(Color::srgb(1.0, 0.2, 0.2)) // Red - price spike
-        } else if price >= 0.15 {
-            TextColor(Color::srgb(1.0, 0.8, 0.2)) // Yellow - elevated
-        } else {
-            TextColor(Color::srgb(0.4, 0.8, 1.0)) // Blue - normal
+            **text = "GRID OK".to_string();
+            *text_color = TextColor(Color::srgb(0.4, 0.8, 1.0));
         };
     }
 }

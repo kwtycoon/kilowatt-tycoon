@@ -819,6 +819,49 @@ fn print_traffic_debug(
         let _ = writeln!(out);
     }
 
+    // Grid event debug
+    let _ = writeln!(out, "========== GRID EVENT DEBUG ==========\n");
+    let _ = writeln!(
+        out,
+        "viewed_site_id={:?} | game_time={:.0} | is_paused={}\n",
+        multi_site.viewed_site_id,
+        game_clock.game_time,
+        game_clock.is_paused()
+    );
+    for (site_id, site_state) in multi_site.owned_sites.iter() {
+        let ge = &site_state.grid_events;
+        let active = ge
+            .active_event
+            .map(|e| {
+                format!(
+                    "{} (import {:.1}x, export {:.1}x)",
+                    e.name(),
+                    e.import_multiplier(),
+                    e.export_multiplier()
+                )
+            })
+            .unwrap_or_else(|| "NONE".to_string());
+        let _ = writeln!(
+            out,
+            "Site {:?} (level {}): active_event={} | event_end_time={:.0} | last_roll_time={:.0}",
+            site_id, site_state.challenge_level, active, ge.event_end_time, ge.last_event_roll_time
+        );
+        let _ = writeln!(
+            out,
+            "  game_time={:.0} | hours_since_roll={:.2} | event_revenue_today=${:.2} | surcharge_today=${:.2}",
+            game_clock.game_time,
+            (game_clock.game_time - ge.last_event_roll_time) / 3600.0,
+            ge.event_revenue_today,
+            ge.event_import_surcharge_today
+        );
+        let best = ge
+            .best_event_type
+            .map(|e| format!("{} ({:.1}x)", e.name(), e.export_multiplier()))
+            .unwrap_or_else(|| "NONE".to_string());
+        let _ = writeln!(out, "  best_today={best}");
+        let _ = writeln!(out);
+    }
+
     let _ = writeln!(out, "========== END TRAFFIC DEBUG ==========\n");
 
     // Print to stdout

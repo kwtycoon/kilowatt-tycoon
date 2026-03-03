@@ -614,18 +614,6 @@ impl WeatherType {
             WeatherType::Cold => 0.85,    // Reduced travel
         }
     }
-
-    /// Wholesale spot price multiplier driven by weather-induced grid stress.
-    /// Heatwaves and cold snaps drive up wholesale electricity prices.
-    pub fn spot_price_multiplier(&self) -> f32 {
-        match self {
-            WeatherType::Sunny => 1.0,
-            WeatherType::Overcast => 0.9,
-            WeatherType::Rainy => 0.7,
-            WeatherType::Heatwave => 2.5, // Everyone running AC
-            WeatherType::Cold => 1.8,     // Heating load spike
-        }
-    }
 }
 
 /// Environment state - weather and news events

@@ -6,6 +6,7 @@
 
 use bevy::prelude::*;
 use rand::Rng;
+use rand::prelude::IndexedRandom;
 
 use crate::audio::{PlaySfx, SfxKind};
 use crate::components::hacker::{
@@ -15,7 +16,7 @@ use crate::components::site::BelongsToSite;
 use crate::events::{HackerAttackEvent, HackerDetectedEvent};
 use crate::resources::{
     GRID_HEIGHT, GRID_OFFSET_X, GRID_OFFSET_Y, GRID_WIDTH, GameClock, ImageAssets,
-    MultiSiteManager, TILE_SIZE,
+    MultiSiteManager, SiteGrid, StructureSize, TILE_SIZE,
 };
 use crate::systems::sprite::{HackerLootBubble, HackingGlitchVfx};
 
@@ -37,13 +38,19 @@ const HACK_DURATION_MAX: f32 = 2700.0;
 const ARRIVAL_THRESHOLD: f32 = 8.0;
 
 /// Duration of the overload effect in game seconds (30 minutes).
+/// Intentionally longer than the price slash so the boosted power density has
+/// enough drama-time to heat the transformer to ignition.
 const OVERLOAD_EFFECT_DURATION: f32 = 1800.0;
 
-/// Duration of the price slash effect in game seconds (30 minutes, same as overload).
-const PRICE_SLASH_EFFECT_DURATION: f32 = 1800.0;
+/// Duration of the price slash effect in game seconds (15 minutes).
+const PRICE_SLASH_EFFECT_DURATION: f32 = 900.0;
 
 /// Slashed price in $/kWh.
 const HACKED_PRICE: f32 = 0.01;
+
+/// Power density override during a TransformerOverload hack.
+/// The player slider caps at 2.0 (200%); the hacker pushes beyond that.
+pub const HACKER_OVERLOAD_POWER_DENSITY: f32 = 2.5;
 
 /// Agentic SOC auto-terminate threshold in game seconds (5 minutes).
 const AGENTIC_SOC_TERMINATE_SECS: f32 = 300.0;
@@ -59,12 +66,14 @@ pub struct DailyHackerTracker {
 //  helpers
 // ─────────────────────────────────────────────────────
 
-fn random_edge_position(rng: &mut impl Rng, grid_w: i32, grid_h: i32) -> Vec2 {
+fn random_edge_position(rng: &mut impl Rng, grid_w: i32, grid_h: i32, world_offset: Vec2) -> Vec2 {
     let margin = 40.0;
-    let grid_min_x = GRID_OFFSET_X - margin;
-    let grid_max_x = GRID_OFFSET_X + (grid_w as f32) * TILE_SIZE + margin;
-    let grid_min_y = GRID_OFFSET_Y - margin;
-    let grid_max_y = GRID_OFFSET_Y + (grid_h as f32) * TILE_SIZE + margin;
+    let base_x = world_offset.x + GRID_OFFSET_X;
+    let base_y = world_offset.y + GRID_OFFSET_Y;
+    let grid_min_x = base_x - margin;
+    let grid_max_x = base_x + (grid_w as f32) * TILE_SIZE + margin;
+    let grid_min_y = base_y - margin;
+    let grid_max_y = base_y + (grid_h as f32) * TILE_SIZE + margin;
 
     match rng.random_range(0..4) {
         0 => Vec2::new(rng.random_range(grid_min_x..grid_max_x), grid_max_y),
@@ -74,11 +83,31 @@ fn random_edge_position(rng: &mut impl Rng, grid_w: i32, grid_h: i32) -> Vec2 {
     }
 }
 
-/// Pick a target position: center of the grid (near transformer area).
-fn site_center_position(grid_w: i32, grid_h: i32) -> Vec2 {
+/// Pick a target position on actual infrastructure based on attack type.
+fn pick_infrastructure_target(
+    grid: &SiteGrid,
+    attack_type: HackerAttackType,
+    world_offset: Vec2,
+    rng: &mut impl Rng,
+) -> Vec2 {
+    match attack_type {
+        HackerAttackType::TransformerOverload => {
+            if let Some(t) = grid.transformers.choose(rng) {
+                return SiteGrid::multi_tile_center(t.pos.0, t.pos.1, StructureSize::TwoByTwo)
+                    + world_offset;
+            }
+        }
+        HackerAttackType::PriceSlash => {
+            let bays = grid.get_charger_bays();
+            if let Some(&(x, y, _)) = bays.choose(rng) {
+                return SiteGrid::grid_to_world(x, y) + world_offset;
+            }
+        }
+    }
+    // Fallback: grid center
     Vec2::new(
-        GRID_OFFSET_X + (grid_w as f32) * TILE_SIZE * 0.5,
-        GRID_OFFSET_Y + (grid_h as f32) * TILE_SIZE * 0.5,
+        world_offset.x + GRID_OFFSET_X + (grid.width as f32) * TILE_SIZE * 0.5,
+        world_offset.y + GRID_OFFSET_Y + (grid.height as f32) * TILE_SIZE * 0.5,
     )
 }
 
@@ -89,8 +118,8 @@ fn site_center_position(grid_w: i32, grid_h: i32) -> Vec2 {
 fn spawn_hacker_entity(
     commands: &mut Commands,
     site_id: crate::resources::multi_site::SiteId,
-    grid_width: i32,
-    grid_height: i32,
+    grid: &SiteGrid,
+    world_offset: Vec2,
     image_assets: &ImageAssets,
     images: &Assets<Image>,
     tracker: &mut DailyHackerTracker,
@@ -122,8 +151,8 @@ fn spawn_hacker_entity(
     };
 
     let hack_duration = rng.random_range(HACK_DURATION_MIN..=HACK_DURATION_MAX);
-    let spawn_pos = random_edge_position(&mut rng, grid_width, grid_height);
-    let target_pos = site_center_position(grid_width, grid_height);
+    let spawn_pos = random_edge_position(&mut rng, grid.width, grid.height, world_offset);
+    let target_pos = pick_infrastructure_target(grid, attack_type, world_offset, &mut rng);
 
     commands.spawn((
         Hacker {
@@ -227,8 +256,8 @@ pub fn hacker_spawn_system(
     spawn_hacker_entity(
         &mut commands,
         site_id,
-        site_state.grid.width,
-        site_state.grid.height,
+        &site_state.grid,
+        site_state.world_offset(),
         &image_assets,
         &images,
         &mut tracker,
@@ -242,41 +271,49 @@ pub fn hacker_spawn_system(
 pub fn debug_spawn_hacker(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
-    existing_hackers: Query<&Hacker>,
+    existing_hackers: Query<Entity, With<Hacker>>,
     multi_site: Res<MultiSiteManager>,
     image_assets: Res<ImageAssets>,
     images: Res<Assets<Image>>,
     mut tracker: ResMut<DailyHackerTracker>,
+    glitch_vfx: Query<Entity, With<crate::systems::sprite::HackingGlitchVfx>>,
+    loot_bubbles: Query<Entity, With<crate::systems::sprite::HackerLootBubble>>,
 ) {
-    if !keyboard.just_pressed(KeyCode::KeyH) {
-        return;
-    }
-    if !keyboard.pressed(KeyCode::ShiftLeft) && !keyboard.pressed(KeyCode::ShiftRight) {
-        return;
-    }
-
-    if existing_hackers.iter().next().is_some() {
+    let shift_held = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
+    if !shift_held || !keyboard.just_pressed(KeyCode::KeyH) {
         return;
     }
 
     let Some(viewed_id) = multi_site.viewed_site_id else {
+        info!("Debug: no viewed site, cannot spawn hacker");
         return;
     };
     let Some(site_state) = multi_site.owned_sites.get(&viewed_id) else {
+        info!("Debug: viewed site not in owned_sites");
         return;
     };
+
+    for entity in &existing_hackers {
+        commands.entity(entity).try_despawn();
+    }
+    for entity in &glitch_vfx {
+        commands.entity(entity).try_despawn();
+    }
+    for entity in &loot_bubbles {
+        commands.entity(entity).try_despawn();
+    }
 
     spawn_hacker_entity(
         &mut commands,
         site_state.id,
-        site_state.grid.width,
-        site_state.grid.height,
+        &site_state.grid,
+        site_state.world_offset(),
         &image_assets,
         &images,
         &mut tracker,
     );
 
-    info!("Debug: force-spawned hacker via Shift+H");
+    info!("Debug: force-spawned hacker via Shift+H (cleared existing)");
 }
 
 // ─────────────────────────────────────────────────────
@@ -426,7 +463,7 @@ pub fn hacker_attack_system(
         return;
     }
 
-    let delta = time.delta_secs() * game_clock.speed.hack_multiplier();
+    let delta = time.delta_secs() * game_clock.speed.multiplier();
     let mut rng = rand::rng();
 
     for (entity, mut hacker, belongs) in hackers.iter_mut() {
@@ -552,11 +589,11 @@ pub fn hacker_attack_system(
         hacker.phase = HackerPhase::Fleeing;
         hacker.anim_timer = 0.0;
 
-        let (gw, gh) = multi_site
+        let (gw, gh, wo) = multi_site
             .get_site(belongs.site_id)
-            .map(|s| (s.grid.width, s.grid.height))
-            .unwrap_or((GRID_WIDTH, GRID_HEIGHT));
-        let exit_pos = random_edge_position(&mut rng, gw, gh);
+            .map(|s| (s.grid.width, s.grid.height, s.world_offset()))
+            .unwrap_or((GRID_WIDTH, GRID_HEIGHT, Vec2::ZERO));
+        let exit_pos = random_edge_position(&mut rng, gw, gh, wo);
         hacker.move_target = exit_pos;
 
         let walking_image = match hacker.variant {

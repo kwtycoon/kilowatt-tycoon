@@ -1191,7 +1191,7 @@ pub fn update_slider_fill_widths(
                 match site_state.bess_state.mode {
                     BessMode::PeakShaving => 0.0,
                     BessMode::TouArbitrage => 25.0,
-                    BessMode::SpotExport => 50.0,
+                    BessMode::GridExport => 50.0,
                     BessMode::Backup => 75.0,
                     BessMode::Manual => 100.0,
                 }

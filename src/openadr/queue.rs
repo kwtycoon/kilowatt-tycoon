@@ -65,13 +65,13 @@ pub struct OpenAdrSiteState {
     pub bess_discharging: bool,
     /// Last emitted customer-facing price (to detect changes).
     pub last_customer_price: Option<f32>,
-    /// Whether a spot-market grid event signal is currently active.
-    pub spot_grid_event_active: bool,
-    /// Whether a grid alert event has been emitted for the current spot grid event.
+    /// Whether a grid event signal is currently active.
+    pub grid_event_active: bool,
+    /// Whether a grid alert event has been emitted for the current grid event.
     pub grid_alert_emitted: bool,
     /// Last emitted carbon credit rate (quantised, to detect changes).
     pub last_carbon_rate: Option<f32>,
-    /// Whether BESS is actively exporting to the grid via SpotExport mode.
+    /// Whether BESS is actively exporting to the grid via GridExport mode.
     pub bess_grid_export_active: bool,
     /// Whether a transformer fire/overload alert is currently active.
     pub fire_alert_active: bool,
@@ -97,7 +97,7 @@ impl Default for OpenAdrSiteState {
             export_active: false,
             bess_discharging: false,
             last_customer_price: None,
-            spot_grid_event_active: false,
+            grid_event_active: false,
             grid_alert_emitted: false,
             bess_grid_export_active: false,
             last_carbon_rate: None,

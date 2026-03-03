@@ -79,16 +79,18 @@ fn grid_operating_state(demand_event_active: bool, fire_active: bool) -> Operati
     }
 }
 
-/// Map a grid event name to the appropriate OpenADR 3.0 alert type.
-fn grid_event_to_alert_type(event_name: &str) -> EventType {
-    match event_name {
-        "Record Demand" | "Generator Trip" | "Unexpected Plant Outage" => {
-            EventType::AlertGridEmergency
+/// Map a grid event type to the appropriate OpenADR 3.0 alert type.
+fn grid_event_to_alert_type(event: crate::resources::GridEventType) -> EventType {
+    use crate::resources::GridEventType;
+    match event {
+        GridEventType::RecordDemand
+        | GridEventType::GeneratorTrip
+        | GridEventType::UnexpectedPlantOutage => EventType::AlertGridEmergency,
+        GridEventType::TransmissionConstraint | GridEventType::GridCongestion => {
+            EventType::AlertPossibleOutage
         }
-        "Transmission Constraint" | "Grid Congestion" => EventType::AlertPossibleOutage,
-        "Heat Emergency" => EventType::AlertOther,
-        "Renewable Shortfall" => EventType::AlertFlexAlert,
-        _ => EventType::AlertOther,
+        GridEventType::HeatEmergency => EventType::AlertOther,
+        GridEventType::RenewableShortfall => EventType::AlertFlexAlert,
     }
 }
 
@@ -309,13 +311,10 @@ pub fn openadr_solar_telemetry_system(
         let ts_iso = timestamp.to_rfc3339();
         let ven_name = format!("solar-site-{}", site_id.0);
 
-        let export_rate = if site_state.challenge_level >= 2 {
-            site_state.spot_market.current_price_per_kwh
-        } else {
-            site_state
-                .site_energy_config
-                .current_export_rate(game_clock.game_time)
-        };
+        let base_export_rate = site_state
+            .site_energy_config
+            .current_export_rate(game_clock.game_time);
+        let export_rate = base_export_rate * site_state.grid_events.current_export_multiplier();
 
         let report = ReportContent {
             program_id: program_id.clone(),
@@ -501,13 +500,10 @@ pub fn openadr_grid_telemetry_system(
 
         let op_state = grid_operating_state(dr_active, fire_active);
 
-        let export_rate = if site_state.challenge_level >= 2 {
-            site_state.spot_market.current_price_per_kwh
-        } else {
-            site_state
-                .site_energy_config
-                .current_export_rate(game_clock.game_time)
-        };
+        let base_export_rate = site_state
+            .site_energy_config
+            .current_export_rate(game_clock.game_time);
+        let export_rate = base_export_rate * site_state.grid_events.current_export_multiplier();
 
         let report = ReportContent {
             program_id: program_id.clone(),
@@ -627,16 +623,14 @@ pub fn openadr_event_system(
                     json,
                 );
 
-                let export_rate = if site_state.challenge_level >= 2 {
-                    site_state.spot_market.current_price_per_kwh
-                } else {
-                    site_state
-                        .site_energy_config
-                        .current_export_rate(game_clock.game_time)
-                };
+                let base_export_rate = site_state
+                    .site_energy_config
+                    .current_export_rate(game_clock.game_time);
+                let export_rate =
+                    base_export_rate * site_state.grid_events.current_export_multiplier();
 
-                let export_label = if site_state.challenge_level >= 2 {
-                    format!("Spot-Export-{}", current_tou.display_name())
+                let export_label = if site_state.grid_events.active_event.is_some() {
+                    format!("GridEvent-Export-{}", current_tou.display_name())
                 } else {
                     format!("TOU-Export-{}", current_tou.display_name())
                 };
@@ -681,17 +675,22 @@ pub fn openadr_event_system(
 
         // Spot market grid event start/end signals (level 2+ only)
         if site_state.challenge_level >= 2 {
-            let has_event = site_state.spot_market.grid_event.is_some();
+            let has_event = site_state.grid_events.active_event.is_some();
             let der_state = queue.get_or_create(*site_id);
-            let was_active = der_state.spot_grid_event_active;
+            let was_active = der_state.grid_event_active;
 
             if has_event && !was_active {
-                der_state.spot_grid_event_active = true;
+                der_state.grid_event_active = true;
 
-                if let Some(ref grid_event) = site_state.spot_market.grid_event {
+                if let Some(ref grid_event) = site_state.grid_events.active_event {
+                    let base_export_rate = site_state
+                        .site_energy_config
+                        .current_export_rate(game_clock.game_time);
+                    let effective_export_rate = base_export_rate * grid_event.export_multiplier();
+
                     let event_content = EventContent {
                         program_id: program_id.clone(),
-                        event_name: Some(format!("Grid-Event: {}", grid_event.name)),
+                        event_name: Some(format!("Grid-Event: {}", grid_event.name())),
                         priority: Priority::new(1),
                         targets: site_group_target(site_id.0),
                         report_descriptors: None,
@@ -710,9 +709,7 @@ pub fn openadr_event_system(
                             interval_period: None,
                             payloads: vec![EventValuesMap {
                                 value_type: EventType::ExportPrice,
-                                values: vec![ovalue_f32(
-                                    site_state.spot_market.current_price_per_kwh,
-                                )],
+                                values: vec![ovalue_f32(effective_export_rate)],
                             }],
                         }],
                     };
@@ -728,7 +725,7 @@ pub fn openadr_event_system(
                 }
             } else if !has_event && was_active {
                 let der_state = queue.get_or_create(*site_id);
-                der_state.spot_grid_event_active = false;
+                der_state.grid_event_active = false;
                 der_state.grid_alert_emitted = false;
             }
         }
@@ -1238,7 +1235,7 @@ pub fn openadr_grid_alert_system(
             continue;
         }
 
-        let grid_event = match &site_state.spot_market.grid_event {
+        let grid_event = match &site_state.grid_events.active_event {
             Some(ge) => ge,
             None => continue,
         };
@@ -1253,11 +1250,11 @@ pub fn openadr_grid_alert_system(
         let ts_iso = timestamp.to_rfc3339();
         let vtn_name = format!("grid-site-{}", site_id.0);
 
-        let alert_type = grid_event_to_alert_type(grid_event.name);
+        let alert_type = grid_event_to_alert_type(*grid_event);
 
         let event_content = EventContent {
             program_id: program_id.clone(),
-            event_name: Some(format!("Grid-Alert: {}", grid_event.name)),
+            event_name: Some(format!("Grid-Alert: {}", grid_event.name())),
             priority: Priority::new(1),
             targets: site_group_target(site_id.0),
             report_descriptors: None,
@@ -1276,7 +1273,7 @@ pub fn openadr_grid_alert_system(
                 interval_period: None,
                 payloads: vec![EventValuesMap {
                     value_type: alert_type,
-                    values: vec![ovalue_f32(grid_event.price_multiplier)],
+                    values: vec![ovalue_f32(grid_event.export_multiplier())],
                 }],
             }],
         };
@@ -1456,12 +1453,12 @@ pub fn openadr_transformer_fire_system(
 }
 
 // ─────────────────────────────────────────────────────
-//  11b. BESS Spot Export event system
+//  11b. BESS Grid Export event system
 // ─────────────────────────────────────────────────────
 
-/// Emit an `ExportCapacityAvailable` event when BESS SpotExport mode begins
+/// Emit an `ExportCapacityAvailable` event when BESS GridExport mode begins
 /// discharging to the grid, and clear when it stops.
-pub fn openadr_bess_spot_export_system(
+pub fn openadr_bess_grid_export_system(
     multi_site: Res<MultiSiteManager>,
     mut queue: ResMut<OpenAdrMessageQueue>,
     game_clock: Res<GameClock>,
@@ -1482,13 +1479,13 @@ pub fn openadr_bess_spot_export_system(
         }
 
         use crate::resources::site_energy::BessMode;
-        let is_spot_exporting = site_state.bess_state.mode == BessMode::SpotExport
+        let is_grid_exporting = site_state.bess_state.mode == BessMode::GridExport
             && site_state.bess_state.current_power_kw > 0.0
             && site_state.grid_import.export_kw > 0.1;
 
         let der_state = queue.get_or_create(*site_id);
 
-        if is_spot_exporting && !der_state.bess_grid_export_active {
+        if is_grid_exporting && !der_state.bess_grid_export_active {
             der_state.bess_grid_export_active = true;
 
             let timestamp =
@@ -1496,9 +1493,15 @@ pub fn openadr_bess_spot_export_system(
             let ts_iso = timestamp.to_rfc3339();
             let ven_name = format!("bess-site-{}", site_id.0);
 
+            let base_export_rate = site_state
+                .site_energy_config
+                .current_export_rate(game_clock.game_time);
+            let effective_export_rate =
+                base_export_rate * site_state.grid_events.current_export_multiplier();
+
             let event_content = EventContent {
                 program_id: program_id.clone(),
-                event_name: Some("BESS Spot Export Active".to_string()),
+                event_name: Some("BESS Grid Export Active".to_string()),
                 priority: Priority::new(3),
                 targets: resource_target(&ven_name, "bess-unit"),
                 report_descriptors: None,
@@ -1522,15 +1525,15 @@ pub fn openadr_bess_spot_export_system(
                         },
                         EventValuesMap {
                             value_type: EventType::ExportPrice,
-                            values: vec![ovalue_f32(site_state.spot_market.current_price_per_kwh)],
+                            values: vec![ovalue_f32(effective_export_rate)],
                         },
                     ],
                 }],
             };
 
             let json = serialize_openadr(&event_content);
-            queue.push_log(ven_name, ts_iso, "Event", "BESS Spot Export", json);
-        } else if !is_spot_exporting && der_state.bess_grid_export_active {
+            queue.push_log(ven_name, ts_iso, "Event", "BESS Grid Export", json);
+        } else if !is_grid_exporting && der_state.bess_grid_export_active {
             der_state.bess_grid_export_active = false;
         }
     }

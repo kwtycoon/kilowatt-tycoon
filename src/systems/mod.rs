@@ -361,7 +361,7 @@ impl Plugin for SystemsPlugin {
         app.add_systems(
             Update,
             (
-                spot_market_system,
+                grid_event_system,
                 utility_billing_system,
                 demand_warnings::monitor_demand_warnings,
             )
