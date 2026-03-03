@@ -379,69 +379,88 @@
         </section>
 
         <section id="about" class="py-20 px-8">
-            <div class="max-w-4xl mx-auto text-center">
+            <div class="max-w-7xl mx-auto text-center">
                 <h2 class="font-orbitron font-bold text-5xl mb-12 bg-gradient-to-r from-[#DCF251] to-orange-500 bg-clip-text text-transparent">Simulation Depth</h2>
                 
-                <div class="space-y-6 mb-12">
-                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
+                <!-- 3 cols × 5 rows (1 header + 4 content) on lg+; 1 column on mobile/tablet (DOM order = Power col, then Events, then Tech) -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 mb-12 text-left">
+                    <!-- Power & Charging (col 1) -->
+                    <h3 class="font-orbitron font-bold text-xl text-blue-400 border-b border-slate-600 pb-2 lg:col-start-1 lg:row-start-1">Power & Charging</h3>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700 lg:col-start-1 lg:row-start-2 h-full">
                         <div class="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center flex-shrink-0">
                             <i class="fas fa-bolt text-blue-400 text-xl"></i>
                         </div>
-                        <span class="text-lg text-gray-300 text-left">Real-time power and thermal simulation</span>
+                        <span class="text-lg text-gray-300">Real-time power and thermal simulation</span>
                     </div>
-                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700 lg:col-start-1 lg:row-start-3 h-full">
                         <div class="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
                             <i class="fas fa-dollar-sign text-green-400 text-xl"></i>
                         </div>
-                        <span class="text-lg text-gray-300 text-left">Dynamic pricing with time-of-use rates — for both your utility bill and your charger pricing</span>
+                        <span class="text-lg text-gray-300">Dynamic pricing with time-of-use rates — for both your utility bill and your charger pricing</span>
                     </div>
-                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
-                        <div class="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-                            <i class="fas fa-shield-alt text-red-400 text-xl"></i>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700 lg:col-start-1 lg:row-start-4 h-full">
+                        <div class="w-12 h-12 bg-slate-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-chart-line text-slate-300 text-xl"></i>
                         </div>
-                        <span class="text-lg text-gray-300 text-left">Cable theft, vandalism, and site security events</span>
+                        <span class="text-lg text-gray-300">Demand charges, peak shaving, and transformer capacity limits</span>
                     </div>
-                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
-                        <div class="w-12 h-12 bg-cyan-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-                            <i class="fas fa-cloud-sun text-cyan-400 text-xl"></i>
-                        </div>
-                        <span class="text-lg text-gray-300 text-left">Weather and seasonal effects on driver demand</span>
-                    </div>
-                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
-                        <div class="w-12 h-12 bg-pink-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-                            <i class="fas fa-heartbeat text-pink-400 text-xl"></i>
-                        </div>
-                        <span class="text-lg text-gray-300 text-left">Equipment degradation and lifecycle tracking</span>
-                    </div>
-                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
-                        <div class="w-12 h-12 bg-indigo-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-                            <i class="fas fa-tv text-indigo-400 text-xl"></i>
-                        </div>
-                        <span class="text-lg text-gray-300 text-left">Ad-screen revenue optimization</span>
-                    </div>
-                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
-                        <div class="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-                            <i class="fas fa-map-marker-alt text-green-400 text-xl"></i>
-                        </div>
-                        <span class="text-lg text-gray-300 text-left">3 unique site types, each with different constraints</span>
-                    </div>
-                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
-                        <div class="w-12 h-12 bg-orange-500/20 rounded-full flex items-center justify-center flex-shrink-0">
-                            <i class="fas fa-file-export text-orange-400 text-xl"></i>
-                        </div>
-                        <span class="text-lg text-gray-300 text-left">OCPP, OpenADR, and OCPI protocol exports — see what real charging data looks like and use it to test your own tools</span>
-                    </div>
-                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700 lg:col-start-1 lg:row-start-5 h-full">
                         <div class="w-12 h-12 bg-yellow-500/20 rounded-full flex items-center justify-center flex-shrink-0">
                             <i class="fas fa-solar-panel text-yellow-400 text-xl"></i>
                         </div>
-                        <span class="text-lg text-gray-300 text-left">Sell excess solar generation back to the grid via net metering</span>
+                        <span class="text-lg text-gray-300">Sell excess solar generation back to the grid via net metering</span>
                     </div>
-                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700">
+                    <!-- Events (col 2) -->
+                    <h3 class="font-orbitron font-bold text-xl text-red-400 border-b border-slate-600 pb-2 lg:col-start-2 lg:row-start-1">Events</h3>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700 lg:col-start-2 lg:row-start-2 h-full">
+                        <div class="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-shield-alt text-red-400 text-xl"></i>
+                        </div>
+                        <span class="text-lg text-gray-300">Cable theft, vandalism, and site security events</span>
+                    </div>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700 lg:col-start-2 lg:row-start-3 h-full">
+                        <div class="w-12 h-12 bg-amber-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-user-secret text-amber-400 text-xl"></i>
+                        </div>
+                        <span class="text-lg text-gray-300">Hackers targeting charger networks and payment systems</span>
+                    </div>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700 lg:col-start-2 lg:row-start-4 h-full">
+                        <div class="w-12 h-12 bg-cyan-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-cloud-sun text-cyan-400 text-xl"></i>
+                        </div>
+                        <span class="text-lg text-gray-300">Weather and seasonal effects on driver demand</span>
+                    </div>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700 lg:col-start-2 lg:row-start-5 h-full">
+                        <div class="w-12 h-12 bg-pink-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-heartbeat text-pink-400 text-xl"></i>
+                        </div>
+                        <span class="text-lg text-gray-300">Equipment degradation and lifecycle tracking</span>
+                    </div>
+                    <!-- Tech & Proto (col 3) -->
+                    <h3 class="font-orbitron font-bold text-xl text-orange-400 border-b border-slate-600 pb-2 lg:col-start-3 lg:row-start-1">Tech & Proto</h3>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700 lg:col-start-3 lg:row-start-2 h-full">
+                        <div class="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-map-marker-alt text-green-400 text-xl"></i>
+                        </div>
+                        <span class="text-lg text-gray-300">4 unique site types, each with different constraints</span>
+                    </div>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700 lg:col-start-3 lg:row-start-3 h-full">
+                        <div class="w-12 h-12 bg-orange-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-file-export text-orange-400 text-xl"></i>
+                        </div>
+                        <span class="text-lg text-gray-300">OCPP, OpenADR, and OCPI protocol exports — see what real charging data looks like and use it to test your own tools</span>
+                    </div>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700 lg:col-start-3 lg:row-start-4 h-full">
                         <div class="w-12 h-12 bg-teal-500/20 rounded-full flex items-center justify-center flex-shrink-0">
                             <i class="fas fa-book text-teal-400 text-xl"></i>
                         </div>
-                        <span class="text-lg text-gray-300 text-left">Built-in double-entry accounting — every dollar is tracked from grid to ledger</span>
+                        <span class="text-lg text-gray-300">Built-in double-entry accounting — every dollar is tracked from grid to ledger</span>
+                    </div>
+                    <div class="flex items-center space-x-4 bg-slate-800/30 p-6 rounded-xl border border-slate-700 lg:col-start-3 lg:row-start-5 h-full">
+                        <div class="w-12 h-12 bg-indigo-500/20 rounded-full flex items-center justify-center flex-shrink-0">
+                            <i class="fas fa-tv text-indigo-400 text-xl"></i>
+                        </div>
+                        <span class="text-lg text-gray-300">Ad-screen revenue optimization</span>
                     </div>
                 </div>
                 
