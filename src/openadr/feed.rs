@@ -38,12 +38,13 @@ pub fn openadr_feed_system(queue: Res<OpenAdrMessageQueue>, mut state: ResMut<Op
         return;
     }
 
-    let log_len = queue.event_log.len();
-    if log_len > state.last_pushed_index {
-        let new_entries = &queue.event_log[state.last_pushed_index..];
+    let absolute_len = queue.event_log.len() + queue.total_drained;
+    if absolute_len > state.last_pushed_index {
+        let start = state.last_pushed_index.saturating_sub(queue.total_drained);
+        let new_entries = &queue.event_log[start..];
         if let Ok(json) = serde_json::to_string(new_entries) {
             push_to_window("__kwtycoon_openadr_feed", &json);
         }
-        state.last_pushed_index = log_len;
+        state.last_pushed_index = absolute_len;
     }
 }

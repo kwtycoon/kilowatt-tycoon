@@ -15,6 +15,9 @@ use super::types::ChargePointStatus;
 /// Maximum messages buffered before oldest are dropped.
 const MAX_QUEUE_SIZE: usize = 2_000;
 
+/// Maximum log entries retained in memory.
+const MAX_EVENT_LOG: usize = 2_000;
+
 // ─────────────────────────────────────────────────────
 //  OCPP event log entry (kwwhat-compatible CSV shape)
 // ─────────────────────────────────────────────────────
@@ -81,6 +84,11 @@ pub struct OcppMessageQueue {
     /// Whether the in-memory event log is enabled.
     /// Defaults to `true` so the log always accumulates when the `ocpp` feature is compiled in.
     pub event_log_enabled: bool,
+
+    /// Total number of entries drained from the front of `event_log` over its
+    /// lifetime. Feed systems use this to convert their monotonic
+    /// `last_pushed_index` back to a relative Vec index after trimming.
+    pub total_drained: usize,
 }
 
 impl Default for OcppMessageQueue {
@@ -105,6 +113,7 @@ impl Default for OcppMessageQueue {
             disk_logging_enabled: false,
             event_log: Vec::new(),
             event_log_enabled: true,
+            total_drained: 0,
         }
     }
 }
@@ -171,6 +180,11 @@ impl OcppMessageQueue {
                 action: action.to_string(),
                 msg: json.clone(),
             });
+            if self.event_log.len() > MAX_EVENT_LOG {
+                let excess = self.event_log.len() - MAX_EVENT_LOG;
+                self.event_log.drain(..excess);
+                self.total_drained += excess;
+            }
         }
         self.push(charger_id, json);
     }

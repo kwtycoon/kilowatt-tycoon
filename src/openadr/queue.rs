@@ -133,6 +133,11 @@ pub struct OpenAdrMessageQueue {
     /// Whether the event log is enabled.
     pub event_log_enabled: bool,
 
+    /// Total number of entries drained from the front of `event_log` over its
+    /// lifetime. Feed systems use this to convert their monotonic
+    /// `last_pushed_index` back to a relative Vec index after trimming.
+    pub total_drained: usize,
+
     /// Whether the DR program definition has been emitted.
     pub program_registered: bool,
 
@@ -153,6 +158,7 @@ impl Default for OpenAdrMessageQueue {
             sim_start: midnight,
             event_log: Vec::new(),
             event_log_enabled: true,
+            total_drained: 0,
             program_registered: false,
             site_state: HashMap::new(),
         }
@@ -197,6 +203,7 @@ impl OpenAdrMessageQueue {
         if self.event_log.len() > MAX_EVENT_LOG {
             let excess = self.event_log.len() - MAX_EVENT_LOG;
             self.event_log.drain(..excess);
+            self.total_drained += excess;
         }
     }
 }
