@@ -37,13 +37,23 @@ pub fn try_execute_action(
         });
     }
 
-    // Roll for success
-    let success = success_roll < action.success_rate();
+    let is_reboot = matches!(action, RemoteAction::SoftReboot | RemoteAction::HardReboot);
+
+    // Guarantee success on 2nd reboot attempt (cap frustration at 2 tries)
+    let effective_rate = charger.effective_action_success(action);
+    let success = if is_reboot && charger.reboot_attempts >= 1 {
+        true
+    } else {
+        success_roll < effective_rate
+    };
 
     // Start cooldown regardless of success
     charger.start_cooldown(action);
 
     if !success {
+        if is_reboot {
+            charger.reboot_attempts += 1;
+        }
         return Ok(ActionExecutionResult {
             success: false,
             fault_resolved: false,
@@ -51,7 +61,7 @@ pub fn try_execute_action(
                 "{:?} failed (rolled {:.0}%, needed < {:.0}%)",
                 action,
                 success_roll * 100.0,
-                action.success_rate() * 100.0
+                effective_rate * 100.0
             ),
         });
     }
@@ -75,9 +85,9 @@ fn execute_reboot(charger: &mut Charger, action: RemoteAction) -> (bool, String)
     if let Some(fault) = charger.current_fault {
         match fault {
             FaultType::CommunicationError | FaultType::FirmwareFault | FaultType::PaymentError => {
-                // Clearing current_fault causes state() to return Available
                 charger.current_fault = None;
                 charger.fault_discovered = false;
+                charger.reboot_attempts = 0;
                 (true, format!("{action:?} succeeded, fault cleared"))
             }
             FaultType::CableDamage | FaultType::GroundFault | FaultType::CableTheft => (

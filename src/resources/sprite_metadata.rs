@@ -95,6 +95,7 @@ pub fn vehicle_world_size(vehicle_type: crate::components::driver::VehicleType) 
         VehicleType::Tractor => SpriteSize::width(50.0),
         VehicleType::Scooter => SpriteSize::width(22.0),
         VehicleType::Motorcycle => SpriteSize::width(26.0),
+        VehicleType::Firetruck => SpriteSize::width(60.0),
     }
 }
 

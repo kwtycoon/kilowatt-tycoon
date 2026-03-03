@@ -710,3 +710,53 @@ fn test_all_site_archetypes_can_be_loaded() {
         "Should have 3 owned sites after renting all"
     );
 }
+
+#[test]
+fn test_dispatch_limit_uses_grid_capacity_not_transformer() {
+    let mut app = create_multi_site_test_app();
+
+    let site_a = rent_test_site(&mut app, 0); // 1500 kVA grid
+
+    let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
+    let state = multi_site.get_site_mut(site_a).unwrap();
+
+    // Without transformer: dispatch limit = grid capacity
+    assert_eq!(
+        state.dispatch_limit_kva(),
+        1500.0,
+        "dispatch_limit_kva should equal grid capacity without transformer"
+    );
+
+    // Place a 100 kVA transformer
+    state.grid.unlock_tile(1, 1);
+    state.grid.unlock_tile(2, 1);
+    state.grid.unlock_tile(1, 2);
+    state.grid.unlock_tile(2, 2);
+    state
+        .grid
+        .set_tile_content(1, 1, kilowatt_tycoon::resources::TileContent::Grass);
+    state
+        .grid
+        .set_tile_content(2, 1, kilowatt_tycoon::resources::TileContent::Grass);
+    state
+        .grid
+        .set_tile_content(1, 2, kilowatt_tycoon::resources::TileContent::Grass);
+    state
+        .grid
+        .set_tile_content(2, 2, kilowatt_tycoon::resources::TileContent::Grass);
+    state.grid.place_transformer(1, 1, 100.0).unwrap();
+
+    // effective_capacity caps at transformer: min(1500, 100) = 100
+    assert_eq!(
+        state.effective_capacity_kva(),
+        100.0,
+        "effective_capacity_kva should cap at transformer rating"
+    );
+
+    // dispatch_limit should still use grid capacity (transformer overload is thermal)
+    assert_eq!(
+        state.dispatch_limit_kva(),
+        1500.0,
+        "dispatch_limit_kva should still equal grid capacity with transformer"
+    );
+}

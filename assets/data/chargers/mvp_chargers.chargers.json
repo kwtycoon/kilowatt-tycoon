@@ -39,6 +39,15 @@
     "position": {"x": 650, "y": 300},
     "connector_jam_chance": 0.4,
     "notes": "Frequent connector issues"
+  },
+  {
+    "id": "chg_05",
+    "type": "ac_level2",
+    "rated_power_kw": 7,
+    "phase": "A",
+    "health": 0.95,
+    "position": {"x": 760, "y": 300},
+    "notes": "Scooter Hub L2 manifold (compact dock bank)"
   }
 ]
 

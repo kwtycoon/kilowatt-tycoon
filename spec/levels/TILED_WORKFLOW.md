@@ -228,6 +228,14 @@ When you edit a TMX file, both visuals and gameplay logic are updated.
 Zone objects use pixel coordinates. Multiply grid coordinates by 64:
 - Grid (3, 4) → Pixels (192, 256)
 
+### 5. Entry/Exit Zone Misalignment
+
+**Entry and exit zone objects must have pixel coordinates that are exact multiples of 64.** The loader converts pixels to grid indices with integer truncation: `(pixel / 64) as i32`. Tiled's drag-and-drop often produces fractional positions (e.g. `y=1086.32`), and `1086 / 64 = 16` instead of the intended `17` (`1088 / 64`). If the truncated position falls on a non-driveable tile (grass, building), pathfinding to the exit fails silently — vehicles get stuck for 5 seconds (`MAX_STUCK_TIME`) then force-despawn.
+
+**Symptom**: Vehicles disappear in place instead of driving to the exit.
+**Fix**: Snap entry/exit zone x and y to multiples of 64 (e.g. `y=1088`, not `y=1086.32`).
+**Prevention**: After placing entry/exit objects, check their pixel coordinates in Tiled's property panel and round to the nearest `N * 64`.
+
 ## Best Practices
 
 1. **Edit TMX directly** - TMX is the authoritative source. No need to edit JSON files.

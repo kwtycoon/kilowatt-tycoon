@@ -5,6 +5,16 @@ use bevy::prelude::*;
 use super::charger::Phase;
 use crate::resources::SiteId;
 
+/// Hysteresis-stabilized visual tier for the transformer sprite.
+/// Prevents flickering when temperature oscillates near threshold boundaries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TransformerVisualTier {
+    #[default]
+    Normal,
+    Warning,
+    Critical,
+}
+
 /// Site transformer component - one entity per physical transformer
 #[derive(Component, Debug, Clone)]
 pub struct Transformer {
@@ -19,6 +29,18 @@ pub struct Transformer {
     /// Current apparent power load in kVA (includes reactive power)
     pub current_load_kva: f32,
     pub ambient_temp_c: f32,
+    /// Accumulated seconds spent above overload threshold.
+    pub overload_seconds: f32,
+    /// True while transformer is actively burning.
+    pub on_fire: bool,
+    /// True after a fire is extinguished; requires demolition/replacement.
+    pub destroyed: bool,
+    /// Set once a firetruck has been dispatched for the active incident.
+    pub firetruck_dispatched: bool,
+    /// Tracks which warning level has already been emitted (0=none, 1=warning, 2=critical).
+    pub last_warning_level: u8,
+    /// Hysteresis-stabilized visual tier for sprite selection.
+    pub visual_tier: TransformerVisualTier,
 }
 
 impl Default for Transformer {
@@ -31,6 +53,12 @@ impl Default for Transformer {
             current_temp_c: 25.0,
             current_load_kva: 0.0,
             ambient_temp_c: 25.0,
+            overload_seconds: 0.0,
+            on_fire: false,
+            destroyed: false,
+            firetruck_dispatched: false,
+            last_warning_level: 0,
+            visual_tier: TransformerVisualTier::default(),
         }
     }
 }
@@ -47,7 +75,7 @@ impl Transformer {
             self.ambient_temp_c + (self.thermal_limit_c - self.ambient_temp_c) * load_ratio.powi(2);
 
         // Exponential approach to target (thermal mass)
-        let thermal_constant = 0.01; // How fast temp changes
+        let thermal_constant = 0.02;
         self.current_temp_c +=
             (target_temp - self.current_temp_c) * thermal_constant * delta_seconds;
     }
@@ -58,6 +86,39 @@ impl Transformer {
 
     pub fn is_critical(&self) -> bool {
         self.current_temp_c >= 90.0
+    }
+
+    pub fn is_overloaded(&self) -> bool {
+        self.current_load_kva > self.rating_kva * 1.1
+    }
+
+    /// Update the visual tier with 3C hysteresis margins to prevent sprite flickering.
+    pub fn update_visual_tier(&mut self) {
+        self.visual_tier = match self.visual_tier {
+            TransformerVisualTier::Normal => {
+                if self.current_temp_c >= 78.0 {
+                    TransformerVisualTier::Warning
+                } else {
+                    TransformerVisualTier::Normal
+                }
+            }
+            TransformerVisualTier::Warning => {
+                if self.current_temp_c >= 93.0 {
+                    TransformerVisualTier::Critical
+                } else if self.current_temp_c < 72.0 {
+                    TransformerVisualTier::Normal
+                } else {
+                    TransformerVisualTier::Warning
+                }
+            }
+            TransformerVisualTier::Critical => {
+                if self.current_temp_c < 87.0 {
+                    TransformerVisualTier::Warning
+                } else {
+                    TransformerVisualTier::Critical
+                }
+            }
+        };
     }
 }
 

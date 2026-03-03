@@ -20,7 +20,7 @@ use kilowatt_tycoon::resources::{
 };
 use kilowatt_tycoon::systems::{
     dispatch_technician_system, driver_arrival_system, fault_detection_system,
-    om_auto_dispatch_system, scripted_fault_system, technician_repair_system,
+    om_auto_dispatch_system, scripted_fault_system, technician_repair_system, try_execute_action,
 };
 
 use test_utils::*;
@@ -1299,4 +1299,59 @@ fn test_no_auto_redispatch_without_om_software() {
         !incorrectly_dispatched,
         "Should NOT auto-dispatch when repair fails WITHOUT O&M Software"
     );
+}
+
+#[test]
+fn test_reboot_attempt_tracking_and_guaranteed_second_success() {
+    let mut charger = create_test_charger("CHG-001", ChargerType::DcFast);
+    charger.current_fault = Some(FaultType::CommunicationError);
+    assert_eq!(charger.reboot_attempts, 0);
+
+    // First attempt with a terrible roll (0.99) should fail
+    let result = try_execute_action(&mut charger, RemoteAction::SoftReboot, 0.99).unwrap();
+    assert!(!result.success);
+    assert!(!result.fault_resolved);
+    assert_eq!(charger.reboot_attempts, 1);
+    assert!(charger.current_fault.is_some());
+
+    // Clear cooldown so we can attempt again
+    charger.update_cooldowns(999.0);
+
+    // Second attempt with the same terrible roll must succeed (guaranteed)
+    let result = try_execute_action(&mut charger, RemoteAction::HardReboot, 0.99).unwrap();
+    assert!(result.success);
+    assert!(result.fault_resolved);
+    assert_eq!(charger.reboot_attempts, 0);
+    assert!(charger.current_fault.is_none());
+}
+
+#[test]
+fn test_reboot_first_attempt_can_succeed() {
+    let mut charger = create_test_charger("CHG-001", ChargerType::DcFast);
+    charger.current_fault = Some(FaultType::PaymentError);
+    assert_eq!(charger.reboot_attempts, 0);
+
+    // First attempt with a good roll (0.01) should succeed normally
+    let result = try_execute_action(&mut charger, RemoteAction::SoftReboot, 0.01).unwrap();
+    assert!(result.success);
+    assert!(result.fault_resolved);
+    assert_eq!(charger.reboot_attempts, 0);
+    assert!(charger.current_fault.is_none());
+}
+
+#[test]
+fn test_reboot_attempts_reset_on_new_fault() {
+    let mut charger = create_test_charger("CHG-001", ChargerType::DcFast);
+    charger.current_fault = Some(FaultType::CommunicationError);
+
+    // Fail one reboot to increment the counter
+    let _ = try_execute_action(&mut charger, RemoteAction::SoftReboot, 0.99).unwrap();
+    assert_eq!(charger.reboot_attempts, 1);
+
+    // Simulate a new fault injection (as inject_fault does)
+    charger.current_fault = Some(FaultType::PaymentError);
+    charger.reboot_attempts = 0;
+
+    // Counter should be fresh for the new fault
+    assert_eq!(charger.reboot_attempts, 0);
 }

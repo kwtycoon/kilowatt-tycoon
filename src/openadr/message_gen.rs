@@ -67,8 +67,10 @@ fn bess_operating_state(
     }
 }
 
-fn grid_operating_state(demand_event_active: bool) -> OperatingState {
-    if demand_event_active {
+fn grid_operating_state(demand_event_active: bool, fire_active: bool) -> OperatingState {
+    if fire_active {
+        OperatingState::Private("EMERGENCY_SHUTDOWN".to_string())
+    } else if demand_event_active {
         OperatingState::RunningHeightened
     } else {
         OperatingState::Normal
@@ -460,6 +462,7 @@ pub fn openadr_bess_telemetry_system(
 /// Periodic grid import and demand reports with `OperatingState`.
 pub fn openadr_grid_telemetry_system(
     multi_site: Res<MultiSiteManager>,
+    transformers: Query<&crate::components::power::Transformer>,
     mut queue: ResMut<OpenAdrMessageQueue>,
     game_clock: Res<GameClock>,
 ) {
@@ -486,11 +489,15 @@ pub fn openadr_grid_telemetry_system(
         let interval_id = der_state.next_interval();
         let dr_active = der_state.demand_event_active;
 
+        let fire_active = transformers
+            .iter()
+            .any(|t| t.site_id == *site_id && (t.on_fire || t.destroyed));
+
         let timestamp = sim_start + chrono::Duration::seconds(game_clock.total_game_time as i64);
         let ts_iso = timestamp.to_rfc3339();
         let ven_name = format!("grid-site-{}", site_id.0);
 
-        let op_state = grid_operating_state(dr_active);
+        let op_state = grid_operating_state(dr_active, fire_active);
 
         let export_rate = if site_state.challenge_level >= 2 {
             site_state.spot_market.current_price_per_kwh
@@ -1274,5 +1281,174 @@ pub fn openadr_grid_alert_system(
 
         let json = serialize_openadr(&event_content);
         queue.push_log(vtn_name, ts_iso, "Event", "Grid Alert", json);
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  11. Transformer fire event system
+// ─────────────────────────────────────────────────────
+
+/// Emit OpenADR events for transformer fire lifecycle:
+///   - Fire starts → `AlertGridEmergency` + `ImportCapacityLimit = 0`
+///   - Capacity restored (transformer rebuilt) → `ImportCapacityLimit = rating`
+///
+/// The grid telemetry system picks up the `OperatingState` change separately
+/// via `grid_operating_state()`.
+pub fn openadr_transformer_fire_system(
+    transformers: Query<&crate::components::power::Transformer>,
+    multi_site: Res<MultiSiteManager>,
+    mut queue: ResMut<OpenAdrMessageQueue>,
+    game_clock: Res<GameClock>,
+) {
+    if !queue.is_active() {
+        return;
+    }
+
+    let program_id = match make_program_id(DR_PROGRAM_ID) {
+        Some(id) => id,
+        None => return,
+    };
+    let sim_start = queue.sim_start;
+
+    for site_id in multi_site.owned_sites.keys() {
+        let any_on_fire = transformers
+            .iter()
+            .any(|t| t.site_id == *site_id && t.on_fire);
+        let any_destroyed = transformers
+            .iter()
+            .any(|t| t.site_id == *site_id && t.destroyed);
+        let site_incident = any_on_fire || any_destroyed;
+
+        let timestamp = sim_start + chrono::Duration::seconds(game_clock.total_game_time as i64);
+        let ts_iso = timestamp.to_rfc3339();
+        let vtn_name = format!("grid-site-{}", site_id.0);
+
+        let der_state = queue.get_or_create(*site_id);
+
+        // Fire starts: emit alert + capacity = 0
+        if any_on_fire && !der_state.fire_alert_active {
+            der_state.fire_alert_active = true;
+            der_state.fire_capacity_zeroed = true;
+
+            let alert = EventContent {
+                program_id: program_id.clone(),
+                event_name: Some("Transformer Fire".to_string()),
+                priority: Priority::new(0),
+                targets: site_group_target(site_id.0),
+                report_descriptors: None,
+                payload_descriptors: Some(vec![EventPayloadDescriptor {
+                    payload_type: EventType::AlertGridEmergency,
+                    units: None,
+                    currency: None,
+                }]),
+                interval_period: Some(IntervalPeriod {
+                    start: timestamp,
+                    duration: None,
+                    randomize_start: None,
+                }),
+                intervals: vec![EventInterval {
+                    id: 0,
+                    interval_period: None,
+                    payloads: vec![EventValuesMap {
+                        value_type: EventType::AlertGridEmergency,
+                        values: vec![ovalue_f32(1.0)],
+                    }],
+                }],
+            };
+
+            let alert_json = serialize_openadr(&alert);
+            queue.push_log(
+                vtn_name.clone(),
+                ts_iso.clone(),
+                "Event",
+                "Transformer Fire",
+                alert_json,
+            );
+
+            let capacity_event = EventContent {
+                program_id: program_id.clone(),
+                event_name: Some("Transformer Fire — Capacity Loss".to_string()),
+                priority: Priority::new(0),
+                targets: site_group_target(site_id.0),
+                report_descriptors: None,
+                payload_descriptors: Some(vec![EventPayloadDescriptor {
+                    payload_type: EventType::ImportCapacityLimit,
+                    units: Some(Unit::KVA),
+                    currency: None,
+                }]),
+                interval_period: Some(IntervalPeriod {
+                    start: timestamp,
+                    duration: None,
+                    randomize_start: None,
+                }),
+                intervals: vec![EventInterval {
+                    id: 0,
+                    interval_period: None,
+                    payloads: vec![EventValuesMap {
+                        value_type: EventType::ImportCapacityLimit,
+                        values: vec![ovalue_f32(0.0)],
+                    }],
+                }],
+            };
+
+            let capacity_json = serialize_openadr(&capacity_event);
+            queue.push_log(
+                vtn_name,
+                ts_iso,
+                "Event",
+                "Transformer Fire Capacity Loss",
+                capacity_json,
+            );
+
+            continue;
+        }
+
+        // Incident resolved: all transformers at site are healthy again
+        if !site_incident && der_state.fire_alert_active {
+            der_state.fire_alert_active = false;
+            der_state.fire_capacity_zeroed = false;
+            der_state.last_fire_capacity_kva = None;
+
+            let total_rating_kva: f32 = transformers
+                .iter()
+                .filter(|t| t.site_id == *site_id)
+                .map(|t| t.rating_kva)
+                .sum();
+
+            let restore = EventContent {
+                program_id: program_id.clone(),
+                event_name: Some("Transformer Capacity Restored".to_string()),
+                priority: Priority::new(3),
+                targets: site_group_target(site_id.0),
+                report_descriptors: None,
+                payload_descriptors: Some(vec![EventPayloadDescriptor {
+                    payload_type: EventType::ImportCapacityLimit,
+                    units: Some(Unit::KVA),
+                    currency: None,
+                }]),
+                interval_period: Some(IntervalPeriod {
+                    start: timestamp,
+                    duration: None,
+                    randomize_start: None,
+                }),
+                intervals: vec![EventInterval {
+                    id: 0,
+                    interval_period: None,
+                    payloads: vec![EventValuesMap {
+                        value_type: EventType::ImportCapacityLimit,
+                        values: vec![ovalue_f32(total_rating_kva)],
+                    }],
+                }],
+            };
+
+            let restore_json = serialize_openadr(&restore);
+            queue.push_log(
+                vtn_name,
+                ts_iso,
+                "Event",
+                "Transformer Capacity Restored",
+                restore_json,
+            );
+        }
     }
 }

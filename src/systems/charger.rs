@@ -90,7 +90,8 @@ fn inject_fault(charger: &mut Charger, fault_type: FaultType, game_time: f32) {
     charger.fault_occurred_at = Some(game_time);
     charger.fault_detected_at = None;
     charger.fault_is_detected = false;
-    charger.fault_discovered = false; // Fault starts as undiscovered
+    charger.fault_discovered = false;
+    charger.reboot_attempts = 0;
     // Degrade reliability on fault occurrence (severity-based)
     charger.degrade_reliability_fault(&fault_type);
     // Immediately clear ALL session state to prevent any power flow
@@ -529,6 +530,7 @@ pub fn fault_detection_system(
 
                 // Directly clear the fault (bypassing cooldowns and success rolls)
                 charger.current_fault = None;
+                charger.reboot_attempts = 0;
                 let downtime = resolved_at - occurred_at;
                 charger.recover_reliability_fast_fix(
                     downtime,
@@ -597,6 +599,7 @@ pub fn handle_oem_upgrade_existing_faults(
                     .unwrap_or(game_clock.total_game_time);
                 let downtime = game_clock.total_game_time - occurred_at;
                 charger.current_fault = None;
+                charger.reboot_attempts = 0;
                 charger.recover_reliability_fast_fix(
                     downtime,
                     event.new_tier.reliability_recovery_multiplier(),

@@ -704,6 +704,7 @@ pub fn technician_repair_system(
             // Clear the fault and timestamps (state() will compute as Available)
             charger.current_fault = None;
             charger.fault_discovered = false;
+            charger.reboot_attempts = 0;
             charger.fault_occurred_at = None;
             charger.fault_detected_at = None;
             charger.fault_is_detected = true; // Reset for next fault

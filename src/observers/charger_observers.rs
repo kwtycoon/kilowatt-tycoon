@@ -106,6 +106,7 @@ pub fn on_remote_action_performed(
                 | crate::components::charger::RemoteAction::ReleaseConnector => {
                     charger.current_fault = None;
                     charger.fault_discovered = false;
+                    charger.reboot_attempts = 0;
                 }
                 _ => {}
             }

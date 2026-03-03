@@ -12,7 +12,9 @@ use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 
-use crate::resources::{MultiSiteManager, SiteArchetype, SiteTemplateCache};
+use crate::resources::{
+    CharacterKind, MultiSiteManager, PlayerProfile, SiteArchetype, SiteTemplateCache,
+};
 use crate::states::AppState;
 
 /// Resource that controls screenshot automation mode.
@@ -65,6 +67,7 @@ fn get_screenshot_filename(index: usize, archetype: SiteArchetype) -> String {
         SiteArchetype::ParkingLot => "first_street",
         SiteArchetype::GasStation => "quick_charge_express",
         SiteArchetype::FleetDepot => "central_fleet_plaza",
+        SiteArchetype::ScooterHub => "scooter_alley",
     };
     format!("spec/levels/level_{:02}_{}.png", level_num, name)
 }
@@ -260,5 +263,18 @@ pub fn screenshot_skip_menu_system(
     if mode.enabled && *current_state.get() == AppState::MainMenu {
         info!("Screenshot mode: Skipping main menu, going to Loading...");
         next_state.set(AppState::Loading);
+    }
+}
+
+/// Pre-populate the player profile during Loading so the character selection
+/// overlay never spawns when we enter Playing in screenshot mode.
+pub fn screenshot_skip_character_setup(
+    mode: Res<ScreenshotMode>,
+    mut profile: ResMut<PlayerProfile>,
+) {
+    if mode.enabled && profile.character.is_none() {
+        profile.character = Some(CharacterKind::Raccoon);
+        profile.name = "Screenshot".to_string();
+        info!("Screenshot mode: Skipping character selection");
     }
 }

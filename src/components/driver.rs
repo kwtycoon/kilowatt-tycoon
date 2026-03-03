@@ -51,6 +51,7 @@ pub enum VehicleType {
     Bus,
     Semi,
     Tractor,
+    Firetruck,
     Scooter,
     Motorcycle,
 }
@@ -66,6 +67,7 @@ impl VehicleType {
             VehicleType::Bus => "vehicle_bus",
             VehicleType::Semi => "vehicle_semi",
             VehicleType::Tractor => "vehicle_tractor",
+            VehicleType::Firetruck => "vehicle_firetruck",
             VehicleType::Scooter => "vehicle_scooter",
             VehicleType::Motorcycle => "vehicle_motorcycle",
         }
@@ -78,7 +80,7 @@ impl VehicleType {
     pub fn footprint_length_tiles(&self) -> u8 {
         match self {
             VehicleType::Bus => 2,
-            VehicleType::Semi => 3,
+            VehicleType::Semi | VehicleType::Firetruck => 3,
             // Everything else behaves like a single-tile vehicle.
             _ => 1,
         }
@@ -92,7 +94,10 @@ impl VehicleType {
     pub fn compatible_charger_types(&self) -> &'static [ChargerType] {
         match self {
             VehicleType::Scooter | VehicleType::Motorcycle => &[ChargerType::AcLevel2],
-            VehicleType::Bus | VehicleType::Semi | VehicleType::Tractor => &[ChargerType::DcFast],
+            VehicleType::Bus
+            | VehicleType::Semi
+            | VehicleType::Tractor
+            | VehicleType::Firetruck => &[ChargerType::DcFast],
             _ => &[ChargerType::DcFast, ChargerType::AcLevel2],
         }
     }

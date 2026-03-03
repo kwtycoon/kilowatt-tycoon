@@ -301,6 +301,8 @@ pub struct Charger {
     pub fault_detected_at: Option<f32>,
     /// Whether the current fault has been detected/notified to the player
     pub fault_is_detected: bool,
+    /// Failed reboot attempts for the current fault (guarantees success on 2nd try)
+    pub reboot_attempts: u8,
 
     // === KPI Tracking ===
     /// Total energy delivered by this charger (kWh)
@@ -358,6 +360,7 @@ impl Default for Charger {
             fault_occurred_at: None,
             fault_detected_at: None,
             fault_is_detected: true, // No fault = nothing to detect
+            reboot_attempts: 0,
             total_energy_delivered_kwh: 0.0,
             energy_delivered_kwh_today: 0.0,
             session_count: 0,

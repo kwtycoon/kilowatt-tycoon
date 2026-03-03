@@ -105,6 +105,7 @@ impl Plugin for SystemsPlugin {
         // Initialize revision tracking resources for grid change detection
         app.init_resource::<scene::ChargerSyncRevision>()
             .init_resource::<scene::GridVisualRevision>()
+            .init_resource::<scene::TransformerSyncRevision>()
             .init_resource::<site_roots::ActivePathfindingGrid>();
 
         // Configure system set ordering
@@ -191,7 +192,6 @@ impl Plugin for SystemsPlugin {
             (
                 driver_spawn_system,
                 driver_arrival_system,
-                spawn_transformer_from_grid,
                 ambient_to_customer_system,
             )
                 .in_set(GameSystemSet::DriverSpawn),
@@ -203,6 +203,15 @@ impl Plugin for SystemsPlugin {
         app.add_systems(
             Update,
             sync_chargers_with_grid
+                .in_set(GameSystemSet::BuildInput)
+                .after(build_placement_system)
+                .before(GameSystemSet::SpriteUpdate),
+        );
+
+        // Transformer entity sync - same pattern as charger sync above
+        app.add_systems(
+            Update,
+            sync_transformers_with_grid
                 .in_set(GameSystemSet::BuildInput)
                 .after(build_placement_system)
                 .before(GameSystemSet::SpriteUpdate),
@@ -314,7 +323,20 @@ impl Plugin for SystemsPlugin {
             Update,
             ticket_sla_system.in_set(GameSystemSet::TicketUpdate),
         );
-        app.add_systems(Update, power_system.in_set(GameSystemSet::PowerUpdate));
+        app.add_systems(
+            Update,
+            (
+                power_system,
+                update_transformer_overload_fire_state,
+                dispatch_firetrucks_to_transformer_fires,
+                update_emergency_firetruck_response,
+                sync_transformer_fire_vfx,
+                animate_transformer_fire_vfx,
+                update_water_spray_vfx,
+            )
+                .chain()
+                .in_set(GameSystemSet::PowerUpdate),
+        );
         app.add_systems(
             Update,
             (
@@ -491,6 +513,10 @@ impl Plugin for SystemsPlugin {
         app.add_systems(
             Update,
             screenshot_skip_menu_system.run_if(screenshot_mode_enabled),
+        );
+        app.add_systems(
+            OnEnter(AppState::Loading),
+            screenshot_skip_character_setup.run_if(screenshot_mode_enabled),
         );
         app.add_systems(
             OnEnter(AppState::Playing),

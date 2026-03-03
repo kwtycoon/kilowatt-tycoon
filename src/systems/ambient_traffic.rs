@@ -11,7 +11,9 @@ use rand::prelude::IteratorRandom;
 
 use crate::components::VehicleFootprint;
 use crate::components::driver::{DriverMood, MovementPhase, VehicleMovement, VehicleType};
-use crate::resources::{EnvironmentState, GameClock, ImageAssets, MultiSiteManager, SiteGrid};
+use crate::resources::{
+    EnvironmentState, GameClock, ImageAssets, MultiSiteManager, SiteArchetype, SiteGrid,
+};
 use crate::systems::sprite::{DriverCharacterSprite, VehicleSprite, get_mood_image};
 
 /// Marker for ambient (non-customer) traffic
@@ -60,6 +62,7 @@ fn get_vehicle_image(assets: &ImageAssets, vehicle_type: VehicleType) -> Handle<
         VehicleType::Tractor => assets.vehicle_tractor.clone(),
         VehicleType::Scooter => assets.vehicle_scooter.clone(),
         VehicleType::Motorcycle => assets.vehicle_motorcycle.clone(),
+        VehicleType::Firetruck => assets.vehicle_firetruck.clone(),
     }
 }
 
@@ -224,7 +227,16 @@ pub fn spawn_ambient_traffic(
     // Higher demand = more traffic on the road
     let demand_multiplier =
         environment.total_demand_multiplier() * site_state.site_upgrades.demand_multiplier();
-    let scaled_delta = time.delta().mul_f32(demand_multiplier);
+
+    // ScooterHub spawns ambient traffic 3x faster to create the HCMC swarm feel
+    let archetype_multiplier = match site_state.archetype {
+        SiteArchetype::ScooterHub => 3.0,
+        _ => 1.0,
+    };
+
+    let scaled_delta = time
+        .delta()
+        .mul_f32(demand_multiplier * archetype_multiplier);
     timer.timer.tick(scaled_delta);
 
     if !timer.timer.just_finished() {
@@ -233,22 +245,31 @@ pub fn spawn_ambient_traffic(
 
     let mut rng = rand::rng();
 
-    // Random vehicle type with weighted distribution
-    // Common: Sedan (25%), Crossover (20%), SUV (18%), Compact (12%), Pickup (10%)
-    // Two-wheelers: Scooter (5%), Motorcycle (5%)
-    // Commercial (rare): Bus (2%), Semi (2%), Tractor (1%)
     let roll = rng.random_range(0..100);
-    let vehicle_type = match roll {
-        0..12 => VehicleType::Compact,
-        12..37 => VehicleType::Sedan,
-        37..55 => VehicleType::Crossover,
-        55..73 => VehicleType::Suv,
-        73..83 => VehicleType::Pickup,
-        83..88 => VehicleType::Scooter,
-        88..93 => VehicleType::Motorcycle,
-        93..95 => VehicleType::Bus,
-        95..97 => VehicleType::Semi,
-        _ => VehicleType::Tractor,
+    // Scooter Alley skews heavily toward two-wheel traffic.
+    let vehicle_type = match site_state.archetype {
+        SiteArchetype::ScooterHub => match roll {
+            0..74 => VehicleType::Scooter,
+            74..97 => VehicleType::Motorcycle,
+            97..98 => VehicleType::Compact,
+            98..99 => VehicleType::Sedan,
+            _ => VehicleType::Crossover,
+        },
+        _ => match roll {
+            // Common: Sedan (25%), Crossover (18%), SUV (18%), Compact (12%), Pickup (10%)
+            // Two-wheelers: Scooter (5%), Motorcycle (5%)
+            // Commercial (rare): Bus (2%), Semi (2%), Tractor (3%)
+            0..12 => VehicleType::Compact,
+            12..37 => VehicleType::Sedan,
+            37..55 => VehicleType::Crossover,
+            55..73 => VehicleType::Suv,
+            73..83 => VehicleType::Pickup,
+            83..88 => VehicleType::Scooter,
+            88..93 => VehicleType::Motorcycle,
+            93..95 => VehicleType::Bus,
+            95..97 => VehicleType::Semi,
+            _ => VehicleType::Tractor,
+        },
     };
 
     // All ambient traffic goes left-to-right to avoid deadlocks on single-lane road

@@ -11,7 +11,7 @@ use bevy::prelude::*;
 
 use kilowatt_tycoon::components::charger::{Charger, ChargerType, Phase};
 use kilowatt_tycoon::components::power::{PhaseLoads, Transformer, VoltageState};
-use kilowatt_tycoon::resources::GameClock;
+use kilowatt_tycoon::resources::{GameClock, SiteId};
 
 use test_utils::*;
 
@@ -269,4 +269,293 @@ fn test_voltage_warning_state() {
     // Low voltage - warning
     voltage.current_voltage_pct = 90.0;
     assert!(voltage.is_warning());
+}
+
+// ============ Transformer Fire Risk (Temperature-Driven) ============
+
+fn make_transformer(rating_kva: f32, ambient_temp_c: f32) -> Transformer {
+    Transformer {
+        site_id: SiteId(1),
+        grid_pos: (2, 2),
+        rating_kva,
+        thermal_limit_c: 110.0,
+        current_temp_c: ambient_temp_c,
+        current_load_kva: 0.0,
+        ambient_temp_c,
+        overload_seconds: 0.0,
+        on_fire: false,
+        destroyed: false,
+        firetruck_dispatched: false,
+        last_warning_level: 0,
+        ..default()
+    }
+}
+
+#[test]
+fn temperature_model_reaches_critical_at_full_load() {
+    let mut t = make_transformer(500.0, 25.0);
+    t.current_load_kva = 500.0; // 100% utilization
+
+    // Run the temperature model for a long simulated period until it stabilizes.
+    // With load_ratio = 1.0, target_temp = 25 + (110-25)*1.0 = 110 C.
+    // It should cross 90 C (critical) well before stabilizing.
+    for _ in 0..50_000 {
+        t.update_temperature(1.0);
+    }
+
+    assert!(
+        t.is_critical(),
+        "Transformer at 100% sustained load should reach critical temperature. Got {:.1}C",
+        t.current_temp_c
+    );
+    assert!(
+        t.current_temp_c > 100.0,
+        "Should approach thermal limit. Got {:.1}C",
+        t.current_temp_c
+    );
+}
+
+#[test]
+fn temperature_model_reaches_critical_at_90_percent_load() {
+    let mut t = make_transformer(500.0, 25.0);
+    t.current_load_kva = 450.0; // 90% utilization
+
+    // target_temp = 25 + 85 * 0.81 = 93.85 C -> should cross 90 C
+    for _ in 0..50_000 {
+        t.update_temperature(1.0);
+    }
+
+    assert!(
+        t.is_critical(),
+        "90% sustained load should reach critical. Got {:.1}C",
+        t.current_temp_c
+    );
+}
+
+#[test]
+fn temperature_stays_below_critical_at_80_percent_load() {
+    let mut t = make_transformer(500.0, 25.0);
+    t.current_load_kva = 400.0; // 80% utilization
+
+    // target_temp = 25 + 85 * 0.64 = 79.4 C -> below 90 C
+    for _ in 0..50_000 {
+        t.update_temperature(1.0);
+    }
+
+    assert!(
+        !t.is_critical(),
+        "80% load should NOT reach critical. Got {:.1}C",
+        t.current_temp_c
+    );
+    assert!(
+        t.is_warning(),
+        "80% load should be in warning zone. Got {:.1}C",
+        t.current_temp_c
+    );
+}
+
+#[test]
+fn temperature_stays_safe_at_50_percent_load() {
+    let mut t = make_transformer(500.0, 25.0);
+    t.current_load_kva = 250.0; // 50% utilization
+
+    // target_temp = 25 + 85 * 0.25 = 46.25 C
+    for _ in 0..50_000 {
+        t.update_temperature(1.0);
+    }
+
+    assert!(
+        !t.is_warning(),
+        "50% load should be safe. Got {:.1}C",
+        t.current_temp_c
+    );
+}
+
+#[test]
+fn hot_climate_makes_critical_easier_to_reach() {
+    // Fleet Depot-style hot site: 40 C ambient
+    let mut hot = make_transformer(500.0, 40.0);
+    hot.current_load_kva = 400.0; // 80% load
+
+    // target_temp = 40 + (110-40) * 0.64 = 40 + 44.8 = 84.8 C (warning, close to critical)
+    for _ in 0..50_000 {
+        hot.update_temperature(1.0);
+    }
+
+    // Compare with cold site (5 C ambient) at same load
+    let mut cold = make_transformer(500.0, 5.0);
+    cold.current_load_kva = 400.0;
+
+    // target_temp = 5 + (110-5) * 0.64 = 5 + 67.2 = 72.2 C (below warning)
+    for _ in 0..50_000 {
+        cold.update_temperature(1.0);
+    }
+
+    assert!(
+        hot.current_temp_c > cold.current_temp_c + 10.0,
+        "Hot climate should run significantly hotter. Hot={:.1}C, Cold={:.1}C",
+        hot.current_temp_c,
+        cold.current_temp_c
+    );
+    assert!(
+        hot.is_warning(),
+        "Hot site at 80% should be in warning. Got {:.1}C",
+        hot.current_temp_c
+    );
+    assert!(
+        !cold.is_warning(),
+        "Cold site at 80% should be safe. Got {:.1}C",
+        cold.current_temp_c
+    );
+}
+
+#[test]
+fn fire_countdown_accumulates_in_critical_zone() {
+    let mut t = make_transformer(500.0, 25.0);
+    // Force temperature into critical zone
+    t.current_temp_c = 95.0;
+
+    assert!(t.is_critical());
+    assert_eq!(t.overload_seconds, 0.0);
+
+    // Simulate what the fire state system does: accumulate when critical
+    let delta = 10.0;
+    t.overload_seconds += delta;
+
+    assert_eq!(t.overload_seconds, 10.0);
+}
+
+#[test]
+fn fire_countdown_cools_slowly_in_warning_zone() {
+    let mut t = make_transformer(500.0, 25.0);
+    t.current_temp_c = 80.0; // Warning zone (75-90 C)
+    t.overload_seconds = 30.0;
+
+    assert!(t.is_warning());
+    assert!(!t.is_critical());
+
+    // Warning zone cools at 1x rate
+    let delta = 10.0;
+    let cooldown_rate = 1.0;
+    t.overload_seconds = (t.overload_seconds - delta * cooldown_rate).max(0.0);
+
+    assert_eq!(t.overload_seconds, 20.0);
+}
+
+#[test]
+fn fire_countdown_cools_fast_in_normal_zone() {
+    let mut t = make_transformer(500.0, 25.0);
+    t.current_temp_c = 50.0; // Normal zone
+    t.overload_seconds = 30.0;
+
+    assert!(!t.is_warning());
+    assert!(!t.is_critical());
+
+    // Normal zone cools at 2x rate
+    let delta = 10.0;
+    let cooldown_rate = 2.0;
+    t.overload_seconds = (t.overload_seconds - delta * cooldown_rate).max(0.0);
+
+    assert_eq!(t.overload_seconds, 10.0);
+}
+
+#[test]
+fn fire_ignites_at_threshold() {
+    let mut t = make_transformer(500.0, 25.0);
+    t.current_temp_c = 95.0;
+
+    // Accumulate right up to the threshold (90 game-seconds)
+    t.overload_seconds = 89.0;
+    assert!(!t.on_fire);
+
+    t.overload_seconds = 90.0;
+
+    // Simulate ignition check
+    if t.overload_seconds >= 90.0 {
+        t.on_fire = true;
+    }
+
+    assert!(t.on_fire);
+}
+
+#[test]
+fn destroyed_transformer_fields_after_extinguish() {
+    let mut t = make_transformer(500.0, 25.0);
+    t.on_fire = true;
+    t.current_temp_c = 105.0;
+
+    // Simulate firetruck extinguishing
+    t.on_fire = false;
+    t.destroyed = true;
+    t.current_temp_c = t.ambient_temp_c + 10.0;
+    t.overload_seconds = 0.0;
+
+    assert!(!t.on_fire);
+    assert!(t.destroyed);
+    assert_eq!(t.overload_seconds, 0.0);
+    assert!((t.current_temp_c - 35.0).abs() < 0.1);
+}
+
+#[test]
+fn warning_levels_only_fire_once_per_escalation() {
+    let mut t = make_transformer(500.0, 25.0);
+    t.current_temp_c = 95.0;
+
+    // First time crossing 33% threshold
+    t.overload_seconds = 31.0;
+    let pct = t.overload_seconds / 90.0;
+    assert!(pct >= 0.33);
+    assert_eq!(t.last_warning_level, 0);
+
+    // Would emit warning level 1
+    t.last_warning_level = 1;
+
+    // Second tick at same level should not re-emit (level already >= 1)
+    t.overload_seconds = 35.0;
+    assert!(t.last_warning_level >= 1);
+
+    // Crossing 67% threshold
+    t.overload_seconds = 61.0;
+    let pct = t.overload_seconds / 90.0;
+    assert!(pct >= 0.67);
+    assert!(t.last_warning_level < 2);
+
+    // Would emit critical level 2
+    t.last_warning_level = 2;
+
+    // Reset when overload cools to zero
+    t.overload_seconds = 0.0;
+    t.last_warning_level = 0;
+    assert_eq!(t.last_warning_level, 0);
+}
+
+#[test]
+fn load_shedding_lowers_temperature_target() {
+    let mut t = make_transformer(500.0, 25.0);
+
+    // At full load, warm up into critical
+    t.current_load_kva = 500.0;
+    for _ in 0..50_000 {
+        t.update_temperature(1.0);
+    }
+    assert!(t.is_critical());
+    let hot_temp = t.current_temp_c;
+
+    // Shed load to 50% (simulates power density = 0.5)
+    t.current_load_kva = 250.0;
+    for _ in 0..50_000 {
+        t.update_temperature(1.0);
+    }
+
+    assert!(
+        t.current_temp_c < hot_temp - 30.0,
+        "Shedding load should cool significantly. Before={:.1}C, After={:.1}C",
+        hot_temp,
+        t.current_temp_c
+    );
+    assert!(
+        !t.is_critical(),
+        "After load shed, should exit critical. Got {:.1}C",
+        t.current_temp_c
+    );
 }

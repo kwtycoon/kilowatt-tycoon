@@ -24,6 +24,7 @@ pub enum SiteArchetype {
     ParkingLot,
     GasStation,
     FleetDepot,
+    ScooterHub,
 }
 
 impl SiteArchetype {
@@ -33,6 +34,7 @@ impl SiteArchetype {
             SiteArchetype::ParkingLot => "Parking Lot",
             SiteArchetype::GasStation => "Gas Station",
             SiteArchetype::FleetDepot => "Fleet Depot",
+            SiteArchetype::ScooterHub => "Scooter Alley",
         }
     }
 
@@ -48,6 +50,9 @@ impl SiteArchetype {
             SiteArchetype::FleetDepot => {
                 "Commercial fleet depot. Endgame scale with 50+ bays, multiple vehicle types, 3 MW power."
             }
+            SiteArchetype::ScooterHub => {
+                "Ho Chi Minh City-inspired scooter charging alley. Dense L2 traffic and rapid turnover."
+            }
         }
     }
 
@@ -57,6 +62,7 @@ impl SiteArchetype {
             SiteArchetype::ParkingLot,
             SiteArchetype::GasStation,
             SiteArchetype::FleetDepot,
+            SiteArchetype::ScooterHub,
         ]
     }
 
@@ -68,6 +74,7 @@ impl SiteArchetype {
             SiteArchetype::ParkingLot => -35.0, // NJ winter: can dip below 0F during cold snaps
             SiteArchetype::GasStation => 5.0,   // Slightly warmer (Southern location)
             SiteArchetype::FleetDepot => 15.0,  // Industrial area, hot
+            SiteArchetype::ScooterHub => 15.0,  // Ho Chi Minh City tropical climate
         }
     }
 
@@ -111,6 +118,8 @@ impl SiteArchetype {
             Some("Cold Winters - Charging reduced during cold snaps".to_string())
         } else if offset <= -10.0 {
             Some("Cool Climate - Mild charging impact in cold weather".to_string())
+        } else if offset >= 15.0 {
+            Some("Hot & Humid Climate - Elevated thermal stress on equipment".to_string())
         } else {
             None
         }
@@ -226,7 +235,14 @@ impl SiteState {
             voltage_state: VoltageState::default(),
             charger_queue: ChargerQueue::default(),
             driver_schedule: DriverSchedule::default(),
-            demand_state: DemandState::default(),
+            demand_state: {
+                let mut ds = DemandState::default();
+                ds.base_customers_per_hour =
+                    crate::resources::demand::base_demand_for_archetype(archetype);
+                ds.time_until_next_spawn =
+                    crate::resources::demand::initial_spawn_delay_for_archetype(archetype);
+                ds
+            },
             solar_state: SolarState::default(),
             bess_state: BessState::default(),
             grid_import: GridImport::default(),
@@ -236,7 +252,10 @@ impl SiteState {
             service_strategy: ServiceStrategy::default(),
             site_upgrades: SiteUpgrades::default(),
             charger_utilization: 0.0,
-            max_vehicles: 20,
+            max_vehicles: match archetype {
+                SiteArchetype::ScooterHub => 50,
+                _ => 20,
+            },
             energy_delivered_kwh_today: 0.0,
             sessions_today: 0,
             pending_opex: 0.0,
@@ -282,6 +301,36 @@ impl SiteState {
         } else {
             // With transformer, use minimum of grid and transformer capacity
             self.grid_capacity_kva.min(transformer_kva)
+        }
+    }
+
+    /// Hard limit for power dispatch: the maximum kVA the site can draw from
+    /// the utility grid. Unlike `effective_capacity_kva` (which also caps at
+    /// transformer rating), this only enforces the grid connection contract.
+    /// Transformer overload is handled thermally — power still flows through an
+    /// overloaded transformer, it just heats up faster.
+    ///
+    /// DCFC chargers still require at least one transformer to be present
+    /// (for the 480V step-up); without one, only L2 load is allowed.
+    pub fn dispatch_limit_kva(&self) -> f32 {
+        let has_transformer = self.grid.has_transformer();
+        let has_dcfc = self
+            .grid
+            .get_charger_bays()
+            .iter()
+            .any(|(_, _, ct)| ct.is_dcfc());
+
+        if has_dcfc && !has_transformer {
+            let l2_load_kw: f32 = self
+                .grid
+                .get_charger_bays()
+                .iter()
+                .filter(|(_, _, ct)| !ct.is_dcfc())
+                .map(|(_, _, ct)| ct.power_kw())
+                .sum();
+            l2_load_kw.min(self.grid_capacity_kva)
+        } else {
+            self.grid_capacity_kva
         }
     }
 

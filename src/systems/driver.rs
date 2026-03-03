@@ -13,7 +13,7 @@ use crate::events::{
 };
 use crate::resources::{
     BuildState, EnvironmentState, GameClock, GameState, SiteGrid, TechStatus, TechnicianState,
-    TutorialState, TutorialStep, generate_evcc_mac, generate_procedural_driver,
+    TutorialState, TutorialStep, generate_evcc_mac, generate_procedural_driver_for_site,
 };
 use crate::systems::charger::check_connector_jam;
 use crate::systems::sprite::spawn_floating_money;
@@ -45,6 +45,7 @@ pub fn driver_spawn_system(
     environment: Res<EnvironmentState>,
     blocking_map: Res<BlockingMap>,
     profile: Res<crate::resources::PlayerProfile>,
+    transformers: Query<&crate::components::power::Transformer>,
 ) {
     // Only spawn drivers when station is open
     if !build_state.is_open {
@@ -67,6 +68,14 @@ pub fn driver_spawn_system(
         return;
     };
     let site_id = &viewed_id;
+
+    // Site offline during transformer fire or after destruction -- no new arrivals
+    if transformers
+        .iter()
+        .any(|t| t.site_id == *site_id && (t.on_fire || t.destroyed))
+    {
+        return;
+    }
 
     let charger_bays = site_state.grid.get_charger_bays();
     if charger_bays.is_empty() {
@@ -348,14 +357,17 @@ pub fn driver_spawn_system(
                 &site_state.site_energy_config,
                 site_state.charger_utilization,
             );
-            let base_demand = site_state.demand_state.calculate_effective_demand(
-                game_state.reputation,
-                environment.current_weather.demand_multiplier(),
-                environment.news_demand_multiplier,
-                site_state.site_upgrades.demand_multiplier(),
-                hour,
-                crate::resources::demand::price_elasticity_factor(effective_price),
-            );
+            let base_demand = site_state
+                .demand_state
+                .calculate_effective_demand_for_archetype(
+                    game_state.reputation,
+                    environment.current_weather.demand_multiplier(),
+                    environment.news_demand_multiplier,
+                    site_state.site_upgrades.demand_multiplier(),
+                    hour,
+                    crate::resources::demand::price_elasticity_factor(effective_price),
+                    site_state.archetype,
+                );
 
             // Apply average charger reliability as a demand multiplier.
             // Drivers prefer sites with reliable chargers - word gets around.
@@ -390,7 +402,8 @@ pub fn driver_spawn_system(
 
             let mut rng = rand::rng();
             let id_counter = site_state.demand_state.next_id();
-            let driver_data = generate_procedural_driver(&mut rng, id_counter);
+            let driver_data =
+                generate_procedural_driver_for_site(&mut rng, id_counter, site_state.archetype);
 
             let compatible_bays: Vec<_> = charger_bays
                 .iter()

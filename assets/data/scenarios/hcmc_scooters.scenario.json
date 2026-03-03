@@ -1,0 +1,50 @@
+{
+  "scenario_id": "hcmc_scooter_alley",
+  "name": "Scooter Alley - HCMC Rush",
+  "duration_game_seconds": 3600,
+  "revenue_target": 240,
+  "drivers": [
+    { "id": "scoot_01", "vehicle": "scooter", "vehicle_name": "VinFast Feliz S", "arrival_time": 0, "target_charger": null, "patience": "medium", "charge_needed_kwh": 1.8, "notes": "Airport courier shift start" },
+    { "id": "scoot_02", "vehicle": "motorcycle", "vehicle_name": "Dat Bike Weaver", "arrival_time": 8, "target_charger": null, "patience": "high", "charge_needed_kwh": 2.5, "notes": "Commuter top-up" },
+    { "id": "scoot_03", "vehicle": "scooter", "vehicle_name": "Yadea G5", "arrival_time": 16, "target_charger": null, "patience": "low", "charge_needed_kwh": 1.6, "notes": "GrabFood rider" },
+    { "id": "scoot_04", "vehicle": "scooter", "vehicle_name": "Selex Camel", "arrival_time": 24, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.1, "notes": "ShopeeFood drop-in" },
+    { "id": "scoot_05", "vehicle": "motorcycle", "vehicle_name": "NIU RQi", "arrival_time": 32, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.8, "notes": "District 1 office rider" },
+    { "id": "scoot_06", "vehicle": "scooter", "vehicle_name": "VinFast Evo", "arrival_time": 40, "target_charger": null, "patience": "high", "charge_needed_kwh": 1.7, "notes": "Lunch break charge" },
+    { "id": "scoot_07", "vehicle": "scooter", "vehicle_name": "Yamaha Neo's", "arrival_time": 52, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.0, "notes": "Ride-hailing queue" },
+    { "id": "scoot_08", "vehicle": "motorcycle", "vehicle_name": "Dat Bike Quantum", "arrival_time": 64, "target_charger": null, "patience": "low", "charge_needed_kwh": 2.9, "notes": "Express parcel rider" },
+    { "id": "scoot_09", "vehicle": "scooter", "vehicle_name": "Pega eSH", "arrival_time": 76, "target_charger": null, "patience": "medium", "charge_needed_kwh": 1.9, "notes": "Airport pickup loop" },
+    { "id": "scoot_10", "vehicle": "scooter", "vehicle_name": "Gogoro Viva", "arrival_time": 88, "target_charger": null, "patience": "high", "charge_needed_kwh": 1.5, "notes": "Short dwell turnover" },
+    { "id": "scoot_11", "vehicle": "motorcycle", "vehicle_name": "VMoto Stash", "arrival_time": 100, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.7, "notes": "Courier rest stop" },
+    { "id": "scoot_12", "vehicle": "scooter", "vehicle_name": "VinFast Klara S2", "arrival_time": 112, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.2, "notes": "Afternoon commuter wave" },
+    { "id": "scoot_13", "vehicle": "scooter", "vehicle_name": "Yadea Orla", "arrival_time": 124, "target_charger": null, "patience": "low", "charge_needed_kwh": 1.8, "notes": "High urgency rider" },
+    { "id": "scoot_14", "vehicle": "motorcycle", "vehicle_name": "NIU RQi Sport", "arrival_time": 136, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.6, "notes": "District 1 return route" },
+    { "id": "scoot_15", "vehicle": "scooter", "vehicle_name": "Selex Sprint", "arrival_time": 148, "target_charger": null, "patience": "high", "charge_needed_kwh": 1.7, "notes": "Fast top-up" },
+    { "id": "scoot_16", "vehicle": "scooter", "vehicle_name": "Gogoro Pulse", "arrival_time": 162, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.3, "notes": "Evening rush build-up" },
+    { "id": "scoot_17", "vehicle": "motorcycle", "vehicle_name": "Dat Bike Weaver++", "arrival_time": 176, "target_charger": null, "patience": "low", "charge_needed_kwh": 2.9, "notes": "Peak demand moment" },
+    { "id": "scoot_18", "vehicle": "scooter", "vehicle_name": "VinFast Vento S", "arrival_time": 190, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.0, "notes": "Airport outbound rider" },
+    { "id": "scoot_19", "vehicle": "scooter", "vehicle_name": "Yadea Voltguard", "arrival_time": 206, "target_charger": null, "patience": "high", "charge_needed_kwh": 1.6, "notes": "Short top-up before pickup" },
+    { "id": "scoot_20", "vehicle": "motorcycle", "vehicle_name": "VMoto CPx", "arrival_time": 222, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.4, "notes": "Final dense wave" }
+  ],
+  "scripted_events": [
+    {
+      "time": 90,
+      "type": "charger_fault",
+      "charger_id": "chg_03",
+      "fault_type": "communication_error",
+      "notes": "Remote reboot required under heavy scooter queue"
+    },
+    {
+      "time": 170,
+      "type": "charger_fault",
+      "charger_id": "chg_04",
+      "fault_type": "ground_fault",
+      "notes": "Monsoon-like event - temporary safety shutdown"
+    },
+    {
+      "time": 200,
+      "type": "transformer_warning",
+      "temp_threshold": 78,
+      "notes": "Sustained L2 load raises thermal pressure"
+    }
+  ]
+}

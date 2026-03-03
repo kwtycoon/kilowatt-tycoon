@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="130" viewBox="0 0 64 130">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="body_firetruck" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#991B1B;stop-opacity:1"/>
+      <stop offset="20%" style="stop-color:#DC2626;stop-opacity:1"/>
+      <stop offset="80%" style="stop-color:#DC2626;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#991B1B;stop-opacity:1"/>
+    </linearGradient>
+    <linearGradient id="glass_firetruck" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#2563EB;stop-opacity:0.6"/>
+      <stop offset="100%" style="stop-color:#1E3A5F;stop-opacity:1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Drop shadow -->
+  <path d="M8 16
+            Q6 10 32 6
+            Q58 10 56 16
+            L60 28
+            Q62 32 62 38
+            L62 108
+            Q62 116 60 120
+            L56 126
+            Q52 128 32 128
+            Q12 128 8 126
+            L4 120
+            Q2 116 2 108
+            L2 38
+            Q2 32 4 28
+            L8 16 Z" fill="#000000" opacity="0.25" transform="translate(2, 3)"/>
+
+  <!-- Body fill -->
+  <path d="M8 16
+            Q6 10 32 6
+            Q58 10 56 16
+            L60 28
+            Q62 32 62 38
+            L62 108
+            Q62 116 60 120
+            L56 126
+            Q52 128 32 128
+            Q12 128 8 126
+            L4 120
+            Q2 116 2 108
+            L2 38
+            Q2 32 4 28
+            L8 16 Z" fill="url(#body_firetruck)"/>
+
+  <!-- Body outline -->
+  <path d="M8 16
+            Q6 10 32 6
+            Q58 10 56 16
+            L60 28
+            Q62 32 62 38
+            L62 108
+            Q62 116 60 120
+            L56 126
+            Q52 128 32 128
+            Q12 128 8 126
+            L4 120
+            Q2 116 2 108
+            L2 38
+            Q2 32 4 28
+            L8 16 Z" fill="none" stroke="#111827" stroke-width="2"/>
+
+  <!-- Hood panel -->
+  <rect x="10" y="8" width="44" height="14" rx="4" fill="#DC2626" opacity="0.3"/>
+
+  <!-- Hood seam line -->
+  <line x1="14" y1="22" x2="50" y2="22" stroke="#991B1B" stroke-width="1.5" opacity="0.5"/>
+
+  <!-- Front push bar / grille -->
+  <rect x="12" y="10" width="40" height="3" rx="1" fill="#374151" opacity="0.4"/>
+
+  <!-- Windshield -->
+  <path d="M16 26
+        L48 26
+        L52 36
+        L12 36 Z"
+        fill="url(#glass_firetruck)"/>
+  <path d="M16 26
+        L48 26
+        L52 36
+        L12 36 Z"
+        fill="none" stroke="#111827" stroke-width="1"/>
+
+  <!-- Windshield reflection -->
+  <rect x="18" y="28" width="10" height="6" rx="1" fill="#FFFFFF" opacity="0.2"/>
+
+  <!-- Cab roof panel -->
+  <rect x="11" y="38" width="42" height="8" rx="2" fill="#991B1B" opacity="0.2"/>
+
+  <!-- Emergency light bar (on cab roof) -->
+  <rect x="14" y="39" width="36" height="6" rx="2" fill="#374151"/>
+  <!-- Red lights left -->
+  <rect x="16" y="40" width="5" height="4" rx="1" fill="#EF4444"/>
+  <rect x="16" y="40" width="5" height="2" rx="1" fill="#FCA5A5" opacity="0.6"/>
+  <!-- White light -->
+  <rect x="23" y="40" width="4" height="4" rx="1" fill="#F9FAFB"/>
+  <rect x="23" y="40" width="4" height="2" rx="1" fill="#FFFFFF" opacity="0.8"/>
+  <!-- Blue light center -->
+  <rect x="29" y="40" width="6" height="4" rx="1" fill="#3B82F6"/>
+  <rect x="29" y="40" width="6" height="2" rx="1" fill="#93C5FD" opacity="0.6"/>
+  <!-- White light -->
+  <rect x="37" y="40" width="4" height="4" rx="1" fill="#F9FAFB"/>
+  <rect x="37" y="40" width="4" height="2" rx="1" fill="#FFFFFF" opacity="0.8"/>
+  <!-- Red lights right -->
+  <rect x="43" y="40" width="5" height="4" rx="1" fill="#EF4444"/>
+  <rect x="43" y="40" width="5" height="2" rx="1" fill="#FCA5A5" opacity="0.6"/>
+
+  <!-- Cab-to-body divider -->
+  <line x1="6" y1="48" x2="58" y2="48" stroke="#111827" stroke-width="1.5" opacity="0.4"/>
+
+  <!-- Body/equipment section background -->
+  <rect x="11" y="50" width="42" height="62" rx="3" fill="#991B1B" opacity="0.15"/>
+  <rect x="11" y="50" width="42" height="62" rx="3" fill="none" stroke="#111827" stroke-width="1" opacity="0.4"/>
+
+  <!-- Equipment compartment panel lines -->
+  <line x1="13" y1="64" x2="51" y2="64" stroke="#111827" stroke-width="1" opacity="0.3"/>
+  <line x1="13" y1="80" x2="51" y2="80" stroke="#111827" stroke-width="1" opacity="0.3"/>
+  <line x1="13" y1="96" x2="51" y2="96" stroke="#111827" stroke-width="1" opacity="0.3"/>
+
+  <!-- Ladder on roof -->
+  <rect x="22" y="52" width="20" height="56" rx="2" fill="#9CA3AF" opacity="0.45"/>
+  <rect x="22" y="52" width="20" height="56" rx="2" fill="none" stroke="#6B7280" stroke-width="1" opacity="0.6"/>
+  <!-- Ladder rails -->
+  <line x1="24" y1="52" x2="24" y2="108" stroke="#6B7280" stroke-width="1.5" opacity="0.6"/>
+  <line x1="40" y1="52" x2="40" y2="108" stroke="#6B7280" stroke-width="1.5" opacity="0.6"/>
+  <!-- Ladder rungs -->
+  <line x1="24" y1="58" x2="40" y2="58" stroke="#6B7280" stroke-width="1" opacity="0.5"/>
+  <line x1="24" y1="66" x2="40" y2="66" stroke="#6B7280" stroke-width="1" opacity="0.5"/>
+  <line x1="24" y1="74" x2="40" y2="74" stroke="#6B7280" stroke-width="1" opacity="0.5"/>
+  <line x1="24" y1="82" x2="40" y2="82" stroke="#6B7280" stroke-width="1" opacity="0.5"/>
+  <line x1="24" y1="90" x2="40" y2="90" stroke="#6B7280" stroke-width="1" opacity="0.5"/>
+  <line x1="24" y1="98" x2="40" y2="98" stroke="#6B7280" stroke-width="1" opacity="0.5"/>
+  <line x1="24" y1="106" x2="40" y2="106" stroke="#6B7280" stroke-width="1" opacity="0.5"/>
+
+  <!-- Rear pump/equipment panel -->
+  <rect x="14" y="112" width="36" height="8" rx="2" fill="#991B1B" opacity="0.3"/>
+
+  <!-- Headlights -->
+  <ellipse cx="14" cy="10" rx="4" ry="2" fill="#F3F4F6"/>
+  <ellipse cx="50" cy="10" rx="4" ry="2" fill="#F3F4F6"/>
+  <ellipse cx="14" cy="10" rx="3" ry="1" fill="#FEF3C7"/>
+  <ellipse cx="50" cy="10" rx="3" ry="1" fill="#FEF3C7"/>
+
+  <!-- Taillights -->
+  <rect x="10" y="120" width="10" height="4" rx="2" fill="#DC2626"/>
+  <rect x="44" y="120" width="10" height="4" rx="2" fill="#DC2626"/>
+  <rect x="11" y="121" width="8" height="2" rx="1" fill="#FCA5A5" opacity="0.5"/>
+  <rect x="45" y="121" width="8" height="2" rx="1" fill="#FCA5A5" opacity="0.5"/>
+
+  <!-- Front highlight arc -->
+  <path d="M14 6 Q32 4 50 6" stroke="#FFFFFF" stroke-width="1" fill="none" opacity="0.3"/>
+
+  <!-- Charge port (green, left side) -->
+  <rect x="2" y="56" width="4" height="6" rx="1" fill="#10B981"/>
+  <rect x="3" y="57" width="2" height="4" rx="0.5" fill="#34D399"/>
+</svg>

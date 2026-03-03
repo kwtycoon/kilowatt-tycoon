@@ -49,6 +49,7 @@ class LevelReimagineer:
         1: ("01_first_street", "First Street Station", "parking_lot"),
         2: ("02_quick_charge_express", "Quick Charge Express", "gas_station"),
         3: ("03_central_fleet_plaza", "Central Fleet Plaza", "fleet_depot"),
+        4: ("04_scooter_alley", "Scooter Alley", "scooter_hub"),
     }
     
     DEFAULT_MODEL = "nano-banana-pro-preview"
@@ -243,7 +244,6 @@ ART STYLE (CRITICAL - MUST FOLLOW):
 - Dark asphalt roads with painted lane markings
 - Buildings shown as solid rooftop shapes (you're looking down at them)
 - Small environmental details: dumpsters, bollards, curbs, manhole covers, puddles, tire marks
-- Lighting cues from overhead lamps casting small pools of light on the ground
 
 COLOR PALETTE:
 - Asphalt/roads: dark grays and charcoals with subtle variation and wear
@@ -261,6 +261,10 @@ WHAT TO AVOID:
 - NO smooth gradients - use dithering or flat pixel shading instead
 - NO photorealistic rendering
 - NO high-resolution smooth edges - everything should have visible pixel stepping
+- NO vehicles
+- NO chargers
+- NO transformers or electrical equipment
+
 
 LEVEL TO REIMAGINE:
 Level: {level_data['display_name']}
@@ -273,11 +277,11 @@ VISUAL IDENTITY:
 FUNCTIONAL REQUIREMENTS (MUST MAINTAIN):
 1. Entry point for vehicles (road opening at map edge)
 2. Exit point for vehicles (road opening at opposite edge)
-3. Area for TRANSFORMER placement (utility box, at least 2x2 tiles, on open ground)
-4. Space for EV CHARGERS adjacent to parking bays
+3. Area for TRANSFORMER placement (utility box, at least 2x2 tiles, on open ground) - AREA only - not the transformers
+4. Space for EV CHARGERS adjacent to parking bays - space only not the chargers
 5. Parking bays where vehicles park and charge
-6. Drive lanes connecting entry -> parking -> exit
-7. Clear vehicle circulation flow
+6. Drive lanes connecting entry -> parking -> exit - lanes only no cars or vechiles
+7. Clear vehicle circulation flow - just make sure there is flow, don't render them
 8. Open/buildable space for the player to place charging infrastructure
 
 DESIGN TASK:

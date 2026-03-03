@@ -207,6 +207,7 @@ fn get_archetype_color(archetype: SiteArchetype) -> Color {
         SiteArchetype::ParkingLot => Color::srgb(0.3, 0.5, 0.7), // Blue
         SiteArchetype::GasStation => Color::srgb(0.8, 0.5, 0.2), // Orange
         SiteArchetype::FleetDepot => Color::srgb(0.4, 0.4, 0.4), // Dark gray (industrial)
+        SiteArchetype::ScooterHub => Color::srgb(0.2, 0.7, 0.35), // Green (urban mobility)
     }
 }
 

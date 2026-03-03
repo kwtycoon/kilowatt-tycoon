@@ -2,6 +2,7 @@
 //!
 //! Uses PNG assets for the placement cursor (generated from SVG source files).
 
+use crate::components::power::Transformer;
 use crate::helpers::GamePointer;
 use crate::resources::{
     AmenityType, BuildState, BuildTool, ChargerPadType, GameState, ImageAssets, MultiSiteManager,
@@ -86,6 +87,7 @@ pub fn build_placement_system(
     pointer: Res<GamePointer>,
     camera_query: Query<(&Camera, &GlobalTransform), With<WorldCamera>>,
     ui_interactions: Query<&Interaction>,
+    transformers: Query<&Transformer>,
 ) {
     // Block placement when pointer is over any UI element (buttons, panels, etc.)
     if pointer.just_pressed || pointer.pressed {
@@ -108,6 +110,7 @@ pub fn build_placement_system(
     let Some(site) = multi_site.active_site_mut() else {
         return;
     };
+    let site_id = site.id;
     let grid = &mut site.grid;
     let pending_video_ad_chargers = &mut site.pending_video_ad_chargers;
 
@@ -145,6 +148,8 @@ pub fn build_placement_system(
             &mut game_state,
             grid,
             pending_video_ad_chargers,
+            site_id,
+            &transformers,
             grid_x,
             grid_y,
         );
@@ -159,6 +164,8 @@ pub fn build_placement_system(
                 &mut game_state,
                 grid,
                 pending_video_ad_chargers,
+                site_id,
+                &transformers,
                 grid_x,
                 grid_y,
             );
@@ -178,6 +185,8 @@ fn try_place_tile(
     game_state: &mut GameState,
     grid: &mut crate::resources::SiteGrid,
     pending_video_ad_chargers: &mut std::collections::HashSet<(i32, i32)>,
+    site_id: crate::resources::SiteId,
+    transformers: &Query<&Transformer>,
     x: i32,
     y: i32,
 ) {
@@ -294,6 +303,30 @@ fn try_place_tile(
             }
         }
         BuildTool::Sell => {
+            // Burned transformers are forced demolition: $0 resale.
+            let destroyed_transformer_target = {
+                let content = grid.get_content(x, y);
+                if matches!(
+                    content,
+                    TileContent::TransformerPad | TileContent::TransformerOccupied
+                ) {
+                    let anchor = if content == TileContent::TransformerPad {
+                        Some((x, y))
+                    } else {
+                        grid.get_tile(x, y).and_then(|t| t.anchor_pos)
+                    };
+                    if let Some((ax, ay)) = anchor {
+                        transformers
+                            .iter()
+                            .any(|t| t.site_id == site_id && t.grid_pos == (ax, ay) && t.destroyed)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            };
+
             if let Ok(sold) = grid.sell(x, y) {
                 // Refund based on what was sold
                 let refund = match sold {
@@ -308,13 +341,19 @@ fn try_place_tile(
                         }
                     }
                     SellResult::SoldEquipment(content) => match content {
-                        TileContent::TransformerPad => 50000,       // 2x2 transformer
-                        TileContent::SolarPad => 24000,             // 3x2 solar
-                        TileContent::BatteryPad => 50000,           // 2x2 battery
-                        TileContent::SecurityPad => 80000,          // 2x2 security system
+                        TileContent::TransformerPad => {
+                            if destroyed_transformer_target {
+                                0
+                            } else {
+                                50000
+                            }
+                        } // 2x2 transformer
+                        TileContent::SolarPad => 24000,   // 3x2 solar
+                        TileContent::BatteryPad => 50000, // 2x2 battery
+                        TileContent::SecurityPad => 80000, // 2x2 security system
                         TileContent::AmenityWifiRestrooms => 15000, // 3x3
-                        TileContent::AmenityLoungeSnacks => 50000,  // 4x4
-                        TileContent::AmenityRestaurant => 150000,   // 5x4
+                        TileContent::AmenityLoungeSnacks => 50000, // 4x4
+                        TileContent::AmenityRestaurant => 150000, // 5x4
                         _ => 0,
                     },
                 };

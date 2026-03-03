@@ -4,7 +4,7 @@ use bevy::prelude::*;
 
 /// Costs for each upgrade in dollars
 pub mod upgrade_costs {
-    pub const TRANSFORMER_COOLING: f32 = 8000.0;
+    pub const SMART_LOAD_SHEDDING: f32 = 8000.0;
     pub const ADVANCED_POWER_MANAGEMENT: f32 = 25000.0;
     pub const MARKETING_CAMPAIGN: f32 = 3000.0;
     pub const DYNAMIC_PRICING: f32 = 15000.0;
@@ -126,8 +126,8 @@ impl OemTier {
 /// Tracks purchased site upgrades
 #[derive(Resource, Debug, Clone, Default)]
 pub struct SiteUpgrades {
-    /// Transformer cooling - +15% thermal headroom
-    pub has_transformer_cooling: bool,
+    /// Smart Load Shedding - auto-throttles charger power when transformer overheats
+    pub has_smart_load_shedding: bool,
     /// Advanced power management - unlocks power density and battery controls
     pub has_advanced_power_management: bool,
     /// Marketing campaign - +10% demand (temporary or permanent depending on design)
@@ -185,14 +185,11 @@ impl SiteUpgrades {
         }
     }
 
-    /// Get the thermal headroom bonus
-    /// Transformer cooling adds 15% headroom (returns as multiplier on max temp)
-    pub fn thermal_headroom_multiplier(&self) -> f32 {
-        if self.has_transformer_cooling {
-            1.15 // 15% more headroom
-        } else {
-            1.0
-        }
+    /// Whether smart load shedding is active.
+    /// When purchased, the site auto-throttles charger power delivery as the
+    /// transformer temperature climbs, preventing runaway overload fires.
+    pub fn has_smart_load_shedding(&self) -> bool {
+        self.has_smart_load_shedding
     }
 
     /// Check if advanced power management is active (unlocks power density + battery controls)
@@ -218,12 +215,12 @@ impl SiteUpgrades {
             OemTier::Detect => 5.0,
             OemTier::Optimize => 10.0,
         };
-        let cooling_bonus: f32 = if self.has_transformer_cooling {
+        let shedding_bonus: f32 = if self.has_smart_load_shedding {
             3.0
         } else {
             0.0
         };
-        (base_uptime + oem_bonus + cooling_bonus).min(99.0)
+        (base_uptime + oem_bonus + shedding_bonus).min(99.0)
     }
 
     /// Get upgrade info for display
@@ -242,10 +239,10 @@ impl SiteUpgrades {
                 cost: upgrade_costs::MARKETING_CAMPAIGN,
             },
             UpgradeInfo {
-                id: UpgradeId::TransformerCooling,
-                name: "Transformer Cooling",
-                description: "+15% thermal headroom",
-                cost: upgrade_costs::TRANSFORMER_COOLING,
+                id: UpgradeId::SmartLoadShedding,
+                name: "Smart Load Shedding",
+                description: "Auto-throttles chargers when transformer overheats",
+                cost: upgrade_costs::SMART_LOAD_SHEDDING,
             },
             UpgradeInfo {
                 id: UpgradeId::DynamicPricing,
@@ -277,7 +274,7 @@ impl SiteUpgrades {
     /// Check if an upgrade is purchased (DemandBoost is never "purchased" — it's repeatable).
     pub fn is_purchased(&self, id: UpgradeId) -> bool {
         match id {
-            UpgradeId::TransformerCooling => self.has_transformer_cooling,
+            UpgradeId::SmartLoadShedding => self.has_smart_load_shedding,
             UpgradeId::AdvancedPowerManagement => self.has_advanced_power_management,
             UpgradeId::Marketing => self.has_marketing,
             UpgradeId::DynamicPricing => self.has_dynamic_pricing,
@@ -290,7 +287,7 @@ impl SiteUpgrades {
     /// Purchase an upgrade (sets the flag to true, or activates the boost timer).
     pub fn purchase(&mut self, id: UpgradeId) {
         match id {
-            UpgradeId::TransformerCooling => self.has_transformer_cooling = true,
+            UpgradeId::SmartLoadShedding => self.has_smart_load_shedding = true,
             UpgradeId::AdvancedPowerManagement => self.has_advanced_power_management = true,
             UpgradeId::Marketing => self.has_marketing = true,
             UpgradeId::DynamicPricing => self.has_dynamic_pricing = true,
@@ -311,7 +308,7 @@ impl SiteUpgrades {
     /// Get the cost of an upgrade
     pub fn get_cost(id: UpgradeId) -> f32 {
         match id {
-            UpgradeId::TransformerCooling => upgrade_costs::TRANSFORMER_COOLING,
+            UpgradeId::SmartLoadShedding => upgrade_costs::SMART_LOAD_SHEDDING,
             UpgradeId::AdvancedPowerManagement => upgrade_costs::ADVANCED_POWER_MANAGEMENT,
             UpgradeId::Marketing => upgrade_costs::MARKETING_CAMPAIGN,
             UpgradeId::DynamicPricing => upgrade_costs::DYNAMIC_PRICING,
@@ -334,7 +331,7 @@ impl SiteUpgrades {
 /// Upgrade identifier
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UpgradeId {
-    TransformerCooling,
+    SmartLoadShedding,
     AdvancedPowerManagement,
     Marketing,
     DynamicPricing,

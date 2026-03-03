@@ -28,6 +28,17 @@ impl GameSpeed {
         }
     }
 
+    /// Speed factor for dramatic real-time events (fire, thermal model, firetruck).
+    /// At 10x game speed, fires progress 2x faster in wall-clock time so the
+    /// player has less time to react — but the event is still human-perceivable.
+    pub fn drama_multiplier(&self) -> f32 {
+        match self {
+            GameSpeed::Paused => 0.0,
+            GameSpeed::Normal => 1.0,
+            GameSpeed::Fast => 2.0,
+        }
+    }
+
     /// Visual animation multiplier - decoupled from simulation speed for readability.
     /// Returns a small multiplier so vehicles move at a comfortable viewing pace
     /// regardless of how fast the simulation clock is running.

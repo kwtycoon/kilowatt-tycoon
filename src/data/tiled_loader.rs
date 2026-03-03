@@ -27,6 +27,9 @@ pub fn parse_archetype(s: &str) -> Option<SiteArchetype> {
         "parking_lot" | "parkinglot" => Some(SiteArchetype::ParkingLot),
         "gas_station" | "gasstation" => Some(SiteArchetype::GasStation),
         "fleet_depot" | "fleetdepot" => Some(SiteArchetype::FleetDepot),
+        "scooter_hub" | "scooterhub" | "scooter_alley" | "scooteralley" => {
+            Some(SiteArchetype::ScooterHub)
+        }
         _ => None,
     }
 }
@@ -161,6 +164,9 @@ pub fn tile_id_to_content(tile_id: u32) -> TileContent {
         55 => TileContent::AmenityOccupied,
         56 => TileContent::Road, // RoadYellowLine - same gameplay as Road
         57 => TileContent::Road, // Decorative road - same gameplay as Road
+        // Decoration-only tiles (no gameplay content_type in tileset)
+        58..=91 => TileContent::Grass,
+        92..=149 => TileContent::Grass,
         _ => {
             warn!("Unknown tile ID {}, defaulting to Grass", tile_id);
             TileContent::Grass
@@ -317,9 +323,12 @@ fn extract_locked_tiles_from_layer(
 }
 
 /// Determine if a tile should be locked based on its ID and content
-fn should_tile_be_locked(_tile_id: u32, content: &TileContent) -> bool {
-    // Tiles that are typically locked (from template, not player-placed)
-    // Note: Entry/Exit are no longer locked tiles - they're defined via zone objects
+fn should_tile_be_locked(tile_id: u32, content: &TileContent) -> bool {
+    // Decoration / scenery tiles (58-91 typed props, 92-149 fixed sprites) are always locked
+    if tile_id >= 58 {
+        return true;
+    }
+
     matches!(
         content,
         TileContent::Road
@@ -529,6 +538,10 @@ mod tests {
         assert_eq!(
             parse_archetype("gas_station"),
             Some(SiteArchetype::GasStation)
+        );
+        assert_eq!(
+            parse_archetype("scooter_hub"),
+            Some(SiteArchetype::ScooterHub)
         );
         assert_eq!(parse_archetype("unknown"), None);
     }

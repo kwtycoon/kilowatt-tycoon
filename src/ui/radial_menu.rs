@@ -879,6 +879,7 @@ pub fn handle_radial_menu_buttons(
                     match button.action {
                         RadialMenuAction::Reboot => {
                             let action = if charger.current_fault == Some(FaultType::FirmwareFault)
+                                || charger.reboot_attempts > 0
                             {
                                 RemoteAction::HardReboot
                             } else {

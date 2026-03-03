@@ -1,0 +1,23 @@
+{
+  "level_num": 4,
+  "file_base": "04_scooter_alley",
+  "name": "Scooter Alley",
+  "archetype": "scooter_hub",
+  "grid_size": [30, 20],
+  "grid_capacity_kva": 800.0,
+  "popularity": 95,
+  "rent_cost": 28000,
+  "challenge_level": 4,
+  "description": "Scooter Alley in Ho Chi Minh City. Dense L2-focused charging hub near high commuter and delivery traffic. Hot climate and high turnover reward smart load balancing.",
+  "visual_description": "Dense urban scooter charging alley. Entry left on the road, exit right. Road band across rows 10-11. Upper half (rows 12-19) is a tightly packed scooter dock yard with herringbone parking bays in four double rows separated by concrete service lanes. Solar canopy zone covers the core dock area (rows 13-18, cols 1-27). Grass utility strips along the right edge (cols 28-29) and scattered along the left for transformer, solar, and battery placement.",
+  "zones": [
+    {"type": "road",         "rects": [[0, 10, 29, 11]]},
+    {"type": "entry",        "points": [[0, 10]]},
+    {"type": "exit",         "points": [[28, 10]]},
+    {"type": "driveable",    "rects": [[0, 12, 27, 19]]},
+    {"type": "parking",      "rects": [[1, 12, 27, 13], [1, 14, 27, 15], [1, 16, 27, 17], [1, 18, 27, 19]]},
+    {"type": "charger_area", "rects": [[1, 12, 27, 13], [1, 14, 27, 15], [1, 16, 27, 17], [1, 18, 27, 19]]},
+    {"type": "canopy_zone",  "rects": [[1, 13, 27, 18]]},
+    {"type": "buildable",    "rects": [[28, 12, 29, 19], [0, 12, 0, 19]]}
+  ]
+}

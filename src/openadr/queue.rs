@@ -71,6 +71,12 @@ pub struct OpenAdrSiteState {
     pub grid_alert_emitted: bool,
     /// Last emitted carbon credit rate (quantised, to detect changes).
     pub last_carbon_rate: Option<f32>,
+    /// Whether a transformer fire/overload alert is currently active.
+    pub fire_alert_active: bool,
+    /// Whether a fire-induced ImportCapacityLimit=0 event has been emitted.
+    pub fire_capacity_zeroed: bool,
+    /// Last emitted effective capacity during fire tracking (to detect restoration).
+    pub last_fire_capacity_kva: Option<f32>,
     /// Monotonically increasing interval counter for reports.
     pub next_interval_id: i32,
 }
@@ -92,6 +98,9 @@ impl Default for OpenAdrSiteState {
             spot_grid_event_active: false,
             grid_alert_emitted: false,
             last_carbon_rate: None,
+            fire_alert_active: false,
+            fire_capacity_zeroed: false,
+            last_fire_capacity_kva: None,
             next_interval_id: 1,
         }
     }

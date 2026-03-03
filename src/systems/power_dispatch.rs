@@ -54,8 +54,9 @@ pub fn power_dispatch_system(
         }
     }
 
-    // Calculate site power limit (in kVA - this is the infrastructure constraint)
-    let site_limit_kva = site_state.effective_capacity_kva();
+    // Grid connection is the hard dispatch limit; transformer overload is
+    // handled by the thermal model (not by capping dispatch).
+    let site_limit_kva = site_state.dispatch_limit_kva();
 
     // Update solar generation based on time of day and weather
     let solar_factor = site_state

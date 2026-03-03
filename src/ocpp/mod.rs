@@ -198,6 +198,9 @@ fn ocpp_status_log_system(
     timer.last_log_time = 0.0;
 
     let total = conn_mgr.connections.len();
+    if total == 0 {
+        return;
+    }
     let connected = conn_mgr
         .connections
         .values()

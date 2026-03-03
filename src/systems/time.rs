@@ -3,8 +3,10 @@
 use bevy::prelude::*;
 
 use crate::components::driver::{Driver, DriverState, MovementPhase, VehicleMovement};
+use crate::components::power::Transformer;
 use crate::resources::{GameClock, GameState, MultiSiteManager};
 use crate::states::AppState;
+use crate::systems::power::EmergencyFiretruck;
 
 /// Tick down demand boost timers for all sites.
 pub fn tick_demand_boosts(
@@ -47,9 +49,9 @@ pub fn time_system(time: Res<Time>, mut game_clock: ResMut<GameClock>, game_stat
 }
 
 /// Maximum real-time seconds the wind-down phase can last before force-transitioning
-/// to DayEnd. Prevents the game from stalling on slow hardware (e.g. software-rendered
-/// WASM in CI) while vehicles animate their way off the map.
-const MAX_WIND_DOWN_SECS: f32 = 30.0;
+/// to DayEnd. Sized to accommodate transformer fire sequences (firetruck travel +
+/// 10 s spray + return) on top of normal driver departure.
+const MAX_WIND_DOWN_SECS: f32 = 60.0;
 
 /// Manages the end-of-day wind-down phase.
 ///
@@ -59,6 +61,7 @@ const MAX_WIND_DOWN_SECS: f32 = 30.0;
 /// 3. Monitors remaining drivers — once all have exited (or none remain), transitions to `DayEnd`.
 /// 4. Force-transitions after [`MAX_WIND_DOWN_SECS`] real seconds even if drivers remain.
 pub fn day_ending_system(
+    mut commands: Commands,
     game_clock: Res<GameClock>,
     mut next_state: ResMut<NextState<AppState>>,
     mut drivers: Query<(
@@ -69,6 +72,8 @@ pub fn day_ending_system(
     mut chargers: Query<&mut crate::components::charger::Charger>,
     mut multi_site: ResMut<MultiSiteManager>,
     mut game_state: ResMut<GameState>,
+    mut transformers: Query<&mut Transformer>,
+    firetrucks: Query<Entity, With<EmergencyFiretruck>>,
 ) {
     if !game_clock.day_ending {
         return;
@@ -183,6 +188,13 @@ pub fn day_ending_system(
         site.charger_queue.clear();
     }
 
+    // Block day transition while the fire sequence is still playing out
+    let fire_active = transformers.iter().any(|t| t.on_fire);
+    let firetrucks_active = !firetrucks.is_empty();
+    if fire_active || firetrucks_active {
+        any_remaining = true;
+    }
+
     if !any_remaining {
         info!(
             "Day {} wind-down complete — all drivers have left, transitioning to DayEnd",
@@ -190,8 +202,26 @@ pub fn day_ending_system(
         );
         next_state.set(AppState::DayEnd);
     } else if force_end {
+        // Force-resolve any active fires so the day doesn't stall indefinitely
+        for mut transformer in &mut transformers {
+            if transformer.on_fire {
+                transformer.on_fire = false;
+                transformer.destroyed = true;
+                transformer.firetruck_dispatched = false;
+                transformer.current_temp_c = transformer.ambient_temp_c + 10.0;
+                transformer.overload_seconds = 0.0;
+                warn!(
+                    "Force-resolved fire on transformer at {:?} during day end",
+                    transformer.grid_pos
+                );
+            }
+        }
+        for entity in &firetrucks {
+            commands.entity(entity).try_despawn();
+        }
+
         warn!(
-            "Day {} wind-down force-ended after {:.0}s — transitioning to DayEnd with drivers still on map",
+            "Day {} wind-down force-ended after {:.0}s — transitioning to DayEnd",
             game_clock.day, wind_down_elapsed
         );
         next_state.set(AppState::DayEnd);

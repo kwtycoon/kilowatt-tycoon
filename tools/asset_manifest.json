@@ -1836,6 +1836,21 @@
         ],
         "preferred_charger": "AcLevel2",
         "ai_prompt": "top-down electric motorcycle #18181B black body, narrow sleek silhouette, fuel tank and seat visible from above, handlebars at front, green #22C55E EV accent stripe, no visible wheels, sporty electric bike appearance"
+      },
+      {
+        "name": "Firetruck",
+        "rust_variant": "Firetruck",
+        "filename": "vehicle_firetruck.png",
+        "dimensions": {
+          "width": 55,
+          "height": 120
+        },
+        "footprint_tiles": 3,
+        "compatible_chargers": [
+          "DcFast"
+        ],
+        "preferred_charger": "DcFast",
+        "ai_prompt": "top-down electric firetruck #DC2626 bright red body, long rectangular silhouette, prominent emergency light bars on roof, water pump equipment visible from top, no visible wheels, heavy municipal emergency response vehicle"
       }
     ]
   },
@@ -2290,51 +2305,56 @@
       },
       {
         "id": 3,
+        "name": "TransformerDestroyed",
+        "filename": "prop_transformer_destroyed.png"
+      },
+      {
+        "id": 4,
         "name": "SolarArrayGround",
         "filename": "prop_solar_array_ground.png"
       },
       {
-        "id": 4,
+        "id": 5,
         "name": "BatteryContainer",
         "filename": "prop_battery_container.png"
       },
       {
-        "id": 5,
+        "id": 6,
         "name": "ChargerBollard",
         "filename": "prop_charger_bollard.png"
       },
       {
-        "id": 6,
+        "id": 7,
         "name": "ChargerBollardLit",
         "filename": "prop_charger_bollard_lit.png"
       },
       {
-        "id": 7,
+        "id": 8,
         "name": "AmenityWifiRestrooms",
         "filename": "prop_amenity_wifi_restrooms.png"
       },
       {
-        "id": 8,
+        "id": 9,
         "name": "AmenityLoungeSnacks",
         "filename": "prop_amenity_lounge_snacks.png"
       },
       {
-        "id": 9,
+        "id": 10,
         "name": "AmenityRestaurantPremium",
         "filename": "prop_amenity_restaurant_premium.png"
       },
       {
-        "id": 10,
+        "id": 11,
         "name": "SecuritySystem",
         "filename": "prop_security_system.png"
       },
       {
-        "id": 11,
+        "id": 12,
         "name": "SecurityPole",
         "filename": "prop_security_pole.png"
       },
       {
-        "id": 12,
+        "id": 13,
         "name": "SecurityCameraHead",
         "filename": "prop_security_camera_head.png"
       }

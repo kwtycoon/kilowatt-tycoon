@@ -870,7 +870,7 @@ pub fn handle_strategy_panel_buttons(
                     continue;
                 }
                 site_state.service_strategy.target_power_density =
-                    (site_state.service_strategy.target_power_density + delta).clamp(0.5, 1.2);
+                    (site_state.service_strategy.target_power_density + delta).clamp(0.5, 2.0);
             }
             StrategyControl::Maintenance => {
                 // Requires any OEM tier
@@ -1028,9 +1028,9 @@ pub fn update_slider_fill_widths(
                 (normalized * 100.0).clamp(0.0, 100.0)
             }
             StrategyControl::PowerDensity => {
-                // Range: 0.5 - 1.2
+                // Range: 0.5 - 2.0
                 let normalized =
-                    (site_state.service_strategy.target_power_density - 0.5) / (1.2 - 0.5);
+                    (site_state.service_strategy.target_power_density - 0.5) / (2.0 - 0.5);
                 (normalized * 100.0).clamp(0.0, 100.0)
             }
             StrategyControl::Maintenance => {

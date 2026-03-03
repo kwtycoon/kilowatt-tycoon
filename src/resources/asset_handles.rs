@@ -47,6 +47,7 @@ pub struct ImageAssets {
     pub vehicle_bus: Handle<Image>,
     pub vehicle_semi: Handle<Image>,
     pub vehicle_tractor: Handle<Image>,
+    pub vehicle_firetruck: Handle<Image>,
     pub vehicle_scooter: Handle<Image>,
     pub vehicle_motorcycle: Handle<Image>,
 
@@ -90,6 +91,7 @@ pub struct ImageAssets {
     pub prop_transformer: Handle<Image>,
     pub prop_transformer_hot: Handle<Image>,
     pub prop_transformer_critical: Handle<Image>,
+    pub prop_transformer_destroyed: Handle<Image>,
     pub prop_solar_array_ground: Handle<Image>,
     pub prop_battery_container: Handle<Image>,
     pub prop_security_system: Handle<Image>,
@@ -273,6 +275,7 @@ pub fn load_image_assets(mut commands: Commands, asset_server: Res<AssetServer>)
         vehicle_bus: asset_server.load("vehicles/vehicle_bus.png"),
         vehicle_semi: asset_server.load("vehicles/vehicle_semi.png"),
         vehicle_tractor: asset_server.load("vehicles/vehicle_tractor.png"),
+        vehicle_firetruck: asset_server.load("vehicles/vehicle_firetruck.png"),
         vehicle_scooter: asset_server.load("vehicles/vehicle_scooter.png"),
         vehicle_motorcycle: asset_server.load("vehicles/vehicle_motorcycle.png"),
 
@@ -326,6 +329,7 @@ pub fn load_image_assets(mut commands: Commands, asset_server: Res<AssetServer>)
         prop_transformer: asset_server.load("props/prop_transformer.png"),
         prop_transformer_hot: asset_server.load("props/prop_transformer_hot.png"),
         prop_transformer_critical: asset_server.load("props/prop_transformer_critical.png"),
+        prop_transformer_destroyed: asset_server.load("props/prop_transformer_destroyed.png"),
         prop_solar_array_ground: asset_server.load("props/prop_solar_array_ground.png"),
         prop_battery_container: asset_server.load("props/prop_battery_container.png"),
         prop_security_system: asset_server.load("props/prop_security_system.png"),

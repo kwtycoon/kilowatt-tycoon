@@ -312,6 +312,7 @@ pub fn vehicle_dimensions(vehicle_type: VehicleType) -> Vec2 {
         VehicleType::Bus => Vec2::new(55.0, 110.0),
         VehicleType::Semi => Vec2::new(58.0, 140.0),
         VehicleType::Tractor => Vec2::new(50.0, 80.0),
+        VehicleType::Firetruck => Vec2::new(55.0, 120.0),
         VehicleType::Scooter => Vec2::new(22.0, 45.0),
         VehicleType::Motorcycle => Vec2::new(26.0, 65.0),
     }
@@ -328,6 +329,7 @@ fn get_vehicle_image(assets: &ImageAssets, vehicle_type: VehicleType) -> Handle<
         VehicleType::Bus => assets.vehicle_bus.clone(),
         VehicleType::Semi => assets.vehicle_semi.clone(),
         VehicleType::Tractor => assets.vehicle_tractor.clone(),
+        VehicleType::Firetruck => assets.vehicle_firetruck.clone(),
         VehicleType::Scooter => assets.vehicle_scooter.clone(),
         VehicleType::Motorcycle => assets.vehicle_motorcycle.clone(),
     }

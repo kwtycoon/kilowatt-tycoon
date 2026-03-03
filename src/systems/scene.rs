@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use bevy::sprite::Anchor;
 
 use crate::components::charger::{Charger, ChargerSprite, ChargerState, ChargerTier, ChargerType};
-use crate::components::power::Transformer;
+use crate::components::power::{Transformer, TransformerVisualTier};
 use crate::resources::{
     AmenityType, ChargerPadType, GRID_HEIGHT, GRID_OFFSET_X, GRID_OFFSET_Y, GRID_WIDTH,
     ImageAssets, SiteGrid, SiteId, StructureSize, TILE_SIZE, TileContent,
@@ -24,6 +24,19 @@ pub struct ChargerSyncRevision(pub HashMap<SiteId, u64>);
 /// Resource tracking last processed grid revision per site for visual updates.
 #[derive(Resource, Default)]
 pub struct GridVisualRevision(pub HashMap<SiteId, u64>);
+
+/// Resource tracking last processed grid revision per site for transformer sync.
+#[derive(Resource, Default)]
+pub struct TransformerSyncRevision(pub HashMap<SiteId, u64>);
+
+/// Result of computing transformer diff between grid and existing entities.
+#[derive(Debug, Default)]
+pub struct TransformerDiff {
+    /// Transformer entities to despawn (no longer in grid)
+    pub to_despawn: Vec<((i32, i32), Entity)>,
+    /// Transformer placements to spawn (new in grid): (pos, kva)
+    pub to_spawn: Vec<((i32, i32), f32)>,
+}
 
 /// Marker for grid tile visuals
 #[derive(Component)]
@@ -447,22 +460,42 @@ pub fn update_transformer_gauges(
 
     let bar_width = TRANSFORMER_GAUGE_BAR_WIDTH;
 
-    // Update load bar (0% = no fill visible)
-    // Fill sprite is left-anchored, so we only need to update width
+    // Determine bar color based on overload countdown progress
+    let overload_progress = transformers
+        .iter()
+        .next()
+        .map(|t| t.overload_seconds / 90.0)
+        .unwrap_or(0.0);
+
+    let bar_color = if overload_progress > 0.67 {
+        Color::srgba(1.0, 0.2, 0.1, 1.0)
+    } else if overload_progress > 0.33 {
+        Color::srgba(1.0, 0.6, 0.1, 1.0)
+    } else if overload_progress > 0.0 {
+        Color::srgba(1.0, 0.85, 0.2, 1.0)
+    } else {
+        Color::srgba(0.15, 0.7, 1.0, 1.0)
+    };
+
     for (mut sprite, _transform) in &mut load_bars {
-        let fill_width = bar_width * load_pct;
+        let target_width = bar_width * load_pct;
+        let current_width = sprite.custom_size.map(|s| s.x).unwrap_or(0.0);
+        let fill_width = current_width + (target_width - current_width) * 0.15;
         sprite.custom_size = Some(Vec2::new(fill_width, TRANSFORMER_GAUGE_BAR_HEIGHT));
+        sprite.color = bar_color;
     }
 
-    // Update main transformer sprite based on temperature
-    // Since there's only one transformer per site, we can use the first one found
     if let Some(transformer) = transformers.iter().next() {
-        let new_image = if transformer.is_critical() {
+        let new_image = if transformer.destroyed {
+            assets.prop_transformer_destroyed.clone()
+        } else if transformer.on_fire {
             assets.prop_transformer_critical.clone()
-        } else if transformer.is_warning() {
-            assets.prop_transformer_hot.clone()
         } else {
-            assets.prop_transformer.clone()
+            match transformer.visual_tier {
+                TransformerVisualTier::Critical => assets.prop_transformer_critical.clone(),
+                TransformerVisualTier::Warning => assets.prop_transformer_hot.clone(),
+                TransformerVisualTier::Normal => assets.prop_transformer.clone(),
+            }
         };
 
         for mut sprite in &mut visuals {
@@ -962,6 +995,33 @@ pub fn compute_charger_diff(
     diff
 }
 
+/// Compute the diff between desired transformer positions (from grid) and existing
+/// transformer entities. Pure function for testability.
+pub fn compute_transformer_diff(
+    grid: &SiteGrid,
+    existing_positions: &HashMap<(i32, i32), Entity>,
+) -> TransformerDiff {
+    use std::collections::HashSet;
+
+    let desired: HashSet<(i32, i32)> = grid.transformers.iter().map(|t| t.pos).collect();
+
+    let mut diff = TransformerDiff::default();
+
+    for (&pos, &entity) in existing_positions {
+        if !desired.contains(&pos) {
+            diff.to_despawn.push((pos, entity));
+        }
+    }
+
+    for tp in &grid.transformers {
+        if !existing_positions.contains_key(&tp.pos) {
+            diff.to_spawn.push((tp.pos, tp.kva));
+        }
+    }
+
+    diff
+}
+
 /// Sync charger entities with the grid.
 /// Runs in Playing state regardless of is_open, ensuring chargers exist as entities
 /// whenever they are placed on the grid (both build mode and during the day).
@@ -1199,52 +1259,59 @@ pub fn sync_chargers_with_grid(
     sync_revision.0.insert(site_id, current_revision);
 }
 
-/// Spawn transformer logic entities when station opens (one per transformer on grid)
-pub fn spawn_transformer_from_grid(
+/// Sync transformer logic entities with the grid.
+/// Mirrors `sync_chargers_with_grid`: uses revision-based change detection to despawn
+/// transformer entities that were sold and spawn new ones that were placed.
+pub fn sync_transformers_with_grid(
     mut commands: Commands,
     multi_site: Res<crate::resources::MultiSiteManager>,
-    build_state: Res<crate::resources::BuildState>,
-    existing_transformers: Query<Entity, With<Transformer>>,
+    existing_transformers: Query<(Entity, &Transformer)>,
+    mut sync_revision: ResMut<TransformerSyncRevision>,
 ) {
-    // Only run when station just opened and no transformer entities exist
-    if !build_state.is_open {
-        return;
-    }
-    if !existing_transformers.is_empty() {
-        return;
-    }
-
-    // Get active site grid or return early
     let Some(site) = multi_site.active_site() else {
         return;
     };
-    let grid = &site.grid;
 
-    // Only spawn if there are transformers on the grid
-    if !grid.has_transformer() {
+    let site_id = site.id;
+    let grid = &site.grid;
+    let current_revision = grid.revision;
+
+    let last_revision = sync_revision.0.get(&site_id).copied().unwrap_or(0);
+    if current_revision == last_revision {
         return;
     }
 
-    // Create a transformer logic entity for each transformer on the grid
-    for transformer_placement in &grid.transformers {
-        let transformer = Transformer {
-            site_id: site.id,
-            grid_pos: transformer_placement.pos,
-            rating_kva: transformer_placement.kva,
-            thermal_limit_c: 110.0,
-            ..default()
-        };
+    let mut existing_positions: HashMap<(i32, i32), Entity> = HashMap::new();
+    for (entity, transformer) in &existing_transformers {
+        if transformer.site_id == site_id {
+            existing_positions.insert(transformer.grid_pos, entity);
+        }
+    }
 
-        commands.spawn(transformer);
+    let diff = compute_transformer_diff(grid, &existing_positions);
+
+    for ((x, y), entity) in &diff.to_despawn {
+        commands.entity(*entity).try_despawn();
         info!(
-            "Spawned transformer logic entity at {:?} with {} kVA capacity",
-            transformer_placement.pos, transformer_placement.kva
+            "Despawned transformer at ({}, {}) for site {:?} - removed from grid",
+            x, y, site_id
         );
     }
 
-    info!(
-        "Spawned {} transformer(s) with total {} kVA capacity",
-        grid.transformer_count(),
-        grid.total_transformer_capacity()
-    );
+    for ((x, y), kva) in &diff.to_spawn {
+        let transformer = Transformer {
+            site_id,
+            grid_pos: (*x, *y),
+            rating_kva: *kva,
+            thermal_limit_c: 110.0,
+            ..default()
+        };
+        commands.spawn(transformer);
+        info!(
+            "Spawned transformer logic entity at ({}, {}) with {} kVA for site {:?}",
+            x, y, kva, site_id
+        );
+    }
+
+    sync_revision.0.insert(site_id, current_revision);
 }

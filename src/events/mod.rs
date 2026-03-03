@@ -50,6 +50,9 @@ impl Plugin for EventsPlugin {
             .add_message::<DemandBurdenEvent>()
             // O&M events
             .add_message::<OemUpgradeEvent>()
+            // Transformer fire events
+            .add_message::<TransformerOverloadWarningEvent>()
+            .add_message::<TransformerFireEvent>()
             // Achievement events
             .add_message::<AchievementUnlockedEvent>();
     }
@@ -199,6 +202,26 @@ pub struct RepairFailedEvent {
     pub charger_id: String,
     pub repair_cost: f32,
     pub failure_reason: String,
+}
+
+// ============ Transformer Fire Events ============
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverloadSeverity {
+    Warning,
+    Critical,
+}
+
+#[derive(Event, Message, Debug, Clone)]
+pub struct TransformerOverloadWarningEvent {
+    pub severity: OverloadSeverity,
+    pub overload_pct: f32,
+    pub has_power_management: bool,
+}
+
+#[derive(Event, Message, Debug, Clone)]
+pub struct TransformerFireEvent {
+    pub grid_pos: (i32, i32),
 }
 
 // ============ O&M Events ============

@@ -20,6 +20,7 @@
 
 pub mod achievement_modal;
 pub mod demand_toasts;
+pub mod fire_toasts;
 pub mod hud;
 pub mod leaderboard_modal;
 pub mod leaderboard_systems;
@@ -187,6 +188,12 @@ impl Plugin for UiPlugin {
                 demand_toasts::update_toast_action_button_styles,
                 demand_toasts::handle_reduce_load_button,
                 demand_toasts::handle_dismiss_warning_button,
+                // Transformer fire toast systems
+                fire_toasts::spawn_overload_warning_toast,
+                fire_toasts::spawn_fire_started_toast,
+                fire_toasts::handle_shed_load_button,
+                fire_toasts::handle_dismiss_overload_button,
+                fire_toasts::update_fire_toast_button_styles,
                 // Site tabs systems
                 update_site_tabs,
                 handle_site_tab_clicks,

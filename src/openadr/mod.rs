@@ -58,6 +58,7 @@ impl Plugin for OpenAdrPlugin {
                 openadr_customer_price_system,
                 openadr_ghg_signal_system,
                 openadr_grid_alert_system,
+                openadr_transformer_fire_system,
             )
                 .chain()
                 .run_if(in_state(AppState::Playing)),

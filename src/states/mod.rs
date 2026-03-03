@@ -417,6 +417,9 @@ fn cleanup_entities_on_day_end(
     stealing_sparks: Query<Entity, With<crate::systems::sprite::StealingSparkVfx>>,
     loot_bubbles: Query<Entity, With<crate::systems::sprite::RobberLootBubble>>,
     stolen_cables: Query<Entity, With<crate::systems::sprite::StolenCableSprite>>,
+    firetrucks: Query<Entity, With<crate::systems::power::EmergencyFiretruck>>,
+    fire_vfx: Query<Entity, With<crate::systems::power::PixelFire>>,
+    water_vfx: Query<Entity, With<crate::systems::power::TransformerWaterVfx>>,
 ) {
     for entity in &drivers {
         commands.entity(entity).try_despawn();
@@ -445,6 +448,15 @@ fn cleanup_entities_on_day_end(
     for entity in &stolen_cables {
         commands.entity(entity).try_despawn();
     }
+    for entity in &firetrucks {
+        commands.entity(entity).try_despawn();
+    }
+    for entity in &fire_vfx {
+        commands.entity(entity).try_despawn();
+    }
+    for entity in &water_vfx {
+        commands.entity(entity).try_despawn();
+    }
 }
 
 /// Called when entering the day end state
@@ -459,6 +471,7 @@ fn on_enter_day_end(
     achievement_state: Res<crate::resources::achievements::AchievementState>,
     achievement_snapshot: Option<Res<crate::resources::achievements::AchievementSnapshot>>,
     chargers: Query<&crate::components::charger::Charger>,
+    transformers: Query<&crate::components::power::Transformer>,
 ) {
     info!("Day {} complete!", game_clock.day);
 
@@ -571,6 +584,8 @@ fn on_enter_day_end(
         .count() as u32;
     let pending_cable_cost = pending_cable_thefts as f32 * 2000.0;
 
+    let destroyed_transformers = transformers.iter().filter(|t| t.destroyed).count() as i32;
+
     // Store the record in history
     game_state.daily_history.records.push(daily_record);
 
@@ -674,6 +689,7 @@ fn on_enter_day_end(
         reputation_delta,
         warranty_cost,
         warranty_recovery,
+        destroyed_transformers,
     );
 
     // Compute per-kWh pricing for expanded view
@@ -1703,8 +1719,13 @@ fn generate_pro_tip(
     reputation_delta: i32,
     warranty_cost: f32,
     warranty_recovery: f32,
+    destroyed_transformers: i32,
 ) -> String {
-    let tip = if sessions == 0 {
+    let tip = if destroyed_transformers >= 2 {
+        "Two transformers down in one day. At this rate, the fire department will name a wing after us."
+    } else if destroyed_transformers == 1 {
+        "One transformer caught fire today. On the bright side, we're on a first-name basis with the fire chief now."
+    } else if sessions == 0 {
         "Zero sessions today. The tumbleweeds are charging for free though."
     } else if charging_revenue < energy_cost && energy_cost > 0.01 {
         "We're losing money on every electron we sell, but at least the technician bought a new boat with our repair fees!"

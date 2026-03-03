@@ -5,7 +5,7 @@
 //!
 //! ## Command-line Options
 //!
-//! - `--screenshot`: Capture screenshots of all 3 levels to `spec/levels/`
+//! - `--screenshot`: Capture screenshots of all levels to `spec/levels/`
 
 use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
@@ -23,7 +23,7 @@ fn main() {
     let screenshot_mode = args.iter().any(|arg| arg == "--screenshot");
 
     if screenshot_mode {
-        println!("Screenshot mode enabled - will capture all 3 levels");
+        println!("Screenshot mode enabled - will capture all levels");
     }
 
     let mut app = App::new();

@@ -73,6 +73,9 @@
     "GHG Signal": "#86efac",
     "Grid Alert": "#ef4444",
     "Grid Event Start": "#f97316",
+    "Transformer Fire": "#ef4444",
+    "Transformer Fire Capacity Loss": "#dc2626",
+    "Transformer Capacity Restored": "#4ade80",
   };
 
   // OCPI action colors
@@ -316,6 +319,17 @@
           }
         }
         return "";
+      }
+      if (action === "Transformer Fire" || action === "Transformer Fire Capacity Loss" || action === "Transformer Capacity Restored") {
+        var name = obj.event_name || obj.eventName || "";
+        var intervals = obj.intervals;
+        if (intervals && intervals[0] && intervals[0].payloads) {
+          var vals = intervals[0].payloads[0];
+          if (vals && vals.values && vals.values[0] != null) {
+            return name + " " + Number(vals.values[0]).toFixed(0) + " kVA";
+          }
+        }
+        return name;
       }
       if (action === "Grid Alert") {
         return obj.event_name || obj.eventName || "";
@@ -695,8 +709,15 @@
     var action = entry.action || "";
     var color = OPENADR_COLORS[action] || "#9ca3af";
     var detail = extractOpenAdrDetail(entry);
+    var label = action;
 
-    appendRun("openadr", action, action, color, "bold", detail, entry.timestamp);
+    if (action.indexOf("Transformer Fire") === 0) {
+      label = "\uD83D\uDD25 " + action;
+    } else if (action === "Transformer Capacity Restored") {
+      label = "\u2705 " + action;
+    }
+
+    appendRun("openadr", action, label, color, "bold", detail, entry.timestamp);
   }
 
   function addOcpiMessage(entry) {

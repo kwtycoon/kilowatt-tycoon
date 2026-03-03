@@ -481,7 +481,7 @@ impl ServiceStrategy {
         self.pricing.clamp();
         self.idle_fee_min = self.idle_fee_min.clamp(0.0, 5.0);
         self.ad_space_price_per_hour = self.ad_space_price_per_hour.clamp(0.50, 10.0);
-        self.target_power_density = self.target_power_density.clamp(0.5, 1.5);
+        self.target_power_density = self.target_power_density.clamp(0.5, 2.0);
         self.maintenance_investment = self.maintenance_investment.clamp(0.0, 50.0);
     }
 

@@ -281,6 +281,7 @@ pub fn start_asset_loading(
         "vehicles/vehicle_suv.png",
         "vehicles/vehicle_crossover.png",
         "vehicles/vehicle_pickup.png",
+        "vehicles/vehicle_firetruck.png",
         // Chargers - DCFC 50kW (compact, budget)
         "chargers/dcfc50/charger_dcfc50_available.png",
         "chargers/dcfc50/charger_dcfc50_charging.png",
@@ -309,6 +310,7 @@ pub fn start_asset_loading(
         "props/prop_transformer.png",
         "props/prop_transformer_hot.png",
         "props/prop_transformer_critical.png",
+        "props/prop_transformer_destroyed.png",
         "props/prop_solar_array_ground.png",
         "props/prop_battery_container.png",
         // Mood Icons (displayed on vehicles)
@@ -345,8 +347,11 @@ pub fn start_asset_loading(
     });
     game_data.chargers = chargers_handle;
 
-    // Driver schedule
-    let scenario_path = "data/scenarios/mvp_drivers.scenario.json";
+    // Driver schedule (switchable via KWT_SCENARIO for quick content testing)
+    let scenario_path = match std::env::var("KWT_SCENARIO").ok().as_deref() {
+        Some("hcmc_scooters") => "data/scenarios/hcmc_scooters.scenario.json",
+        _ => "data/scenarios/mvp_drivers.scenario.json",
+    };
     let scenario_handle: Handle<DriverScheduleAsset> = asset_server.load(scenario_path);
     loading.tracked_assets.push(TrackedAsset {
         path: scenario_path.to_string(),
@@ -362,6 +367,7 @@ pub fn start_asset_loading(
             "maps/02_quick_charge_express.tmx",
         ),
         (SiteArchetype::FleetDepot, "maps/03_central_fleet_plaza.tmx"),
+        (SiteArchetype::ScooterHub, "maps/04_scooter_alley.tmx"),
     ];
 
     let mut tiled_handles = HashMap::new();
@@ -378,9 +384,9 @@ pub fn start_asset_loading(
     info!(
         "Starting to load {} assets ({} images, {} JSON, {} TMX)",
         loading.tracked_assets.len(),
-        loading.tracked_assets.len() - 5, // 2 JSON + 3 TMX
+        loading.tracked_assets.len() - 6, // 2 JSON + 4 TMX
         2,
-        3
+        4
     );
     commands.insert_resource(loading);
 }
