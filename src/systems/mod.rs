@@ -308,6 +308,7 @@ impl Plugin for SystemsPlugin {
                 robber::cable_theft_system,
                 // Hacker spawn system - random cyber-attacks (higher at night)
                 hacker::hacker_spawn_system,
+                hacker::debug_spawn_hacker,
                 // Hacker effect tick - countdown overload and price slash timers
                 hacker::hacker_effect_tick_system,
                 // Fault detection runs after faults are injected - handles detection delay

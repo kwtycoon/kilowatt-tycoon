@@ -269,9 +269,10 @@ pub fn update_transformer_overload_fire_state(
         // Fire risk is temperature-driven, not load-threshold-driven.
         // Sustained high utilization (even within rated capacity) heats the
         // transformer over time. Once it crosses the critical temperature
-        // threshold (90 C), the fire countdown starts ticking.
+        // threshold (90 C), the fire countdown starts ticking — and the
+        // more excess load being pulled, the faster it accelerates.
         if transformer.is_critical() {
-            transformer.overload_seconds += delta_drama;
+            transformer.overload_seconds += delta_drama * transformer.excess_pull_factor();
         } else {
             // Cool down when temperature drops below critical.
             // Warning zone cools slowly; normal zone cools faster.

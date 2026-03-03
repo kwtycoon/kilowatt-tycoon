@@ -130,9 +130,12 @@ pub struct ImageAssets {
     // Robber loot
     pub stolen_cable: Handle<Image>,
 
-    // Characters - Hacker (reuses robber sprites initially)
-    pub character_hacker_walking: Handle<Image>,
-    pub character_hacker_hacking: Handle<Image>,
+    // Characters - Hacker (green variant)
+    pub character_hacker_walking_green: Handle<Image>,
+    pub character_hacker_hacking_green: Handle<Image>,
+    // Characters - Hacker (purple variant)
+    pub character_hacker_walking_purple: Handle<Image>,
+    pub character_hacker_hacking_purple: Handle<Image>,
 
     // Decals
     pub decal_ev_parking: Handle<Image>,
@@ -377,9 +380,16 @@ pub fn load_image_assets(mut commands: Commands, asset_server: Res<AssetServer>)
             .load("characters/character_robber_stealing_pink.png"),
         stolen_cable: asset_server.load("characters/stolen_cable.png"),
 
-        // Characters - Hacker (reuses robber sprites until unique art exists)
-        character_hacker_walking: asset_server.load("characters/character_robber_walking.png"),
-        character_hacker_hacking: asset_server.load("characters/character_robber_stealing.png"),
+        // Characters - Hacker (green variant)
+        character_hacker_walking_green: asset_server
+            .load("characters/character_hacker_walking_green.png"),
+        character_hacker_hacking_green: asset_server
+            .load("characters/character_hacker_hacking_green.png"),
+        // Characters - Hacker (purple variant)
+        character_hacker_walking_purple: asset_server
+            .load("characters/character_hacker_walking_purple.png"),
+        character_hacker_hacking_purple: asset_server
+            .load("characters/character_hacker_hacking_purple.png"),
 
         // Decals
         decal_ev_parking: asset_server.load("world/decals/decal_ev_parking.png"),

@@ -170,6 +170,11 @@ pub fn robber_world_size() -> SpriteSize {
     SpriteSize::width(40.5) // 45 * 0.9 — slightly smaller than technician
 }
 
+/// Get intended world size for hacker sprites (same proportions as robber)
+pub fn hacker_world_size() -> SpriteSize {
+    SpriteSize::width(40.5)
+}
+
 /// Get intended world size for tile sprites (roads, parking, etc.)
 pub fn tile_world_size() -> SpriteSize {
     let tile_size = crate::resources::TILE_SIZE;

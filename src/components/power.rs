@@ -92,6 +92,15 @@ impl Transformer {
         self.current_load_kva > self.rating_kva * 1.1
     }
 
+    /// How much faster the fire countdown ticks based on excess load.
+    /// At or below rated capacity the base rate is 1x; each additional 10%
+    /// overload adds 0.3x (with the default multiplier of 3.0).
+    pub fn excess_pull_factor(&self) -> f32 {
+        const EXCESS_PULL_ACCELERATION: f32 = 3.0;
+        let load_ratio = self.current_load_kva / self.rating_kva;
+        1.0 + (load_ratio - 1.0).max(0.0) * EXCESS_PULL_ACCELERATION
+    }
+
     /// Update the visual tier with 3C hysteresis margins to prevent sprite flickering.
     pub fn update_visual_tier(&mut self) {
         self.visual_tier = match self.visual_tier {

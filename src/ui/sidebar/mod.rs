@@ -464,9 +464,12 @@ impl Plugin for SidebarPlugin {
                 // Dynamic pricing
                 update_dynamic_pricing_labels,
                 update_dynamic_pricing_visibility,
-                // Lock overlay updates
-                update_power_lock_overlay,
-                update_opex_lock_overlay,
+                // Lock / hack overlay updates
+                (
+                    update_power_lock_overlay,
+                    update_opex_lock_overlay,
+                    update_hack_overlay_visibility,
+                ),
                 // Visual disabled state for upgrade-gated controls
                 update_maintenance_control_visual_state,
                 update_power_control_visual_state,

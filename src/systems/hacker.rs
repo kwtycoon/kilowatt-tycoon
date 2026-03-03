@@ -39,8 +39,8 @@ const ARRIVAL_THRESHOLD: f32 = 8.0;
 /// Duration of the overload effect in game seconds (30 minutes).
 const OVERLOAD_EFFECT_DURATION: f32 = 1800.0;
 
-/// Duration of the price slash effect in game seconds (2 hours).
-const PRICE_SLASH_EFFECT_DURATION: f32 = 7200.0;
+/// Duration of the price slash effect in game seconds (30 minutes, same as overload).
+const PRICE_SLASH_EFFECT_DURATION: f32 = 1800.0;
 
 /// Slashed price in $/kWh.
 const HACKED_PRICE: f32 = 0.01;
@@ -80,6 +80,76 @@ fn site_center_position(grid_w: i32, grid_h: i32) -> Vec2 {
         GRID_OFFSET_X + (grid_w as f32) * TILE_SIZE * 0.5,
         GRID_OFFSET_Y + (grid_h as f32) * TILE_SIZE * 0.5,
     )
+}
+
+// ─────────────────────────────────────────────────────
+//  spawn helper (shared by probability + debug paths)
+// ─────────────────────────────────────────────────────
+
+fn spawn_hacker_entity(
+    commands: &mut Commands,
+    site_id: crate::resources::multi_site::SiteId,
+    grid_width: i32,
+    grid_height: i32,
+    image_assets: &ImageAssets,
+    images: &Assets<Image>,
+    tracker: &mut DailyHackerTracker,
+) {
+    let mut rng = rand::rng();
+
+    let attack_type = if rng.random::<bool>() {
+        HackerAttackType::TransformerOverload
+    } else {
+        HackerAttackType::PriceSlash
+    };
+
+    let variant = if rng.random::<bool>() {
+        HackerVariant::Green
+    } else {
+        HackerVariant::Purple
+    };
+    let name = HACKER_NAMES[rng.random_range(0..HACKER_NAMES.len())];
+
+    let walking_image = match variant {
+        HackerVariant::Green => image_assets.character_hacker_walking_green.clone(),
+        HackerVariant::Purple => image_assets.character_hacker_walking_purple.clone(),
+    };
+    let hacker_size = crate::resources::sprite_metadata::hacker_world_size();
+    let scale = if let Some(image) = images.get(&walking_image) {
+        hacker_size.scale_for_image(image)
+    } else {
+        0.35
+    };
+
+    let hack_duration = rng.random_range(HACK_DURATION_MIN..=HACK_DURATION_MAX);
+    let spawn_pos = random_edge_position(&mut rng, grid_width, grid_height);
+    let target_pos = site_center_position(grid_width, grid_height);
+
+    commands.spawn((
+        Hacker {
+            target_site: site_id,
+            target_pos,
+            phase: HackerPhase::Infiltrating,
+            attack_type,
+            hack_timer: hack_duration,
+            move_target: target_pos,
+            name,
+            variant,
+            anim_timer: 0.0,
+            base_y: spawn_pos.y,
+        },
+        Sprite::from_image(walking_image),
+        Transform::from_xyz(spawn_pos.x, spawn_pos.y, 15.0).with_scale(Vec3::splat(scale)),
+        GlobalTransform::default(),
+        BelongsToSite { site_id },
+    ));
+
+    tracker.hack_triggered_today = true;
+
+    info!(
+        "Hacker \"{}\" ({:?}) spawned, attack: {:?}, targeting site {:?}",
+        name, variant, attack_type, site_id,
+    );
 }
 
 // ─────────────────────────────────────────────────────
@@ -154,56 +224,59 @@ pub fn hacker_spawn_system(
         return;
     }
 
-    let attack_type = if rng.random::<bool>() {
-        HackerAttackType::TransformerOverload
-    } else {
-        HackerAttackType::PriceSlash
-    };
-
-    let variant = if rng.random::<bool>() {
-        HackerVariant::Green
-    } else {
-        HackerVariant::Purple
-    };
-    let name = HACKER_NAMES[rng.random_range(0..HACKER_NAMES.len())];
-
-    let walking_image = image_assets.character_hacker_walking.clone();
-    let hacker_size = crate::resources::sprite_metadata::robber_world_size();
-    let scale = if let Some(image) = images.get(&walking_image) {
-        hacker_size.scale_for_image(image)
-    } else {
-        0.35
-    };
-
-    let hack_duration = rng.random_range(HACK_DURATION_MIN..=HACK_DURATION_MAX);
-    let spawn_pos = random_edge_position(&mut rng, site_state.grid.width, site_state.grid.height);
-    let target_pos = site_center_position(site_state.grid.width, site_state.grid.height);
-
-    commands.spawn((
-        Hacker {
-            target_site: site_id,
-            target_pos,
-            phase: HackerPhase::Infiltrating,
-            attack_type,
-            hack_timer: hack_duration,
-            move_target: target_pos,
-            name,
-            variant,
-            anim_timer: 0.0,
-            base_y: spawn_pos.y,
-        },
-        Sprite::from_image(walking_image),
-        Transform::from_xyz(spawn_pos.x, spawn_pos.y, 15.0).with_scale(Vec3::splat(scale)),
-        GlobalTransform::default(),
-        BelongsToSite { site_id },
-    ));
-
-    tracker.hack_triggered_today = true;
-
-    info!(
-        "Hacker \"{}\" ({:?}) spawned, attack: {:?}, targeting site {:?}",
-        name, variant, attack_type, site_id,
+    spawn_hacker_entity(
+        &mut commands,
+        site_id,
+        site_state.grid.width,
+        site_state.grid.height,
+        &image_assets,
+        &images,
+        &mut tracker,
     );
+}
+
+// ─────────────────────────────────────────────────────
+//  debug_spawn_hacker  (Shift+H — hidden cheat key)
+// ─────────────────────────────────────────────────────
+
+pub fn debug_spawn_hacker(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    existing_hackers: Query<&Hacker>,
+    multi_site: Res<MultiSiteManager>,
+    image_assets: Res<ImageAssets>,
+    images: Res<Assets<Image>>,
+    mut tracker: ResMut<DailyHackerTracker>,
+) {
+    if !keyboard.just_pressed(KeyCode::KeyH) {
+        return;
+    }
+    if !keyboard.pressed(KeyCode::ShiftLeft) && !keyboard.pressed(KeyCode::ShiftRight) {
+        return;
+    }
+
+    if existing_hackers.iter().next().is_some() {
+        return;
+    }
+
+    let Some(viewed_id) = multi_site.viewed_site_id else {
+        return;
+    };
+    let Some(site_state) = multi_site.owned_sites.get(&viewed_id) else {
+        return;
+    };
+
+    spawn_hacker_entity(
+        &mut commands,
+        site_state.id,
+        site_state.grid.width,
+        site_state.grid.height,
+        &image_assets,
+        &images,
+        &mut tracker,
+    );
+
+    info!("Debug: force-spawned hacker via Shift+H");
 }
 
 // ─────────────────────────────────────────────────────
@@ -292,7 +365,10 @@ pub fn hacker_arrival_system(
 
         hacker.phase = HackerPhase::Hacking;
 
-        let hacking_image = image_assets.character_hacker_hacking.clone();
+        let hacking_image = match hacker.variant {
+            HackerVariant::Green => image_assets.character_hacker_hacking_green.clone(),
+            HackerVariant::Purple => image_assets.character_hacker_hacking_purple.clone(),
+        };
         commands
             .entity(entity)
             .insert(Sprite::from_image(hacking_image));
@@ -350,7 +426,7 @@ pub fn hacker_attack_system(
         return;
     }
 
-    let delta = time.delta_secs() * game_clock.speed.multiplier();
+    let delta = time.delta_secs() * game_clock.speed.hack_multiplier();
     let mut rng = rand::rng();
 
     for (entity, mut hacker, belongs) in hackers.iter_mut() {
@@ -483,7 +559,10 @@ pub fn hacker_attack_system(
         let exit_pos = random_edge_position(&mut rng, gw, gh);
         hacker.move_target = exit_pos;
 
-        let walking_image = image_assets.character_hacker_walking.clone();
+        let walking_image = match hacker.variant {
+            HackerVariant::Green => image_assets.character_hacker_walking_green.clone(),
+            HackerVariant::Purple => image_assets.character_hacker_walking_purple.clone(),
+        };
         commands
             .entity(entity)
             .insert(Sprite::from_image(walking_image));
@@ -541,7 +620,7 @@ pub fn hacker_effect_tick_system(
         return;
     }
 
-    let delta = time.delta_secs() * game_clock.speed.multiplier();
+    let delta = time.delta_secs() * game_clock.speed.hack_multiplier();
 
     for (_site_id, site_state) in multi_site.owned_sites.iter_mut() {
         // Tick overload timer

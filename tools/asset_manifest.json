@@ -2281,6 +2281,26 @@
         "id": 12,
         "name": "TechnicianFemaleWorking",
         "filename": "character_technician_female_working.png"
+      },
+      {
+        "id": 13,
+        "name": "HackerWalkingGreen",
+        "filename": "character_hacker_walking_green.png"
+      },
+      {
+        "id": 14,
+        "name": "HackerWalkingPurple",
+        "filename": "character_hacker_walking_purple.png"
+      },
+      {
+        "id": 15,
+        "name": "HackerHackingGreen",
+        "filename": "character_hacker_hacking_green.png"
+      },
+      {
+        "id": 16,
+        "name": "HackerHackingPurple",
+        "filename": "character_hacker_hacking_purple.png"
       }
     ]
   },

@@ -4,6 +4,7 @@ use super::{ActivePanel, colors, panel::*};
 use crate::resources::{GameState, ImageAssets};
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::prelude::*;
+use bevy::ui::FocusPolicy;
 
 // ============ Panel Markers ============
 
@@ -129,6 +130,14 @@ pub struct OpexControlsLockOverlay;
 /// Marker for the dynamic pricing lock overlay (shown when Dynamic Pricing Engine not purchased)
 #[derive(Component)]
 pub struct DynamicPricingLockOverlay;
+
+/// Marker for the hacked-pricing overlay (shown during active PriceSlash attack)
+#[derive(Component)]
+pub struct HackedPricingOverlay;
+
+/// Marker for the hacked-power overlay (shown during active TransformerOverload attack)
+#[derive(Component)]
+pub struct HackedPowerOverlay;
 
 /// Marker for the effective-price indicator row (visible only when upgrade purchased)
 #[derive(Component)]
@@ -323,6 +332,38 @@ fn spawn_price_panel(parent: &mut ChildSpawnerCommands, image_assets: &ImageAsse
                 TextFont { font_size: 11.0, ..default() },
                 TextColor(colors::TEXT_SECONDARY),
             ));
+
+            // Hacked overlay - absolute positioned over all controls
+            panel.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(0.0),
+                    left: Val::Px(0.0),
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(8.0),
+                    display: Display::None,
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.0, 0.4, 0.0, 0.75)),
+                FocusPolicy::Block,
+                ZIndex(10),
+                HackedPricingOverlay,
+            )).with_children(|overlay| {
+                overlay.spawn((
+                    Text::new("HACKED"),
+                    TextFont { font_size: 22.0, ..default() },
+                    TextColor(Color::srgb(0.1, 1.0, 0.1)),
+                ));
+                overlay.spawn((
+                    Text::new("PRICE OVERRIDE ACTIVE"),
+                    TextFont { font_size: 13.0, ..default() },
+                    TextColor(Color::srgb(0.7, 1.0, 0.7)),
+                ));
+            });
         });
 }
 
@@ -391,6 +432,38 @@ fn spawn_power_strategy_panel(parent: &mut ChildSpawnerCommands, image_assets: &
                 StrategyControl::SolarExportPolicy, SolarExportPolicyLabel, image_assets,
                 Some("Never: excess solar curtailed. Excess Only: export surplus after self-use & battery. Max Export: prioritize grid export over battery storage."),
             );
+
+            // Hacked overlay - absolute positioned over all controls
+            panel.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(0.0),
+                    left: Val::Px(0.0),
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(8.0),
+                    display: Display::None,
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.5, 0.2, 0.0, 0.75)),
+                FocusPolicy::Block,
+                ZIndex(10),
+                HackedPowerOverlay,
+            )).with_children(|overlay| {
+                overlay.spawn((
+                    Text::new("HACKED"),
+                    TextFont { font_size: 22.0, ..default() },
+                    TextColor(Color::srgb(1.0, 0.6, 0.1)),
+                ));
+                overlay.spawn((
+                    Text::new("OVERLOAD IN PROGRESS"),
+                    TextFont { font_size: 13.0, ..default() },
+                    TextColor(Color::srgb(1.0, 0.85, 0.6)),
+                ));
+            });
         });
 }
 
@@ -841,6 +914,13 @@ pub fn handle_strategy_panel_buttons(
     let has_power_management = site_state.site_upgrades.has_power_management();
     let has_oem = site_state.site_upgrades.has_om_software();
 
+    let price_hacked = site_state
+        .service_strategy
+        .pricing
+        .hacker_price_override
+        .is_some();
+    let power_hacked = site_state.hacker_overload_remaining_secs > 0.0;
+
     for (interaction, control, is_minus) in &mut interaction_query {
         if *interaction != Interaction::Pressed {
             continue;
@@ -850,6 +930,9 @@ pub fn handle_strategy_panel_buttons(
 
         match control {
             StrategyControl::EnergyPrice => {
+                if price_hacked {
+                    continue;
+                }
                 site_state.service_strategy.pricing.flat.price_kwh =
                     (site_state.service_strategy.pricing.flat.price_kwh + delta).clamp(0.10, 2.00);
             }
@@ -865,8 +948,7 @@ pub fn handle_strategy_panel_buttons(
                         .clamp(0.50, 10.0);
             }
             StrategyControl::PowerDensity => {
-                // Requires Advanced Power Management upgrade
-                if !has_power_management {
+                if !has_power_management || power_hacked {
                     continue;
                 }
                 site_state.service_strategy.target_power_density =
@@ -893,7 +975,7 @@ pub fn handle_strategy_panel_buttons(
                 };
             }
             StrategyControl::BessMode => {
-                if !has_power_management {
+                if !has_power_management || power_hacked {
                     continue;
                 }
                 site_state.bess_state.mode = if is_minus.is_some() {
@@ -903,14 +985,14 @@ pub fn handle_strategy_panel_buttons(
                 };
             }
             StrategyControl::PeakShaveThreshold => {
-                if !has_power_management {
+                if !has_power_management || power_hacked {
                     continue;
                 }
                 site_state.bess_state.peak_shave_threshold =
                     (site_state.bess_state.peak_shave_threshold + delta).clamp(0.40, 0.90);
             }
             StrategyControl::SolarExportPolicy => {
-                if !has_power_management {
+                if !has_power_management || power_hacked {
                     continue;
                 }
                 site_state.service_strategy.solar_export_policy = if is_minus.is_some() {
@@ -920,7 +1002,7 @@ pub fn handle_strategy_panel_buttons(
                 };
             }
             StrategyControl::PricingMode => {
-                if !site_state.site_upgrades.has_dynamic_pricing() {
+                if !site_state.site_upgrades.has_dynamic_pricing() || price_hacked {
                     continue;
                 }
                 site_state.service_strategy.pricing.mode = if is_minus.is_some() {
@@ -930,7 +1012,7 @@ pub fn handle_strategy_panel_buttons(
                 };
             }
             StrategyControl::TouOffPeakPrice => {
-                if !site_state.site_upgrades.has_dynamic_pricing() {
+                if !site_state.site_upgrades.has_dynamic_pricing() || price_hacked {
                     continue;
                 }
                 site_state.service_strategy.pricing.tou.off_peak_price =
@@ -938,7 +1020,7 @@ pub fn handle_strategy_panel_buttons(
                         .clamp(0.10, 2.00);
             }
             StrategyControl::TouOnPeakPrice => {
-                if !site_state.site_upgrades.has_dynamic_pricing() {
+                if !site_state.site_upgrades.has_dynamic_pricing() || price_hacked {
                     continue;
                 }
                 site_state.service_strategy.pricing.tou.on_peak_price =
@@ -946,7 +1028,7 @@ pub fn handle_strategy_panel_buttons(
                         .clamp(0.10, 2.00);
             }
             StrategyControl::CostPlusMarkup => {
-                if !site_state.site_upgrades.has_dynamic_pricing() {
+                if !site_state.site_upgrades.has_dynamic_pricing() || price_hacked {
                     continue;
                 }
                 let markup_delta = if is_minus.is_some() { -25.0 } else { 25.0 };
@@ -955,14 +1037,14 @@ pub fn handle_strategy_panel_buttons(
                         .clamp(50.0, 2000.0);
             }
             StrategyControl::CostPlusFloor => {
-                if !site_state.site_upgrades.has_dynamic_pricing() {
+                if !site_state.site_upgrades.has_dynamic_pricing() || price_hacked {
                     continue;
                 }
                 site_state.service_strategy.pricing.cost_plus.floor =
                     (site_state.service_strategy.pricing.cost_plus.floor + delta).clamp(0.10, 1.00);
             }
             StrategyControl::CostPlusCeiling => {
-                if !site_state.site_upgrades.has_dynamic_pricing() {
+                if !site_state.site_upgrades.has_dynamic_pricing() || price_hacked {
                     continue;
                 }
                 let ceil_delta = if is_minus.is_some() { -0.10 } else { 0.10 };
@@ -971,7 +1053,7 @@ pub fn handle_strategy_panel_buttons(
                         .clamp(0.30, 3.00);
             }
             StrategyControl::SurgeBasePrice => {
-                if !site_state.site_upgrades.has_dynamic_pricing() {
+                if !site_state.site_upgrades.has_dynamic_pricing() || price_hacked {
                     continue;
                 }
                 site_state.service_strategy.pricing.surge.base_price =
@@ -979,7 +1061,7 @@ pub fn handle_strategy_panel_buttons(
                         .clamp(0.10, 1.50);
             }
             StrategyControl::SurgeMultiplier => {
-                if !site_state.site_upgrades.has_dynamic_pricing() {
+                if !site_state.site_upgrades.has_dynamic_pricing() || price_hacked {
                     continue;
                 }
                 let mult_delta = if is_minus.is_some() { -0.1 } else { 0.1 };
@@ -988,7 +1070,7 @@ pub fn handle_strategy_panel_buttons(
                         .clamp(1.0, 3.0);
             }
             StrategyControl::SurgeThreshold => {
-                if !site_state.site_upgrades.has_dynamic_pricing() {
+                if !site_state.site_upgrades.has_dynamic_pricing() || price_hacked {
                     continue;
                 }
                 site_state.service_strategy.pricing.surge.threshold =
@@ -1568,4 +1650,42 @@ fn is_dynamic_pricing_control(control: &StrategyControl) -> bool {
             | StrategyControl::SurgeThreshold
             | StrategyControl::EnergyPrice
     )
+}
+
+// ============ Hack Overlay Systems ============
+
+/// Toggle hack overlay visibility based on active hacker effects.
+pub fn update_hack_overlay_visibility(
+    multi_site: Res<crate::resources::MultiSiteManager>,
+    mut pricing_overlay: Query<
+        &mut Node,
+        (With<HackedPricingOverlay>, Without<HackedPowerOverlay>),
+    >,
+    mut power_overlay: Query<&mut Node, (With<HackedPowerOverlay>, Without<HackedPricingOverlay>)>,
+) {
+    let Some(site) = multi_site.active_site() else {
+        return;
+    };
+
+    let price_hacked = site
+        .service_strategy
+        .pricing
+        .hacker_price_override
+        .is_some();
+    let power_hacked = site.hacker_overload_remaining_secs > 0.0;
+
+    for mut node in &mut pricing_overlay {
+        node.display = if price_hacked {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
+    for mut node in &mut power_overlay {
+        node.display = if power_hacked {
+            Display::Flex
+        } else {
+            Display::None
+        };
+    }
 }

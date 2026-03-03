@@ -39,6 +39,17 @@ impl GameSpeed {
         }
     }
 
+    /// Speed factor for hacker attack timers (hacking countdown + effect duration).
+    /// Tuned so hack effects last ~20 real seconds at Fast and ~40s at Normal —
+    /// long enough to notice the locked-controls overlay and feel the economic hit.
+    pub fn hack_multiplier(&self) -> f32 {
+        match self {
+            GameSpeed::Paused => 0.0,
+            GameSpeed::Normal => 45.0,
+            GameSpeed::Fast => 90.0,
+        }
+    }
+
     /// Visual animation multiplier - decoupled from simulation speed for readability.
     /// Returns a small multiplier so vehicles move at a comfortable viewing pace
     /// regardless of how fast the simulation clock is running.

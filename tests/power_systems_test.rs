@@ -412,17 +412,44 @@ fn hot_climate_makes_critical_easier_to_reach() {
 #[test]
 fn fire_countdown_accumulates_in_critical_zone() {
     let mut t = make_transformer(500.0, 25.0);
-    // Force temperature into critical zone
     t.current_temp_c = 95.0;
+    t.current_load_kva = 500.0; // At rated capacity
 
     assert!(t.is_critical());
     assert_eq!(t.overload_seconds, 0.0);
 
-    // Simulate what the fire state system does: accumulate when critical
+    // At rated capacity the excess pull factor is 1.0x (base rate)
     let delta = 10.0;
-    t.overload_seconds += delta;
+    t.overload_seconds += delta * t.excess_pull_factor();
 
     assert_eq!(t.overload_seconds, 10.0);
+}
+
+#[test]
+fn fire_countdown_accelerates_with_excess_pull() {
+    let mut t = make_transformer(500.0, 25.0);
+    t.current_temp_c = 95.0;
+    t.current_load_kva = 750.0; // 150% of rated capacity
+
+    assert!(t.is_critical());
+    let factor = t.excess_pull_factor();
+    // 50% over rated × 3.0 acceleration = +1.5, so total factor = 2.5
+    assert!((factor - 2.5).abs() < 0.01, "expected 2.5, got {factor}");
+
+    let delta = 10.0;
+    t.overload_seconds += delta * factor;
+    assert!((t.overload_seconds - 25.0).abs() < 0.01);
+}
+
+#[test]
+fn excess_pull_factor_is_one_at_or_below_rated() {
+    let mut t = make_transformer(500.0, 25.0);
+
+    t.current_load_kva = 250.0; // 50% load
+    assert!((t.excess_pull_factor() - 1.0).abs() < 0.001);
+
+    t.current_load_kva = 500.0; // 100% load
+    assert!((t.excess_pull_factor() - 1.0).abs() < 0.001);
 }
 
 #[test]

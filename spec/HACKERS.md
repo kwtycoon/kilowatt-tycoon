@@ -39,14 +39,14 @@ All attacks produce observable anomalies across OCPP, OCPI, and OpenADR protocol
 | Property | Value |
 |----------|-------|
 | Duration of hack | 15–45 game-minutes (random) |
-| Effect duration | 2 game-hours after hack completes |
+| Effect duration | 30 game-minutes after hack completes |
 | Mechanism | Overrides `effective_price()` to return $0.01/kWh |
 | Consequence | Revenue drops to near-zero; demand spikes from cheap power |
-| Player cost | Lost revenue for the override period (typically $2,000–$8,000 depending on traffic) |
+| Player cost | Lost revenue for the override period |
 
 **Mechanics:**
 
-1. On success, sets a `HackerPriceOverride` resource: `override_price = 0.01`, `remaining_secs = 7200.0`.
+1. On success, sets a `HackerPriceOverride` resource: `override_price = 0.01`, `remaining_secs = 1800.0`.
 2. `DynamicPricingConfig::effective_price()` checks for an active override before computing the normal price. When active, it returns the override value ($0.01).
 3. This propagates through **two critical paths**:
    - **Game revenue** (`driver.rs`): `revenue = charge_received_kwh * effective_price()` — the player's actual income tanks.
@@ -138,6 +138,15 @@ effective_chance = BASE_HACK_CHANCE_PER_HOUR
 - Attack type is 50/50 random between Overload and PriceSlash.
 - Hack duration (time at target before effect triggers): random 15–45 game-minutes.
 
+### 4.4 Hack Time Multiplier
+
+Hacker timers (hacking countdown + effect duration + SOC auto-terminate) use a dedicated `hack_multiplier()` rather than the full game-speed `multiplier()`. This ensures hack effects last long enough to be noticeable in real time.
+
+| Game Speed | `multiplier()` | `hack_multiplier()` | 30 game-min effect in real time |
+|------------|----------------|---------------------|---------------------------------|
+| Normal | 1440× | 45× | ~40 seconds |
+| Fast | 2880× | 90× | ~20 seconds |
+
 ---
 
 ## 5. Infosec Countermeasures
@@ -178,6 +187,19 @@ if roll < base_success:
 else:
     attack_failed()     # "FIREWALLED" / "ACCESS DENIED" bubble
 ```
+
+### 5.4 UI Control Locking
+
+While a hack effect is active, the corresponding strategy panel controls are **locked** with a coloured overlay that blocks interaction:
+
+| Attack type | Locked panel | Overlay colour | Label |
+|-------------|-------------|---------------|-------|
+| Price Slash | Pricing (all pricing sliders/buttons) | Semi-transparent green | "HACKED — PRICE OVERRIDE ACTIVE" |
+| Transformer Overload | Power Management (density, BESS, peak shave, grid sellback) | Semi-transparent orange | "HACKED — OVERLOAD IN PROGRESS" |
+
+- The player's stored settings are **not modified** — only overridden for the effect duration.
+- When the hack expires (timer, Agentic SOC auto-terminate, or day-end cleanup), the overlay disappears and controls resume with the player's original values.
+- Button handlers also reject inputs on hacked controls as a safety guard.
 
 ---
 
