@@ -130,6 +130,10 @@ pub struct ImageAssets {
     // Robber loot
     pub stolen_cable: Handle<Image>,
 
+    // Characters - Hacker (reuses robber sprites initially)
+    pub character_hacker_walking: Handle<Image>,
+    pub character_hacker_hacking: Handle<Image>,
+
     // Decals
     pub decal_ev_parking: Handle<Image>,
     pub decal_arrow: Handle<Image>,
@@ -372,6 +376,10 @@ pub fn load_image_assets(mut commands: Commands, asset_server: Res<AssetServer>)
         character_robber_stealing_pink: asset_server
             .load("characters/character_robber_stealing_pink.png"),
         stolen_cable: asset_server.load("characters/stolen_cable.png"),
+
+        // Characters - Hacker (reuses robber sprites until unique art exists)
+        character_hacker_walking: asset_server.load("characters/character_robber_walking.png"),
+        character_hacker_hacking: asset_server.load("characters/character_robber_stealing.png"),
 
         // Decals
         decal_ev_parking: asset_server.load("world/decals/decal_ev_parking.png"),

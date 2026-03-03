@@ -8,7 +8,9 @@ use bevy::prelude::*;
 
 use crate::components::charger::{Charger, ChargerState, ChargerType};
 use crate::components::driver::Driver;
+use crate::components::hacker::HackerAttackType;
 use crate::components::site::BelongsToSite;
+use crate::events::{HackerAttackEvent, HackerDetectedEvent};
 use crate::resources::multi_site::SiteId;
 use crate::resources::{GameClock, MultiSiteManager};
 
@@ -825,6 +827,72 @@ pub fn ocpi_tariff_system(
             "Tariff",
             "Tariff PUT",
             serialize_ocpi(&tariff),
+        );
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  7. Hacker security event system
+// ─────────────────────────────────────────────────────
+
+/// Emits explicit OCPI incident log entries for hacker attacks and mitigations.
+pub fn ocpi_hacker_event_system(
+    mut queue: ResMut<OcpiMessageQueue>,
+    game_clock: Res<GameClock>,
+    mut attack_events: MessageReader<HackerAttackEvent>,
+    mut detected_events: MessageReader<HackerDetectedEvent>,
+) {
+    let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
+    let ts_iso = timestamp.to_rfc3339();
+
+    for event in attack_events.read() {
+        let (action, attack_name) = match event.attack_type {
+            HackerAttackType::TransformerOverload => ("CyberAttack", "TransformerOverload"),
+            HackerAttackType::PriceSlash => ("CyberAttack", "PriceManipulation"),
+        };
+
+        let payload = serde_json::json!({
+            "object_type": "Incident",
+            "action": action,
+            "attack_type": attack_name,
+            "site_id": format!("{:?}", event.site_id),
+            "timestamp": ts_iso,
+        });
+
+        queue.push_log(
+            CPO_PARTY_ID.to_string(),
+            ts_iso.clone(),
+            "Incident",
+            action,
+            serde_json::to_string_pretty(&payload).unwrap_or_default(),
+        );
+    }
+
+    for event in detected_events.read() {
+        if !event.auto_blocked {
+            continue;
+        }
+
+        let attack_name = match event.attack_type {
+            HackerAttackType::TransformerOverload => "TransformerOverload",
+            HackerAttackType::PriceSlash => "PriceManipulation",
+        };
+
+        let payload = serde_json::json!({
+            "object_type": "Incident",
+            "action": "CyberAttackMitigated",
+            "attack_type": attack_name,
+            "mitigation": "AgenticSOC",
+            "site_id": format!("{:?}", event.site_id),
+            "timestamp": ts_iso,
+        });
+
+        queue.push_log(
+            CPO_PARTY_ID.to_string(),
+            ts_iso.clone(),
+            "Incident",
+            "CyberAttackMitigated",
+            serde_json::to_string_pretty(&payload).unwrap_or_default(),
         );
     }
 }

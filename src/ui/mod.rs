@@ -177,30 +177,37 @@ impl Plugin for UiPlugin {
         app.add_systems(
             Update,
             (
-                // Toast notification systems
-                spawn_fault_toasts,
-                spawn_repair_failed_toasts,
-                toast::spawn_achievement_toasts,
-                update_toasts,
-                handle_toast_clicks,
-                // Demand warning toast systems
-                demand_toasts::spawn_demand_burden_toast,
-                demand_toasts::update_toast_action_button_styles,
-                demand_toasts::handle_reduce_load_button,
-                demand_toasts::handle_dismiss_warning_button,
-                // Transformer fire toast systems
-                fire_toasts::spawn_overload_warning_toast,
-                fire_toasts::spawn_fire_started_toast,
-                fire_toasts::handle_shed_load_button,
-                fire_toasts::handle_dismiss_overload_button,
-                fire_toasts::update_fire_toast_button_styles,
-                // Site tabs systems
-                update_site_tabs,
-                handle_site_tab_clicks,
-                handle_sell_site_clicks,
-                // Rent panel systems
-                handle_carousel_navigation,
-                handle_rent_button,
+                (
+                    // Toast notification systems
+                    spawn_fault_toasts,
+                    spawn_repair_failed_toasts,
+                    toast::spawn_achievement_toasts,
+                    update_toasts,
+                    handle_toast_clicks,
+                    // Demand warning toast systems
+                    demand_toasts::spawn_demand_burden_toast,
+                    demand_toasts::update_toast_action_button_styles,
+                    demand_toasts::handle_reduce_load_button,
+                    demand_toasts::handle_dismiss_warning_button,
+                ),
+                (
+                    // Transformer fire toast systems
+                    fire_toasts::spawn_overload_warning_toast,
+                    fire_toasts::spawn_fire_started_toast,
+                    fire_toasts::handle_shed_load_button,
+                    // Hacker toast systems
+                    fire_toasts::spawn_hacker_attack_toast,
+                    fire_toasts::spawn_hacker_detected_toast,
+                    fire_toasts::handle_dismiss_overload_button,
+                    fire_toasts::update_fire_toast_button_styles,
+                    // Site tabs systems
+                    update_site_tabs,
+                    handle_site_tab_clicks,
+                    handle_sell_site_clicks,
+                    // Rent panel systems
+                    handle_carousel_navigation,
+                    handle_rent_button,
+                ),
             )
                 .in_set(crate::systems::GameSystemSet::UiUpdate)
                 .run_if(is_game_visible),

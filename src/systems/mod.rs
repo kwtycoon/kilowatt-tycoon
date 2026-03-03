@@ -13,6 +13,7 @@ pub mod demand_warnings;
 pub mod driver;
 pub mod emotion;
 pub mod environment;
+pub mod hacker;
 pub mod interaction;
 pub mod northstar_movement;
 pub mod power;
@@ -56,6 +57,7 @@ pub use charger::*;
 pub use driver::*;
 pub use emotion::*;
 pub use environment::*;
+pub use hacker::*;
 pub use interaction::*;
 pub use northstar_movement::*;
 pub use power::*;
@@ -267,6 +269,20 @@ impl Plugin for SystemsPlugin {
                 .run_if(in_state(AppState::Playing)),
         );
 
+        // Hacker movement and lifecycle — mirrors robber lifecycle
+        app.add_systems(
+            Update,
+            (
+                hacker::hacker_movement_system,
+                hacker::hacker_arrival_system,
+                hacker::hacker_attack_system,
+                hacker::hacker_flee_arrival_system,
+                hacker::hacker_cleanup_system,
+            )
+                .chain()
+                .run_if(in_state(AppState::Playing)),
+        );
+
         // Ambient traffic systems - only run when day is active
         // Note: cleanup_ambient_sprites was removed - cleanup is now unified in cleanup_driver_sprites
         app.add_systems(
@@ -290,6 +306,10 @@ impl Plugin for SystemsPlugin {
                 guaranteed_day1_technician_fault_system,
                 // Cable theft system - random robber spawns (higher at night)
                 robber::cable_theft_system,
+                // Hacker spawn system - random cyber-attacks (higher at night)
+                hacker::hacker_spawn_system,
+                // Hacker effect tick - countdown overload and price slash timers
+                hacker::hacker_effect_tick_system,
                 // Fault detection runs after faults are injected - handles detection delay
                 // and auto-remediation based on OEM tier
                 fault_detection_system,
@@ -411,11 +431,14 @@ impl Plugin for SystemsPlugin {
                     animate_security_camera_swivel,
                     animate_security_camera_led,
                     update_security_alert_bubble,
-                    // Theft alarm VFX (rapid red flashing) + spark VFX + loot bubble + cable
+                ),
+                (
                     update_theft_alarm_vfx,
                     update_stealing_spark_vfx,
                     update_robber_loot_bubble,
                     update_stolen_cable_sprite,
+                    update_hacking_glitch_vfx,
+                    update_hacker_loot_bubble,
                 ),
                 // update_grid_visuals now uses revision-based gating, no clear flag needed
                 update_grid_visuals,

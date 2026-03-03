@@ -6,6 +6,8 @@
 
 use bevy::prelude::*;
 
+use crate::components::hacker::HackerAttackType;
+use crate::events::{HackerAttackEvent, HackerDetectedEvent};
 use crate::resources::{
     GameClock, MultiSiteManager, PricingMode, SolarExportPolicy, site_energy::CarbonCreditMarket,
 };
@@ -1450,5 +1452,130 @@ pub fn openadr_transformer_fire_system(
                 restore_json,
             );
         }
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  12. Hacker security event system
+// ─────────────────────────────────────────────────────
+
+/// Emits explicit OpenADR alert events for hacker attacks and mitigations.
+pub fn openadr_hacker_event_system(
+    mut queue: ResMut<OpenAdrMessageQueue>,
+    game_clock: Res<GameClock>,
+    mut attack_events: MessageReader<HackerAttackEvent>,
+    mut detected_events: MessageReader<HackerDetectedEvent>,
+) {
+    if !queue.is_active() {
+        attack_events.read().for_each(|_| {});
+        detected_events.read().for_each(|_| {});
+        return;
+    }
+
+    let program_id = match make_program_id(DR_PROGRAM_ID) {
+        Some(id) => id,
+        None => {
+            attack_events.read().for_each(|_| {});
+            detected_events.read().for_each(|_| {});
+            return;
+        }
+    };
+
+    let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
+    let ts_iso = timestamp.to_rfc3339();
+    let vtn_name = "kilowatt-vtn".to_string();
+
+    for event in attack_events.read() {
+        let (event_type, event_name, payload_val) = match event.attack_type {
+            HackerAttackType::TransformerOverload => (
+                EventType::AlertGridEmergency,
+                "CyberAttack: TransformerOverload",
+                "TransformerOverload",
+            ),
+            HackerAttackType::PriceSlash => (
+                EventType::AlertOther,
+                "CyberAttack: PriceManipulation",
+                "PriceManipulation",
+            ),
+        };
+
+        let alert = EventContent {
+            program_id: program_id.clone(),
+            event_name: Some(event_name.to_string()),
+            priority: Priority::new(1),
+            targets: site_group_target(event.site_id.0),
+            report_descriptors: None,
+            payload_descriptors: Some(vec![EventPayloadDescriptor {
+                payload_type: event_type.clone(),
+                units: None,
+                currency: None,
+            }]),
+            interval_period: Some(IntervalPeriod {
+                start: timestamp,
+                duration: None,
+                randomize_start: None,
+            }),
+            intervals: vec![EventInterval {
+                id: 0,
+                interval_period: None,
+                payloads: vec![EventValuesMap {
+                    value_type: event_type,
+                    values: vec![ovalue_str(payload_val)],
+                }],
+            }],
+        };
+
+        queue.push_log(
+            vtn_name.clone(),
+            ts_iso.clone(),
+            "Event",
+            event_name,
+            serialize_openadr(&alert),
+        );
+    }
+
+    for event in detected_events.read() {
+        if !event.auto_blocked {
+            continue;
+        }
+
+        let attack_name = match event.attack_type {
+            HackerAttackType::TransformerOverload => "TransformerOverload",
+            HackerAttackType::PriceSlash => "PriceManipulation",
+        };
+
+        let mitigation = EventContent {
+            program_id: program_id.clone(),
+            event_name: Some("CyberAttack: Mitigated by Agentic SOC".to_string()),
+            priority: Priority::new(2),
+            targets: site_group_target(event.site_id.0),
+            report_descriptors: None,
+            payload_descriptors: Some(vec![EventPayloadDescriptor {
+                payload_type: EventType::AlertOther,
+                units: None,
+                currency: None,
+            }]),
+            interval_period: Some(IntervalPeriod {
+                start: timestamp,
+                duration: None,
+                randomize_start: None,
+            }),
+            intervals: vec![EventInterval {
+                id: 0,
+                interval_period: None,
+                payloads: vec![EventValuesMap {
+                    value_type: EventType::AlertOther,
+                    values: vec![ovalue_str(attack_name)],
+                }],
+            }],
+        };
+
+        queue.push_log(
+            vtn_name.clone(),
+            ts_iso.clone(),
+            "Event",
+            "CyberAttackMitigated",
+            serialize_openadr(&mitigation),
+        );
     }
 }

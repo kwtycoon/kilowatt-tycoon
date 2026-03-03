@@ -274,6 +274,10 @@ pub struct DynamicPricingConfig {
     pub tou: TouPricing,
     pub cost_plus: CostPlusPricing,
     pub surge: SurgePricing,
+    /// When set, a hacker has overridden the customer-facing price.
+    pub hacker_price_override: Option<f32>,
+    /// Remaining game-seconds for the price override (0 = inactive).
+    pub hacker_price_override_remaining_secs: f32,
 }
 
 impl Default for DynamicPricingConfig {
@@ -295,6 +299,8 @@ impl Default for DynamicPricingConfig {
                 multiplier: 1.5,
                 threshold: 0.75,
             },
+            hacker_price_override: None,
+            hacker_price_override_remaining_secs: 0.0,
         }
     }
 }
@@ -314,12 +320,16 @@ impl DynamicPricingConfig {
     }
 
     /// Compute the current customer-facing energy price based on the active pricing mode.
+    /// If a hacker price override is active, returns the overridden price instead.
     pub fn effective_price(
         &self,
         game_time: f32,
         energy_config: &SiteEnergyConfig,
         charger_utilization: f32,
     ) -> f32 {
+        if let Some(override_price) = self.hacker_price_override {
+            return override_price;
+        }
         match self.mode {
             PricingMode::Flat => self.flat.price_kwh,
             PricingMode::TouLinked => match energy_config.current_tou_period(game_time) {

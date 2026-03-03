@@ -13,6 +13,9 @@ pub mod upgrade_costs {
     pub const OEM_OPTIMIZE: f32 = 20000.0;
     // Repeatable demand boost
     pub const DEMAND_BOOST: f32 = 500.0;
+    // Infosec tiers
+    pub const CYBER_FIREWALL: f32 = 12_000.0;
+    pub const AGENTIC_SOC: f32 = 35_000.0;
 }
 
 /// Demand boost: 2x demand for 4 game hours
@@ -138,6 +141,10 @@ pub struct SiteUpgrades {
     pub oem_tier: OemTier,
     /// Remaining game-seconds on the active demand boost (0 = inactive)
     pub demand_boost_remaining_secs: f32,
+    /// Cyber Firewall — reduces hacker spawn chance and attack success
+    pub has_cyber_firewall: bool,
+    /// Agentic SOC — advanced AI-driven infosec (requires Firewall)
+    pub has_agentic_soc: bool,
 }
 
 impl SiteUpgrades {
@@ -268,6 +275,18 @@ impl SiteUpgrades {
                 description: "Auto-dispatch technicians, 25% faster repairs",
                 cost: upgrade_costs::OEM_OPTIMIZE,
             },
+            UpgradeInfo {
+                id: UpgradeId::CyberFirewall,
+                name: "Cyber Firewall",
+                description: "Reduces hacker attacks by 60%, 50% block rate",
+                cost: upgrade_costs::CYBER_FIREWALL,
+            },
+            UpgradeInfo {
+                id: UpgradeId::AgenticSoc,
+                name: "Agentic SOC",
+                description: "AI infosec: 90% fewer hackers, 95% block, auto-terminate",
+                cost: upgrade_costs::AGENTIC_SOC,
+            },
         ]
     }
 
@@ -281,6 +300,8 @@ impl SiteUpgrades {
             UpgradeId::OemDetect => self.oem_tier.at_least(OemTier::Detect),
             UpgradeId::OemOptimize => self.oem_tier.at_least(OemTier::Optimize),
             UpgradeId::DemandBoost => false,
+            UpgradeId::CyberFirewall => self.has_cyber_firewall,
+            UpgradeId::AgenticSoc => self.has_agentic_soc,
         }
     }
 
@@ -302,6 +323,12 @@ impl SiteUpgrades {
                 }
             }
             UpgradeId::DemandBoost => self.activate_demand_boost(),
+            UpgradeId::CyberFirewall => self.has_cyber_firewall = true,
+            UpgradeId::AgenticSoc => {
+                if self.has_cyber_firewall {
+                    self.has_agentic_soc = true;
+                }
+            }
         }
     }
 
@@ -315,6 +342,8 @@ impl SiteUpgrades {
             UpgradeId::OemDetect => upgrade_costs::OEM_DETECT,
             UpgradeId::OemOptimize => upgrade_costs::OEM_OPTIMIZE,
             UpgradeId::DemandBoost => upgrade_costs::DEMAND_BOOST,
+            UpgradeId::CyberFirewall => upgrade_costs::CYBER_FIREWALL,
+            UpgradeId::AgenticSoc => upgrade_costs::AGENTIC_SOC,
         }
     }
 
@@ -323,7 +352,9 @@ impl SiteUpgrades {
         match id {
             UpgradeId::OemDetect => self.oem_tier == OemTier::None,
             UpgradeId::OemOptimize => self.oem_tier == OemTier::Detect,
-            _ => true, // Non-OEM upgrades have no tier prereqs
+            UpgradeId::AgenticSoc => self.has_cyber_firewall && !self.has_agentic_soc,
+            UpgradeId::CyberFirewall => !self.has_cyber_firewall,
+            _ => true,
         }
     }
 }
@@ -339,6 +370,10 @@ pub enum UpgradeId {
     OemOptimize,
     /// Repeatable temporary demand boost
     DemandBoost,
+    /// Tier 1 infosec — firewall reduces hacker spawn/success
+    CyberFirewall,
+    /// Tier 2 infosec — agentic SOC auto-blocks attacks (requires Firewall)
+    AgenticSoc,
 }
 
 /// Info about an upgrade for UI display

@@ -199,6 +199,10 @@ pub struct SiteState {
     /// Thermal throttle factor applied to available kVA in dispatch (1.0 = no throttle, 0.25 = severe)
     /// Written by power_system based on hottest transformer temperature, read by power_dispatch_system.
     pub thermal_throttle_factor: f32,
+
+    /// Remaining game-seconds of hacker overload attack (0 = inactive).
+    /// While active, load shedding is bypassed and chargers draw max power.
+    pub hacker_overload_remaining_secs: f32,
 }
 
 impl SiteState {
@@ -263,6 +267,7 @@ impl SiteState {
             pending_warranty: 0.0,
             pending_video_ad_chargers: std::collections::HashSet::new(),
             thermal_throttle_factor: 1.0,
+            hacker_overload_remaining_secs: 0.0,
         }
     }
 

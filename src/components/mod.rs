@@ -3,6 +3,7 @@
 pub mod charger;
 pub mod driver;
 pub mod emotion;
+pub mod hacker;
 pub mod power;
 pub mod robber;
 pub mod site;
@@ -15,6 +16,7 @@ use bevy::prelude::*;
 pub use charger::*;
 pub use driver::*;
 pub use emotion::*;
+pub use hacker::*;
 pub use power::*;
 pub use robber::*;
 pub use site::*;

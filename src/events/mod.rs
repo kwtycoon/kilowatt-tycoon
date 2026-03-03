@@ -6,6 +6,7 @@ pub mod site;
 use bevy::prelude::*;
 
 use crate::components::charger::{FaultType, RemoteAction};
+use crate::components::hacker::HackerAttackType;
 use crate::components::ticket::{TicketResolution, TicketType};
 use crate::resources::achievements::AchievementKind;
 use crate::resources::multi_site::SiteId;
@@ -54,7 +55,10 @@ impl Plugin for EventsPlugin {
             .add_message::<TransformerOverloadWarningEvent>()
             .add_message::<TransformerFireEvent>()
             // Achievement events
-            .add_message::<AchievementUnlockedEvent>();
+            .add_message::<AchievementUnlockedEvent>()
+            // Hacker events
+            .add_message::<HackerAttackEvent>()
+            .add_message::<HackerDetectedEvent>();
     }
 }
 
@@ -242,4 +246,22 @@ pub struct OemUpgradeEvent {
 #[derive(Event, Message, Debug, Clone)]
 pub struct AchievementUnlockedEvent {
     pub kind: AchievementKind,
+}
+
+// ============ Hacker Events ============
+
+/// Emitted when a hacker successfully executes a cyber-attack.
+#[derive(Event, Message, Debug, Clone)]
+pub struct HackerAttackEvent {
+    pub site_id: SiteId,
+    pub attack_type: HackerAttackType,
+}
+
+/// Emitted when a hacker attack is detected or auto-blocked by infosec systems.
+#[derive(Event, Message, Debug, Clone)]
+pub struct HackerDetectedEvent {
+    pub site_id: SiteId,
+    pub attack_type: HackerAttackType,
+    /// True when the Agentic SOC auto-terminated an active attack
+    pub auto_blocked: bool,
 }

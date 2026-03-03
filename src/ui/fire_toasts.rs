@@ -1,4 +1,5 @@
 //! Transformer fire toast notifications -- escalating warnings and fire alerts.
+//! Also contains hacker attack/detection toast notifications.
 //!
 //! - Overload warnings show a "Shed Load" button only when the player has the
 //!   Advanced Power Management upgrade. Without it, the toast tells the player
@@ -7,9 +8,13 @@
 
 use bevy::prelude::*;
 
-use crate::events::{OverloadSeverity, TransformerFireEvent, TransformerOverloadWarningEvent};
+use crate::components::hacker::HackerAttackType;
+use crate::events::{
+    HackerAttackEvent, HackerDetectedEvent, OverloadSeverity, TransformerFireEvent,
+    TransformerOverloadWarningEvent,
+};
 use crate::resources::{GameClock, ImageAssets, MultiSiteManager};
-use crate::ui::toast::{ToastContainer, ToastNotification};
+use crate::ui::toast::{RealTimeToast, ToastContainer, ToastNotification};
 
 #[derive(Component)]
 pub struct OverloadWarningToast;
@@ -345,5 +350,156 @@ pub fn update_fire_toast_button_styles(
             Interaction::Hovered => BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.35)),
             Interaction::Pressed => BackgroundColor(Color::srgb(0.18, 0.18, 0.18)),
         };
+    }
+}
+
+// ============ Hacker Attack Toasts ============
+
+#[derive(Component)]
+pub struct HackerAttackToast;
+
+pub fn spawn_hacker_attack_toast(
+    mut commands: Commands,
+    mut events: MessageReader<HackerAttackEvent>,
+    game_clock: Res<GameClock>,
+    time: Res<Time>,
+    image_assets: Res<ImageAssets>,
+    container: Single<Entity, With<ToastContainer>>,
+) {
+    let container = *container;
+    for event in events.read() {
+        let (title, message, bg_color) = match event.attack_type {
+            HackerAttackType::TransformerOverload => (
+                "CYBER ATTACK",
+                "Transformer overload in progress! Chargers forced to max power.",
+                Color::srgba(0.85, 0.15, 0.1, 0.95),
+            ),
+            HackerAttackType::PriceSlash => (
+                "HACK DETECTED",
+                "Price slashed to $0.01/kWh! Revenue tanking.",
+                Color::srgba(0.8, 0.1, 0.7, 0.95),
+            ),
+        };
+
+        let real_time = time.elapsed_secs();
+        let entity = commands
+            .spawn((
+                Node {
+                    width: Val::Px(320.0),
+                    padding: UiRect::all(Val::Px(15.0)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(6.0),
+                    ..default()
+                },
+                BackgroundColor(bg_color),
+                BorderRadius::all(Val::Px(8.0)),
+                ToastNotification {
+                    created_at: game_clock.total_game_time,
+                    duration: 600.0,
+                },
+                RealTimeToast {
+                    created_at_real: real_time,
+                    duration_real: 8.0,
+                },
+                HackerAttackToast,
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    ImageNode::new(image_assets.vfx_light_pulse_yellow.clone()),
+                    Node {
+                        width: Val::Px(24.0),
+                        height: Val::Px(24.0),
+                        ..default()
+                    },
+                ));
+                parent.spawn((
+                    Text::new(title),
+                    TextFont {
+                        font_size: 16.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                ));
+                parent.spawn((
+                    Text::new(message),
+                    TextFont {
+                        font_size: 12.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(1.0, 1.0, 0.9)),
+                ));
+            })
+            .id();
+
+        commands.entity(container).add_child(entity);
+    }
+}
+
+pub fn spawn_hacker_detected_toast(
+    mut commands: Commands,
+    mut events: MessageReader<HackerDetectedEvent>,
+    game_clock: Res<GameClock>,
+    time: Res<Time>,
+    image_assets: Res<ImageAssets>,
+    container: Single<Entity, With<ToastContainer>>,
+) {
+    let container = *container;
+    for event in events.read() {
+        let label = if event.auto_blocked {
+            "AUTO-BLOCKED"
+        } else {
+            "BLOCKED"
+        };
+
+        let attack_name = match event.attack_type {
+            HackerAttackType::TransformerOverload => "Transformer Overload",
+            HackerAttackType::PriceSlash => "Price Slash",
+        };
+
+        let message = format!("{label}: {attack_name} attempt neutralized!");
+        let bg_color = Color::srgba(0.1, 0.65, 0.3, 0.95);
+
+        let real_time = time.elapsed_secs();
+        let entity = commands
+            .spawn((
+                Node {
+                    width: Val::Px(320.0),
+                    padding: UiRect::all(Val::Px(15.0)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(6.0),
+                    ..default()
+                },
+                BackgroundColor(bg_color),
+                BorderRadius::all(Val::Px(8.0)),
+                ToastNotification {
+                    created_at: game_clock.total_game_time,
+                    duration: 600.0,
+                },
+                RealTimeToast {
+                    created_at_real: real_time,
+                    duration_real: 6.0,
+                },
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    ImageNode::new(image_assets.vfx_light_pulse_yellow.clone()),
+                    Node {
+                        width: Val::Px(24.0),
+                        height: Val::Px(24.0),
+                        ..default()
+                    },
+                ));
+                parent.spawn((
+                    Text::new(message),
+                    TextFont {
+                        font_size: 13.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                ));
+            })
+            .id();
+
+        commands.entity(container).add_child(entity);
     }
 }

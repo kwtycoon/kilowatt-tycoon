@@ -91,6 +91,7 @@ impl Plugin for ResourcesPlugin {
             .init_resource::<LeaderboardData>()
             .init_resource::<UnitSystem>()
             .init_resource::<crate::systems::robber::DailyRobberyTracker>()
+            .init_resource::<crate::systems::hacker::DailyHackerTracker>()
             .add_systems(Startup, (load_image_assets, load_audio_assets));
     }
 }

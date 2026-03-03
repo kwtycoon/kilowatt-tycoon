@@ -202,10 +202,12 @@ pub fn power_system(
         }
     }
 
-    // Thermal throttle: only active when Smart Load Shedding upgrade is purchased.
-    // Without it the transformer has no automatic protection — overloading causes
-    // unchecked heating that can lead to fire.
-    site_state.thermal_throttle_factor = if site_state.site_upgrades.has_smart_load_shedding() {
+    // Thermal throttle: only active when Smart Load Shedding upgrade is purchased
+    // AND no hacker overload is in effect. While hacker overload is active, the
+    // load shedding is bypassed and chargers draw unrestricted power.
+    site_state.thermal_throttle_factor = if site_state.hacker_overload_remaining_secs > 0.0 {
+        1.0
+    } else if site_state.site_upgrades.has_smart_load_shedding() {
         if hottest_temp >= 90.0 {
             0.25
         } else if hottest_temp >= 75.0 {

@@ -271,8 +271,13 @@ pub fn power_dispatch_system(
     // Calculate available apparent power (kVA) for chargers after solar + BESS.
     // Apply thermal throttle factor: when the transformer overheats, the available
     // kVA is reduced so all chargers are proportionally throttled via FCFS allocation.
-    let available_kva_for_chargers =
-        (site_limit_kva + solar_kw + bess_contribution_kw) * site_state.thermal_throttle_factor;
+    // During a hacker overload attack, the throttle is bypassed.
+    let throttle = if site_state.hacker_overload_remaining_secs > 0.0 {
+        1.0
+    } else {
+        site_state.thermal_throttle_factor
+    };
+    let available_kva_for_chargers = (site_limit_kva + solar_kw + bess_contribution_kw) * throttle;
 
     // Allocate power to chargers using FCFS, respecting kVA limit
     let mut remaining_kva = available_kva_for_chargers;

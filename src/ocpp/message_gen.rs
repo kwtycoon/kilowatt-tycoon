@@ -13,8 +13,9 @@ use rust_decimal::Decimal;
 
 use crate::components::charger::{Charger, ChargerState, ChargerType, RemoteAction};
 use crate::components::driver::Driver;
+use crate::components::hacker::HackerAttackType;
 use crate::components::site::BelongsToSite;
-use crate::events::RemoteActionResultEvent;
+use crate::events::{HackerAttackEvent, HackerDetectedEvent, RemoteActionResultEvent};
 use crate::resources::GameClock;
 
 use super::ports_registry::{PortEntry, PortsRegistry};
@@ -972,5 +973,95 @@ pub fn ocpp_charging_profile_system(
             "",
             serialize_callresult(&uid, &resp),
         );
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  10. Hacker security event system
+// ─────────────────────────────────────────────────────
+
+/// Emits explicit OCPP StatusNotification messages for hacker attacks and mitigations.
+pub fn ocpp_hacker_event_system(
+    chargers: Query<(Entity, &Charger)>,
+    mut queue: ResMut<OcppMessageQueue>,
+    game_clock: Res<GameClock>,
+    mut attack_events: MessageReader<HackerAttackEvent>,
+    mut detected_events: MessageReader<HackerDetectedEvent>,
+) {
+    if !queue.is_active() {
+        attack_events.read().for_each(|_| {});
+        detected_events.read().for_each(|_| {});
+        return;
+    }
+
+    let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
+    let ts_iso = timestamp.to_rfc3339();
+
+    for event in attack_events.read() {
+        let (info_text, vendor_code) = match event.attack_type {
+            HackerAttackType::TransformerOverload => {
+                ("CyberAttack: TransformerOverload", "CYBER_OVERLOAD")
+            }
+            HackerAttackType::PriceSlash => ("CyberAttack: PriceManipulation", "CYBER_PRICE_SLASH"),
+        };
+
+        for (entity, _charger) in chargers.iter() {
+            let charger_id = {
+                let state = queue.get_or_create(entity);
+                if !state.boot_sent {
+                    continue;
+                }
+                state.charger_id.clone()
+            };
+
+            push_status_notif(
+                &mut queue,
+                &charger_id,
+                &ts_iso,
+                timestamp,
+                ChargePointStatus::Faulted,
+                ChargePointErrorCode::OtherError,
+                Some(info_text.to_string()),
+                Some("KilowattTycoon".to_string()),
+                Some(vendor_code.to_string()),
+            );
+        }
+    }
+
+    for event in detected_events.read() {
+        if !event.auto_blocked {
+            continue;
+        }
+
+        let info_text = match event.attack_type {
+            HackerAttackType::TransformerOverload => {
+                "CyberAttack: TransformerOverload mitigated by Agentic SOC"
+            }
+            HackerAttackType::PriceSlash => {
+                "CyberAttack: PriceManipulation mitigated by Agentic SOC"
+            }
+        };
+
+        for (entity, _charger) in chargers.iter() {
+            let charger_id = {
+                let state = queue.get_or_create(entity);
+                if !state.boot_sent {
+                    continue;
+                }
+                state.charger_id.clone()
+            };
+
+            push_status_notif(
+                &mut queue,
+                &charger_id,
+                &ts_iso,
+                timestamp,
+                ChargePointStatus::Available,
+                ChargePointErrorCode::NoError,
+                Some(info_text.to_string()),
+                Some("KilowattTycoon".to_string()),
+                Some("CYBER_MITIGATED".to_string()),
+            );
+        }
     }
 }

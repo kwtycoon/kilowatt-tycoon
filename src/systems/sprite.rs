@@ -159,6 +159,20 @@ pub struct RobberLootBubble {
     pub lifetime: f32,
 }
 
+/// Pulsing glitch VFX displayed at the hacker's location while hacking
+#[derive(Component)]
+pub struct HackingGlitchVfx {
+    pub hacker_entity: Entity,
+    pub flash_time: f32,
+}
+
+/// Floating speech bubble above a hacker after attack resolves
+#[derive(Component)]
+pub struct HackerLootBubble {
+    pub hacker_entity: Entity,
+    pub lifetime: f32,
+}
+
 /// Stolen cable sprite that follows a fleeing robber (world-space sprite)
 #[derive(Component)]
 pub struct StolenCableSprite {
@@ -1124,6 +1138,52 @@ pub fn update_stolen_cable_sprite(
         let pos = robber_gt.translation();
         transform.translation.x = pos.x + 14.0;
         transform.translation.y = pos.y - 8.0;
+    }
+}
+
+// ============ Hacking Glitch VFX ============
+
+pub fn update_hacking_glitch_vfx(
+    mut commands: Commands,
+    time: Res<Time>,
+    hackers: Query<(&crate::components::hacker::Hacker, &GlobalTransform)>,
+    mut vfx_query: Query<(Entity, &mut HackingGlitchVfx, &mut Transform, &mut Sprite)>,
+) {
+    for (entity, mut vfx, mut transform, mut sprite) in vfx_query.iter_mut() {
+        let Ok((_hacker, hacker_gt)) = hackers.get(vfx.hacker_entity) else {
+            commands.entity(entity).try_despawn();
+            continue;
+        };
+
+        vfx.flash_time += time.delta_secs();
+        let pos = hacker_gt.translation();
+        transform.translation.x = pos.x;
+        transform.translation.y = pos.y;
+
+        let flash_cycle = (vfx.flash_time * 6.0).sin();
+        let alpha = 0.3 + 0.5 * flash_cycle.abs();
+        sprite.color = Color::srgba(0.0, 1.0, 0.3, alpha);
+    }
+}
+
+pub fn update_hacker_loot_bubble(
+    mut commands: Commands,
+    time: Res<Time>,
+    hackers: Query<(&crate::components::hacker::Hacker, &GlobalTransform)>,
+    mut bubbles: Query<(Entity, &mut HackerLootBubble, &mut Transform)>,
+) {
+    for (entity, mut bubble, mut transform) in bubbles.iter_mut() {
+        bubble.lifetime += time.delta_secs();
+
+        let Ok((_hacker, hacker_gt)) = hackers.get(bubble.hacker_entity) else {
+            commands.entity(entity).try_despawn();
+            continue;
+        };
+
+        let pos = hacker_gt.translation();
+        let bob = (bubble.lifetime * 3.0).sin() * 2.0;
+        transform.translation.x = pos.x;
+        transform.translation.y = pos.y + 35.0 + bob;
     }
 }
 

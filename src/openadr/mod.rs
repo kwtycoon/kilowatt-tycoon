@@ -59,6 +59,7 @@ impl Plugin for OpenAdrPlugin {
                 openadr_ghg_signal_system,
                 openadr_grid_alert_system,
                 openadr_transformer_fire_system,
+                openadr_hacker_event_system,
             )
                 .chain()
                 .run_if(in_state(AppState::Playing)),

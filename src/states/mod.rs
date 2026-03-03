@@ -142,7 +142,10 @@ impl Plugin for StatesPlugin {
             .add_systems(
                 OnEnter(AppState::DayEnd),
                 (
-                    cleanup_entities_on_day_end,
+                    (
+                        cleanup_entities_on_day_end,
+                        cleanup_hacker_entities_on_day_end,
+                    ),
                     on_enter_day_end,
                     auto_submit_score_on_day_end,
                 )
@@ -456,6 +459,34 @@ fn cleanup_entities_on_day_end(
     }
     for entity in &water_vfx {
         commands.entity(entity).try_despawn();
+    }
+}
+
+/// Despawn hacker entities and cancel active hacker effects at day end.
+fn cleanup_hacker_entities_on_day_end(
+    mut commands: Commands,
+    hackers: Query<Entity, With<crate::components::hacker::Hacker>>,
+    hacker_glitch_vfx: Query<Entity, With<crate::systems::sprite::HackingGlitchVfx>>,
+    hacker_loot_bubbles: Query<Entity, With<crate::systems::sprite::HackerLootBubble>>,
+    mut multi_site: ResMut<crate::resources::MultiSiteManager>,
+) {
+    for entity in &hackers {
+        commands.entity(entity).try_despawn();
+    }
+    for entity in &hacker_glitch_vfx {
+        commands.entity(entity).try_despawn();
+    }
+    for entity in &hacker_loot_bubbles {
+        commands.entity(entity).try_despawn();
+    }
+
+    for (_site_id, site_state) in multi_site.owned_sites.iter_mut() {
+        site_state.hacker_overload_remaining_secs = 0.0;
+        site_state.service_strategy.pricing.hacker_price_override = None;
+        site_state
+            .service_strategy
+            .pricing
+            .hacker_price_override_remaining_secs = 0.0;
     }
 }
 
