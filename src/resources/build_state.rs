@@ -99,6 +99,25 @@ impl BuildTool {
         }
     }
 
+    /// Help text shown when the info toggle is active on amenity buttons.
+    pub fn description(&self) -> Option<&'static str> {
+        match self {
+            BuildTool::AmenityWifiRestrooms => Some(
+                "Free WiFi and clean restrooms. Slows driver patience drain by 15% per building. 3\u{d7}3 tiles. $5/hr operating cost.",
+            ),
+            BuildTool::AmenityLoungeSnacks => Some(
+                "Comfortable seating, snacks, and coffee. Slows patience drain by 30% per building. 4\u{d7}4 tiles. $15/hr operating cost.",
+            ),
+            BuildTool::AmenityRestaurant => Some(
+                "Full-service dining experience. Slows patience drain by 50% per building. 5\u{d7}4 tiles. $35/hr operating cost.",
+            ),
+            BuildTool::AmenityDriverRestLounge => Some(
+                "Rest area for gig-economy drivers. Slows patience drain by 40% per building. 3\u{d7}3 tiles. $10/hr operating cost.",
+            ),
+            _ => None,
+        }
+    }
+
     /// Check if this is any transformer type
     pub fn is_transformer(&self) -> bool {
         matches!(

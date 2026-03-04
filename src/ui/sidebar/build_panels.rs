@@ -63,6 +63,18 @@ pub struct UpgradeDescText {
     pub upgrade_id: UpgradeId,
 }
 
+/// Clickable info icon on an amenity build button.
+#[derive(Component)]
+pub struct AmenityInfoButton {
+    pub tool: BuildTool,
+}
+
+/// Collapsible help text below an amenity build button (hidden by default).
+#[derive(Component)]
+pub struct AmenityInfoHelpText {
+    pub tool: BuildTool,
+}
+
 /// Marker for the utility max label in infrastructure panel
 #[derive(Component)]
 pub struct UtilityMaxLabel;
@@ -273,10 +285,10 @@ fn spawn_build_amenities_panel(parent: &mut ChildSpawnerCommands, image_assets: 
                 ));
             });
 
-        spawn_build_tool_button(panel, BuildTool::AmenityWifiRestrooms);
-        spawn_build_tool_button(panel, BuildTool::AmenityLoungeSnacks);
-        spawn_build_tool_button(panel, BuildTool::AmenityRestaurant);
-        spawn_build_tool_button(panel, BuildTool::AmenityDriverRestLounge);
+        spawn_amenity_tool_button(panel, BuildTool::AmenityWifiRestrooms, image_assets);
+        spawn_amenity_tool_button(panel, BuildTool::AmenityLoungeSnacks, image_assets);
+        spawn_amenity_tool_button(panel, BuildTool::AmenityRestaurant, image_assets);
+        spawn_amenity_tool_button(panel, BuildTool::AmenityDriverRestLounge, image_assets);
 
         panel.spawn((
             Text::new("Amenities attract more customers and improve satisfaction. Build more for greater effect."),
@@ -325,6 +337,101 @@ fn spawn_build_tool_button(parent: &mut ChildSpawnerCommands, tool: BuildTool) {
                 TextColor(colors::TEXT_PRIMARY),
                 BuildToolButtonText { tool },
             ));
+        });
+}
+
+/// Amenity build button with an inline info icon and collapsible help text.
+fn spawn_amenity_tool_button(
+    parent: &mut ChildSpawnerCommands,
+    tool: BuildTool,
+    image_assets: &ImageAssets,
+) {
+    let cost_text = if tool.cost() > 0 {
+        let cost = tool.cost();
+        let cost_str = if cost >= 1000 {
+            format!("${}k", cost / 1000)
+        } else {
+            format!("${cost}")
+        };
+        format!("{} ({})", tool.display_name(), cost_str)
+    } else {
+        tool.display_name().to_string()
+    };
+
+    let help_text = tool.description();
+
+    parent
+        .spawn(Node {
+            flex_direction: FlexDirection::Column,
+            width: Val::Percent(100.0),
+            ..default()
+        })
+        .with_children(|wrapper| {
+            wrapper
+                .spawn((
+                    Button,
+                    Node {
+                        width: Val::Percent(100.0),
+                        height: Val::Px(32.0),
+                        flex_direction: FlexDirection::Row,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(4.0),
+                        ..default()
+                    },
+                    BackgroundColor(colors::BUTTON_NORMAL),
+                    BuildToolButton { tool },
+                ))
+                .with_children(|btn| {
+                    btn.spawn((
+                        Text::new(cost_text),
+                        TextFont {
+                            font_size: 12.0,
+                            ..default()
+                        },
+                        TextColor(colors::TEXT_PRIMARY),
+                        BuildToolButtonText { tool },
+                    ));
+                    if help_text.is_some() {
+                        btn.spawn((
+                            Button,
+                            Node {
+                                width: Val::Px(14.0),
+                                height: Val::Px(14.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            BackgroundColor(Color::NONE),
+                            AmenityInfoButton { tool },
+                        ))
+                        .with_child((
+                            ImageNode::new(image_assets.icon_info.clone()),
+                            Node {
+                                width: Val::Px(12.0),
+                                height: Val::Px(12.0),
+                                ..default()
+                            },
+                        ));
+                    }
+                });
+
+            if let Some(text) = help_text {
+                wrapper.spawn((
+                    Text::new(text),
+                    TextFont {
+                        font_size: 10.0,
+                        ..default()
+                    },
+                    TextColor(colors::TEXT_SECONDARY),
+                    Node {
+                        display: Display::None,
+                        margin: UiRect::horizontal(Val::Px(4.0)),
+                        ..default()
+                    },
+                    AmenityInfoHelpText { tool },
+                ));
+            }
         });
 }
 
@@ -705,5 +812,25 @@ pub fn update_utility_max_label(
         } else {
             Visibility::Hidden
         };
+    }
+}
+
+/// Toggle amenity help text visibility when an info button is clicked.
+pub fn handle_amenity_info_clicks(
+    info_buttons: Query<(&Interaction, &AmenityInfoButton), Changed<Interaction>>,
+    mut help_texts: Query<(&AmenityInfoHelpText, &mut Node)>,
+) {
+    for (interaction, info_btn) in &info_buttons {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        for (help, mut node) in &mut help_texts {
+            if help.tool == info_btn.tool {
+                node.display = match node.display {
+                    Display::None => Display::Flex,
+                    _ => Display::None,
+                };
+            }
+        }
     }
 }

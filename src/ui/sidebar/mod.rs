@@ -486,6 +486,7 @@ impl Plugin for SidebarPlugin {
             (
                 // Build panel updates
                 handle_build_tool_buttons,
+                handle_amenity_info_clicks,
                 update_build_tool_button_colors,
                 update_utility_max_label,
                 // Operations panel updates
