@@ -314,7 +314,8 @@ pub fn ocpp_start_transaction_system(
         }
 
         // Emit the full OCPP 1.6 connector lifecycle with proper timestamp offsets.
-        // kwwhat relies on this sequence: Preparing → StartTransaction → Charging
+        // kwwhat does not rely on this sequence and accounts for charger being offline
+        // but still a right thing to do: Preparing → StartTransaction → Charging
         let ts_prep = (timestamp - chrono::Duration::seconds(2)).to_rfc3339();
         let ts_tx = (timestamp - chrono::Duration::seconds(1)).to_rfc3339();
         let ts_charging = timestamp.to_rfc3339();
