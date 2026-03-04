@@ -2415,16 +2415,21 @@
       },
       {
         "id": 11,
+        "name": "AmenityDriverRestLounge",
+        "filename": "prop_amenity_driver_rest_lounge.png"
+      },
+      {
+        "id": 12,
         "name": "SecuritySystem",
         "filename": "prop_security_system.png"
       },
       {
-        "id": 12,
+        "id": 13,
         "name": "SecurityPole",
         "filename": "prop_security_pole.png"
       },
       {
-        "id": 13,
+        "id": 14,
         "name": "SecurityCameraHead",
         "filename": "prop_security_camera_head.png"
       }

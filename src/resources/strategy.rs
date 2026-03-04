@@ -383,7 +383,7 @@ pub struct ServiceStrategy {
     /// Amenity counts: [WiFi+Restrooms, Lounge+Snacks, Restaurant]
     /// Multiple amenities stack - patience multipliers compound multiplicatively,
     /// OPEX costs sum additively.
-    pub amenity_counts: [u32; 3],
+    pub amenity_counts: [u32; 4],
 
     // === Solar Export ===
     /// Controls when excess solar generation is sold back to the grid.
@@ -402,7 +402,7 @@ impl Default for ServiceStrategy {
             ad_space_price_per_hour: 2.0,
             target_power_density: 1.0,
             maintenance_investment: 10.0,
-            amenity_counts: [0; 3],
+            amenity_counts: [0; 4],
             solar_export_policy: SolarExportPolicy::Never,
             warranty_tier: WarrantyTier::None,
         }
@@ -413,10 +413,11 @@ impl ServiceStrategy {
     /// Get the patience depletion multiplier based on placed amenities.
     /// Each amenity compounds multiplicatively: 0.85^wifi * 0.70^lounge * 0.50^restaurant
     pub fn patience_multiplier(&self) -> f32 {
-        let [wifi, lounge, restaurant] = self.amenity_counts;
+        let [wifi, lounge, restaurant, rest_lounge] = self.amenity_counts;
         ops::powf(0.85, wifi as f32)
             * ops::powf(0.70, lounge as f32)
             * ops::powf(0.50, restaurant as f32)
+            * ops::powf(0.60, rest_lounge as f32)
     }
 
     /// Get the failure rate multiplier based on maintenance investment
@@ -447,7 +448,7 @@ impl ServiceStrategy {
 
     /// Get a display string describing placed amenities
     pub fn amenity_name(&self) -> String {
-        let [wifi, lounge, restaurant] = self.amenity_counts;
+        let [wifi, lounge, restaurant, rest_lounge] = self.amenity_counts;
         let mut parts = Vec::new();
         if wifi > 0 {
             parts.push(format!("{}x WiFi", wifi));
@@ -458,6 +459,9 @@ impl ServiceStrategy {
         if restaurant > 0 {
             parts.push(format!("{}x Restaurant", restaurant));
         }
+        if rest_lounge > 0 {
+            parts.push(format!("{}x Driver Rest", rest_lounge));
+        }
         if parts.is_empty() {
             "None".to_string()
         } else {
@@ -467,8 +471,11 @@ impl ServiceStrategy {
 
     /// Get the total amenity cost per hour (additive across all placed amenities)
     pub fn amenity_cost_per_hour(&self) -> f32 {
-        let [wifi, lounge, restaurant] = self.amenity_counts;
-        wifi as f32 * 5.0 + lounge as f32 * 15.0 + restaurant as f32 * 35.0
+        let [wifi, lounge, restaurant, rest_lounge] = self.amenity_counts;
+        wifi as f32 * 5.0
+            + lounge as f32 * 15.0
+            + restaurant as f32 * 35.0
+            + rest_lounge as f32 * 10.0
     }
 
     /// Compute the hourly warranty cost for this site given its charger inventory.
@@ -512,13 +519,14 @@ impl ServiceStrategy {
     }
 
     /// Count amenities by type from a list of placed amenities
-    fn count_amenities(amenities: &[(i32, i32, AmenityType)]) -> [u32; 3] {
-        let mut counts = [0u32; 3];
+    fn count_amenities(amenities: &[(i32, i32, AmenityType)]) -> [u32; 4] {
+        let mut counts = [0u32; 4];
         for (_, _, amenity_type) in amenities {
             match amenity_type {
                 AmenityType::WifiRestrooms => counts[0] += 1,
                 AmenityType::LoungeSnacks => counts[1] += 1,
                 AmenityType::Restaurant => counts[2] += 1,
+                AmenityType::DriverRestLounge => counts[3] += 1,
             }
         }
         counts

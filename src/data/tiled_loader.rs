@@ -87,6 +87,7 @@ pub fn parse_tile_content(content_type: &str) -> TileContent {
         "AmenityWifiRestrooms" => TileContent::AmenityWifiRestrooms,
         "AmenityLoungeSnacks" => TileContent::AmenityLoungeSnacks,
         "AmenityRestaurant" => TileContent::AmenityRestaurant,
+        "AmenityDriverRestLounge" => TileContent::AmenityDriverRestLounge,
         "AmenityOccupied" => TileContent::AmenityOccupied,
         // Road with yellow line (visually different, same gameplay as Road)
         "RoadYellowLine" | "RoadLaneTop" | "RoadLaneBottom" => TileContent::Road,
@@ -410,6 +411,7 @@ fn tile_content_to_string(content: &TileContent) -> String {
         TileContent::AmenityWifiRestrooms => "AmenityWifiRestrooms",
         TileContent::AmenityLoungeSnacks => "AmenityLoungeSnacks",
         TileContent::AmenityRestaurant => "AmenityRestaurant",
+        TileContent::AmenityDriverRestLounge => "AmenityDriverRestLounge",
         TileContent::AmenityOccupied => "AmenityOccupied",
     }
     .to_string()

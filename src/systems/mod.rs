@@ -19,6 +19,7 @@ pub mod northstar_movement;
 pub mod power;
 pub mod power_dispatch;
 pub mod robber;
+pub mod scenario_events;
 pub mod scene;
 pub mod screenshot;
 pub mod site_roots;
@@ -63,6 +64,7 @@ pub use northstar_movement::*;
 pub use power::*;
 pub use power_dispatch::*;
 pub use robber::*;
+pub use scenario_events::*;
 pub use scene::*;
 pub use screenshot::*;
 pub use site_roots::*;
@@ -293,6 +295,12 @@ impl Plugin for SystemsPlugin {
                 update_ambient_sprite_positions,
             )
                 .run_if(in_state(AppState::Playing).and(is_station_open)),
+        );
+
+        // Scenario scripted events (monsoon floods, brownouts, swap competitor, etc.)
+        app.add_systems(
+            Update,
+            scenario_events::scenario_event_system.in_set(GameSystemSet::ChargerUpdate),
         );
 
         // Core game systems

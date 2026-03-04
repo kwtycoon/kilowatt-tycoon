@@ -91,6 +91,7 @@ fn grid_event_to_alert_type(event: crate::resources::GridEventType) -> EventType
         }
         GridEventType::HeatEmergency => EventType::AlertOther,
         GridEventType::RenewableShortfall => EventType::AlertFlexAlert,
+        GridEventType::Brownout => EventType::AlertGridEmergency,
     }
 }
 

@@ -61,6 +61,17 @@ impl Default for SiteEnergyConfig {
 }
 
 impl SiteEnergyConfig {
+    /// Vietnam-style two-component tariff for ScooterHub.
+    /// Punitive capacity charge and 30-minute demand window force aggressive DLM.
+    pub fn scooter_hub() -> Self {
+        Self {
+            demand_window_seconds: 1800.0, // 30-minute integration window (Vietnam model)
+            demand_rate_per_kw: 25.0,      // punitive capacity charge
+            on_peak_rate: 0.35,            // higher on-peak rate
+            ..Self::default()
+        }
+    }
+
     /// Get the current TOU period based on game time
     pub fn current_tou_period(&self, game_time: f32) -> TouPeriod {
         let day_fraction =
@@ -507,6 +518,8 @@ pub enum GridEventType {
     UnexpectedPlantOutage,
     RenewableShortfall,
     GridCongestion,
+    /// Vietnam-style grid brownout: utility capacity temporarily reduced by 40%.
+    Brownout,
 }
 
 impl GridEventType {
@@ -518,6 +531,7 @@ impl GridEventType {
         GridEventType::UnexpectedPlantOutage,
         GridEventType::RenewableShortfall,
         GridEventType::GridCongestion,
+        GridEventType::Brownout,
     ];
 
     pub fn name(&self) -> &'static str {
@@ -529,6 +543,7 @@ impl GridEventType {
             GridEventType::UnexpectedPlantOutage => "Plant Outage",
             GridEventType::RenewableShortfall => "Renewable Shortfall",
             GridEventType::GridCongestion => "Grid Congestion",
+            GridEventType::Brownout => "Brownout",
         }
     }
 
@@ -550,6 +565,7 @@ impl GridEventType {
                 "Wind died, clouds rolled in - renewables tanking!"
             }
             GridEventType::GridCongestion => "Grid bottleneck - congestion fees kicking in!",
+            GridEventType::Brownout => "Grid brownout declared - utility slashing your capacity!",
         }
     }
 
@@ -576,6 +592,12 @@ impl GridEventType {
                 WeatherType::Cold => 1.0,
                 WeatherType::Sunny | WeatherType::Heatwave => 0.5,
             },
+            GridEventType::Brownout => match weather {
+                WeatherType::Heatwave => 3.0,
+                WeatherType::Sunny => 1.5,
+                WeatherType::Overcast => 0.5,
+                WeatherType::Rainy | WeatherType::Cold => 0.0,
+            },
             GridEventType::GeneratorTrip
             | GridEventType::TransmissionConstraint
             | GridEventType::UnexpectedPlantOutage
@@ -592,6 +614,7 @@ impl GridEventType {
             GridEventType::UnexpectedPlantOutage => 1.5,
             GridEventType::RenewableShortfall => 1.2,
             GridEventType::GridCongestion => 1.3,
+            GridEventType::Brownout => 2.5,
         }
     }
 
@@ -604,6 +627,16 @@ impl GridEventType {
             GridEventType::UnexpectedPlantOutage => 6.0,
             GridEventType::RenewableShortfall => 2.5,
             GridEventType::GridCongestion => 2.0,
+            GridEventType::Brownout => 8.0,
+        }
+    }
+
+    /// Fraction of grid capacity removed during this event (0.0 = none).
+    /// Only `Brownout` reduces capacity; all others just affect rates.
+    pub fn capacity_reduction(&self) -> f32 {
+        match self {
+            GridEventType::Brownout => 0.40,
+            _ => 0.0,
         }
     }
 }

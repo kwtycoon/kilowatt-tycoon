@@ -293,6 +293,17 @@ pub fn update_grid_visuals(
                     site.id,
                 );
             }
+            TileContent::AmenityDriverRestLounge => {
+                spawn_amenity_building(
+                    &mut commands,
+                    root_entity,
+                    &image_assets,
+                    x,
+                    y,
+                    AmenityType::DriverRestLounge,
+                    site.id,
+                );
+            }
             // All other tile types are rendered by Tiled - no entity spawning needed
             _ => {}
         }
@@ -908,6 +919,10 @@ fn spawn_amenity_building(
             AmenityType::Restaurant => (
                 assets.prop_amenity_restaurant_premium.clone(),
                 TILE_SCALE * 0.305, // 5x4 footprint (1024x768 PNG -> 320x256)
+            ),
+            AmenityType::DriverRestLounge => (
+                assets.prop_amenity_driver_rest_lounge.clone(),
+                TILE_SCALE * 0.3625, // 3x3 footprint
             ),
         };
 

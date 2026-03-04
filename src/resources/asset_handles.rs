@@ -102,6 +102,7 @@ pub struct ImageAssets {
     pub prop_amenity_wifi_restrooms: Handle<Image>,
     pub prop_amenity_lounge_snacks: Handle<Image>,
     pub prop_amenity_restaurant_premium: Handle<Image>,
+    pub prop_amenity_driver_rest_lounge: Handle<Image>,
 
     // Mood Icons (displayed on vehicles)
     pub icon_mood_neutral: Handle<Image>,
@@ -348,6 +349,8 @@ pub fn load_image_assets(mut commands: Commands, asset_server: Res<AssetServer>)
         prop_amenity_lounge_snacks: asset_server.load("props/prop_amenity_lounge_snacks.png"),
         prop_amenity_restaurant_premium: asset_server
             .load("props/prop_amenity_restaurant_premium.png"),
+        prop_amenity_driver_rest_lounge: asset_server
+            .load("props/prop_amenity_driver_rest_lounge.png"),
 
         // Mood Icons (displayed on vehicles)
         icon_mood_neutral: asset_server.load("ui/icons/icon_mood_neutral.png"),

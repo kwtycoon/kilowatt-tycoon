@@ -639,10 +639,12 @@ pub fn driver_spawn_system(
             };
             let capacity_multiplier =
                 crate::resources::demand::capacity_demand_multiplier(charger_count);
+            let scenario_multiplier = site_state.scenario_effects.demand_multiplier();
             let effective_demand = base_demand
                 * reliability_multiplier
                 * customer_perk_multiplier
-                * capacity_multiplier;
+                * capacity_multiplier
+                * scenario_multiplier;
 
             let next_interval = site_state
                 .demand_state

@@ -704,7 +704,7 @@ pub fn ocpi_tariff_system(
         let tariff_id = make_tariff_id(*site_id, strat.pricing.mode);
 
         use crate::resources::PricingMode;
-        let elements = match strat.pricing.mode {
+        let mut elements = match strat.pricing.mode {
             PricingMode::Flat => vec![TariffElement {
                 price_components: vec![PriceComponent {
                     component_type: TariffDimensionType::Energy,
@@ -769,6 +769,21 @@ pub fn ocpi_tariff_system(
             }
         };
 
+        // Append a MAX_POWER element when the site carries a non-default
+        // demand/capacity charge (e.g. ScooterHub's punitive $25/kW rate).
+        let demand_rate = site.site_energy_config.demand_rate_per_kw;
+        if demand_rate > 15.0 + f32::EPSILON {
+            let window_min = (site.site_energy_config.demand_window_seconds / 60.0) as i32;
+            elements.push(TariffElement {
+                price_components: vec![PriceComponent {
+                    component_type: TariffDimensionType::MaxPower,
+                    price: demand_rate as f64,
+                    step_size: window_min,
+                }],
+                restrictions: None,
+            });
+        }
+
         let price_cents: Vec<i32> = elements
             .iter()
             .flat_map(|el| el.price_components.iter())
@@ -788,7 +803,7 @@ pub fn ocpi_tariff_system(
             .game_time_to_utc(game_clock.total_game_time)
             .to_rfc3339();
 
-        let description = match strat.pricing.mode {
+        let mut description = match strat.pricing.mode {
             PricingMode::Flat => format!("Flat ${:.2}/kWh", strat.pricing.flat.price_kwh),
             PricingMode::TouLinked => format!(
                 "Off-Peak ${:.2} / On-Peak ${:.2} per kWh",
@@ -807,6 +822,14 @@ pub fn ocpi_tariff_system(
                 strat.pricing.surge.threshold * 100.0
             ),
         };
+
+        if demand_rate > 15.0 + f32::EPSILON {
+            let window_min = (site.site_energy_config.demand_window_seconds / 60.0) as u32;
+            description.push_str(&format!(
+                " | Capacity ${:.0}/kW ({window_min}m peak)",
+                demand_rate
+            ));
+        }
 
         let tariff = Tariff {
             country_code: CPO_COUNTRY_CODE.to_string(),

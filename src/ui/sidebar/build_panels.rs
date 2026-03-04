@@ -276,6 +276,7 @@ fn spawn_build_amenities_panel(parent: &mut ChildSpawnerCommands, image_assets: 
         spawn_build_tool_button(panel, BuildTool::AmenityWifiRestrooms);
         spawn_build_tool_button(panel, BuildTool::AmenityLoungeSnacks);
         spawn_build_tool_button(panel, BuildTool::AmenityRestaurant);
+        spawn_build_tool_button(panel, BuildTool::AmenityDriverRestLounge);
 
         panel.spawn((
             Text::new("Amenities attract more customers and improve satisfaction. Build more for greater effect."),

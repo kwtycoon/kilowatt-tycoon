@@ -6,24 +6,39 @@
   "drivers": [
     { "id": "scoot_01", "vehicle": "scooter", "vehicle_name": "VinFast Feliz S", "arrival_time": 0, "target_charger": null, "patience": "medium", "charge_needed_kwh": 1.8, "notes": "Airport courier shift start" },
     { "id": "scoot_02", "vehicle": "motorcycle", "vehicle_name": "Dat Bike Weaver", "arrival_time": 8, "target_charger": null, "patience": "high", "charge_needed_kwh": 2.5, "notes": "Commuter top-up" },
-    { "id": "scoot_03", "vehicle": "scooter", "vehicle_name": "Yadea G5", "arrival_time": 16, "target_charger": null, "patience": "low", "charge_needed_kwh": 1.6, "notes": "GrabFood rider" },
-    { "id": "scoot_04", "vehicle": "scooter", "vehicle_name": "Selex Camel", "arrival_time": 24, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.1, "notes": "ShopeeFood drop-in" },
+    { "id": "scoot_03", "vehicle": "scooter", "vehicle_name": "Yadea G5", "arrival_time": 16, "target_charger": null, "patience": "low", "charge_needed_kwh": 1.6, "notes": "GrabFood rider — needs fast turnaround" },
+    { "id": "scoot_04", "vehicle": "scooter", "vehicle_name": "Selex Camel", "arrival_time": 24, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.1, "notes": "ShopeeFood drop-in from Thu Duc" },
     { "id": "scoot_05", "vehicle": "motorcycle", "vehicle_name": "NIU RQi", "arrival_time": 32, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.8, "notes": "District 1 office rider" },
     { "id": "scoot_06", "vehicle": "scooter", "vehicle_name": "VinFast Evo", "arrival_time": 40, "target_charger": null, "patience": "high", "charge_needed_kwh": 1.7, "notes": "Lunch break charge" },
-    { "id": "scoot_07", "vehicle": "scooter", "vehicle_name": "Yamaha Neo's", "arrival_time": 52, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.0, "notes": "Ride-hailing queue" },
-    { "id": "scoot_08", "vehicle": "motorcycle", "vehicle_name": "Dat Bike Quantum", "arrival_time": 64, "target_charger": null, "patience": "low", "charge_needed_kwh": 2.9, "notes": "Express parcel rider" },
+    { "id": "scoot_07", "vehicle": "scooter", "vehicle_name": "Yamaha Neo's", "arrival_time": 52, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.0, "notes": "Gojek ride-hailing queue" },
+    { "id": "scoot_08", "vehicle": "motorcycle", "vehicle_name": "Dat Bike Quantum", "arrival_time": 64, "target_charger": null, "patience": "low", "charge_needed_kwh": 2.9, "notes": "Express parcel rider — impatient" },
     { "id": "scoot_09", "vehicle": "scooter", "vehicle_name": "Pega eSH", "arrival_time": 76, "target_charger": null, "patience": "medium", "charge_needed_kwh": 1.9, "notes": "Airport pickup loop" },
     { "id": "scoot_10", "vehicle": "scooter", "vehicle_name": "Gogoro Viva", "arrival_time": 88, "target_charger": null, "patience": "high", "charge_needed_kwh": 1.5, "notes": "Short dwell turnover" },
-    { "id": "scoot_11", "vehicle": "motorcycle", "vehicle_name": "VMoto Stash", "arrival_time": 100, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.7, "notes": "Courier rest stop" },
+    { "id": "scoot_11", "vehicle": "motorcycle", "vehicle_name": "VMoto Stash", "arrival_time": 100, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.7, "notes": "Courier rest stop, District 7" },
     { "id": "scoot_12", "vehicle": "scooter", "vehicle_name": "VinFast Klara S2", "arrival_time": 112, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.2, "notes": "Afternoon commuter wave" },
-    { "id": "scoot_13", "vehicle": "scooter", "vehicle_name": "Yadea Orla", "arrival_time": 124, "target_charger": null, "patience": "low", "charge_needed_kwh": 1.8, "notes": "High urgency rider" },
+    { "id": "scoot_13", "vehicle": "scooter", "vehicle_name": "Yadea Orla", "arrival_time": 124, "target_charger": null, "patience": "low", "charge_needed_kwh": 1.8, "notes": "High urgency Grab rider" },
     { "id": "scoot_14", "vehicle": "motorcycle", "vehicle_name": "NIU RQi Sport", "arrival_time": 136, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.6, "notes": "District 1 return route" },
-    { "id": "scoot_15", "vehicle": "scooter", "vehicle_name": "Selex Sprint", "arrival_time": 148, "target_charger": null, "patience": "high", "charge_needed_kwh": 1.7, "notes": "Fast top-up" },
+    { "id": "scoot_15", "vehicle": "scooter", "vehicle_name": "Selex Sprint", "arrival_time": 148, "target_charger": null, "patience": "high", "charge_needed_kwh": 1.7, "notes": "Fast top-up, Binh Thanh district" },
     { "id": "scoot_16", "vehicle": "scooter", "vehicle_name": "Gogoro Pulse", "arrival_time": 162, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.3, "notes": "Evening rush build-up" },
     { "id": "scoot_17", "vehicle": "motorcycle", "vehicle_name": "Dat Bike Weaver++", "arrival_time": 176, "target_charger": null, "patience": "low", "charge_needed_kwh": 2.9, "notes": "Peak demand moment" },
     { "id": "scoot_18", "vehicle": "scooter", "vehicle_name": "VinFast Vento S", "arrival_time": 190, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.0, "notes": "Airport outbound rider" },
     { "id": "scoot_19", "vehicle": "scooter", "vehicle_name": "Yadea Voltguard", "arrival_time": 206, "target_charger": null, "patience": "high", "charge_needed_kwh": 1.6, "notes": "Short top-up before pickup" },
-    { "id": "scoot_20", "vehicle": "motorcycle", "vehicle_name": "VMoto CPx", "arrival_time": 222, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.4, "notes": "Final dense wave" }
+    { "id": "scoot_20", "vehicle": "motorcycle", "vehicle_name": "VMoto CPx", "arrival_time": 222, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.4, "notes": "Final dense wave" },
+    { "id": "scoot_21", "vehicle": "scooter", "vehicle_name": "VinFast Feliz S+", "arrival_time": 240, "target_charger": null, "patience": "low", "charge_needed_kwh": 1.9, "notes": "Grab rider shift change — double queue" },
+    { "id": "scoot_22", "vehicle": "scooter", "vehicle_name": "Pega NewTech", "arrival_time": 256, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.1, "notes": "Student commuter, Thu Duc campus" },
+    { "id": "scoot_23", "vehicle": "motorcycle", "vehicle_name": "Dat Bike Nova", "arrival_time": 272, "target_charger": null, "patience": "high", "charge_needed_kwh": 2.7, "notes": "Delivery fleet rider resting up" },
+    { "id": "scoot_24", "vehicle": "scooter", "vehicle_name": "Yadea Trooper", "arrival_time": 290, "target_charger": null, "patience": "medium", "charge_needed_kwh": 1.5, "notes": "Quick top-up, Binh Tan district" },
+    { "id": "scoot_25", "vehicle": "scooter", "vehicle_name": "Selex Camel Pro", "arrival_time": 310, "target_charger": null, "patience": "low", "charge_needed_kwh": 2.3, "notes": "ShopeeFood peak rush rider" },
+    { "id": "scoot_26", "vehicle": "motorcycle", "vehicle_name": "NIU NQi GTS", "arrival_time": 330, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.8, "notes": "District 4 commuter" },
+    { "id": "scoot_27", "vehicle": "scooter", "vehicle_name": "VinFast Klara A2", "arrival_time": 360, "target_charger": null, "patience": "high", "charge_needed_kwh": 1.8, "notes": "Evening leisure rider" },
+    { "id": "scoot_28", "vehicle": "scooter", "vehicle_name": "Gogoro S2", "arrival_time": 390, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.0, "notes": "Last-mile delivery, Phu Nhuan" },
+    { "id": "scoot_29", "vehicle": "motorcycle", "vehicle_name": "VMoto TC Max", "arrival_time": 420, "target_charger": null, "patience": "low", "charge_needed_kwh": 2.6, "notes": "Gojek peak-hour rider" },
+    { "id": "scoot_30", "vehicle": "scooter", "vehicle_name": "Yadea XFrame", "arrival_time": 450, "target_charger": null, "patience": "medium", "charge_needed_kwh": 1.7, "notes": "Apartment-ban refugee, Linh Dam resident" },
+    { "id": "scoot_31", "vehicle": "scooter", "vehicle_name": "VinFast Evo 200", "arrival_time": 480, "target_charger": null, "patience": "high", "charge_needed_kwh": 2.2, "notes": "Apartment-ban refugee, Thu Duc highrise" },
+    { "id": "scoot_32", "vehicle": "motorcycle", "vehicle_name": "Dat Bike Weaver X", "arrival_time": 520, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.9, "notes": "Night-shift courier starting route" },
+    { "id": "scoot_33", "vehicle": "scooter", "vehicle_name": "Selex Sprint+", "arrival_time": 560, "target_charger": null, "patience": "low", "charge_needed_kwh": 1.6, "notes": "Rapid turnover, minimal dwell" },
+    { "id": "scoot_34", "vehicle": "scooter", "vehicle_name": "Pega Cap A2", "arrival_time": 600, "target_charger": null, "patience": "medium", "charge_needed_kwh": 2.4, "notes": "Late evening commuter" },
+    { "id": "scoot_35", "vehicle": "motorcycle", "vehicle_name": "NIU RQi GT", "arrival_time": 650, "target_charger": null, "patience": "high", "charge_needed_kwh": 2.5, "notes": "Night owl rider, Tan Son Nhat airport zone" }
   ],
   "scripted_events": [
     {
@@ -35,16 +50,30 @@
     },
     {
       "time": 170,
-      "type": "charger_fault",
-      "charger_id": "chg_04",
-      "fault_type": "ground_fault",
-      "notes": "Monsoon-like event - temporary safety shutdown"
+      "type": "monsoon_flood",
+      "severity": 2,
+      "notes": "Monsoon downpour — pluvial flooding knocks out multiple chargers"
     },
     {
       "time": 200,
       "type": "transformer_warning",
       "temp_threshold": 78,
-      "notes": "Sustained L2 load raises thermal pressure"
+      "notes": "Sustained L2 load raises thermal pressure in tropical heat"
+    },
+    {
+      "time": 350,
+      "type": "battery_swap_competitor",
+      "notes": "V-Green swap station opened 200m away — impatient riders leaving"
+    },
+    {
+      "time": 500,
+      "type": "demand_surge",
+      "notes": "HH Linh Dam apartment complex bans EV basement charging — displaced riders incoming"
+    },
+    {
+      "time": 650,
+      "type": "grid_brownout",
+      "notes": "Heatwave strains Vietnam grid — EVN orders 40% capacity curtailment"
     }
   ]
 }

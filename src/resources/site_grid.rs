@@ -72,6 +72,8 @@ pub enum AmenityType {
     LoungeSnacks,
     /// Premium Restaurant (Level 3) - 5x4 tiles
     Restaurant,
+    /// Driver Rest Lounge - 3x3 tiles (dormitory-style rest for gig workers)
+    DriverRestLounge,
 }
 
 impl AmenityType {
@@ -81,6 +83,7 @@ impl AmenityType {
             AmenityType::WifiRestrooms => StructureSize::ThreeByThree,
             AmenityType::LoungeSnacks => StructureSize::FourByFour,
             AmenityType::Restaurant => StructureSize::FiveByFour,
+            AmenityType::DriverRestLounge => StructureSize::ThreeByThree,
         }
     }
 
@@ -90,6 +93,7 @@ impl AmenityType {
             AmenityType::WifiRestrooms => 1,
             AmenityType::LoungeSnacks => 2,
             AmenityType::Restaurant => 3,
+            AmenityType::DriverRestLounge => 4,
         }
     }
 
@@ -99,6 +103,7 @@ impl AmenityType {
             AmenityType::WifiRestrooms => TileContent::AmenityWifiRestrooms,
             AmenityType::LoungeSnacks => TileContent::AmenityLoungeSnacks,
             AmenityType::Restaurant => TileContent::AmenityRestaurant,
+            AmenityType::DriverRestLounge => TileContent::AmenityDriverRestLounge,
         }
     }
 }
@@ -114,20 +119,21 @@ pub enum TileContent {
     ParkingBayNorth, // Parking stall facing up (car enters from south, charger at y-1)
     ParkingBaySouth, // Parking stall facing down (car enters from north, charger at y+1)
     ChargerPad,
-    TransformerPad,       // Transformer anchor (2x2)
-    TransformerOccupied,  // Other tiles occupied by transformer
-    SolarPad,             // Solar array anchor (3x2)
-    SolarOccupied,        // Other tiles occupied by solar
-    BatteryPad,           // Battery anchor (2x2)
-    BatteryOccupied,      // Other tiles occupied by battery
-    SecurityPad,          // Security system anchor (2x2)
-    SecurityOccupied,     // Other tiles occupied by security system
-    AmenityWifiRestrooms, // WiFi+Restrooms anchor (3x3)
-    AmenityLoungeSnacks,  // Lounge+Snacks anchor (4x4)
-    AmenityRestaurant,    // Restaurant anchor (5x4)
-    AmenityOccupied,      // Other tiles occupied by amenity
-    Entry,                // Road tile that's the entry point
-    Exit,                 // Road tile that's the exit point
+    TransformerPad,          // Transformer anchor (2x2)
+    TransformerOccupied,     // Other tiles occupied by transformer
+    SolarPad,                // Solar array anchor (3x2)
+    SolarOccupied,           // Other tiles occupied by solar
+    BatteryPad,              // Battery anchor (2x2)
+    BatteryOccupied,         // Other tiles occupied by battery
+    SecurityPad,             // Security system anchor (2x2)
+    SecurityOccupied,        // Other tiles occupied by security system
+    AmenityWifiRestrooms,    // WiFi+Restrooms anchor (3x3)
+    AmenityLoungeSnacks,     // Lounge+Snacks anchor (4x4)
+    AmenityRestaurant,       // Restaurant anchor (5x4)
+    AmenityDriverRestLounge, // Driver Rest Lounge anchor (3x3)
+    AmenityOccupied,         // Other tiles occupied by amenity
+    Entry,                   // Road tile that's the entry point
+    Exit,                    // Road tile that's the exit point
     // Gas station specific tiles
     StoreWall,        // Convenience store wall (not walkable)
     StoreEntrance,    // Convenience store entrance
@@ -235,6 +241,7 @@ impl TileContent {
             TileContent::AmenityWifiRestrooms
                 | TileContent::AmenityLoungeSnacks
                 | TileContent::AmenityRestaurant
+                | TileContent::AmenityDriverRestLounge
                 | TileContent::AmenityOccupied
         )
     }
@@ -251,6 +258,7 @@ impl TileContent {
                 | TileContent::AmenityWifiRestrooms
                 | TileContent::AmenityLoungeSnacks
                 | TileContent::AmenityRestaurant
+                | TileContent::AmenityDriverRestLounge
         )
     }
 
@@ -278,6 +286,7 @@ impl TileContent {
             TileContent::AmenityWifiRestrooms => Some(StructureSize::ThreeByThree),
             TileContent::AmenityLoungeSnacks => Some(StructureSize::FourByFour),
             TileContent::AmenityRestaurant => Some(StructureSize::FiveByFour),
+            TileContent::AmenityDriverRestLounge => Some(StructureSize::ThreeByThree),
             _ => None,
         }
     }
@@ -292,7 +301,8 @@ impl TileContent {
             TileContent::DumpsterPad => Some(TileContent::DumpsterOccupied),
             TileContent::AmenityWifiRestrooms
             | TileContent::AmenityLoungeSnacks
-            | TileContent::AmenityRestaurant => Some(TileContent::AmenityOccupied),
+            | TileContent::AmenityRestaurant
+            | TileContent::AmenityDriverRestLounge => Some(TileContent::AmenityOccupied),
             _ => None,
         }
     }
@@ -758,7 +768,8 @@ impl SiteGrid {
             }
             TileContent::AmenityWifiRestrooms
             | TileContent::AmenityLoungeSnacks
-            | TileContent::AmenityRestaurant => {
+            | TileContent::AmenityRestaurant
+            | TileContent::AmenityDriverRestLounge => {
                 return Err("Use place_amenity() for amenity buildings".to_string());
             }
             _ => {}

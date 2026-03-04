@@ -126,6 +126,52 @@ impl SiteArchetype {
     }
 }
 
+/// Temporary effects triggered by scenario scripted events (monsoon floods,
+/// battery-swap competitor, residential-ban demand surges).
+#[derive(Debug, Clone, Default)]
+pub struct ScenarioEffects {
+    /// Remaining seconds of monsoon-flood capacity penalty.
+    pub monsoon_flood_remaining_secs: f32,
+    /// Grid capacity reduction while flood is active (0.0–1.0; 0 = no penalty).
+    pub monsoon_flood_capacity_penalty: f32,
+
+    /// Remaining seconds of battery-swap competitor demand penalty.
+    pub battery_swap_remaining_secs: f32,
+    /// Demand multiplier while swap competitor is active (1.0 = normal).
+    pub battery_swap_demand_multiplier: f32,
+
+    /// Remaining seconds of residential-ban demand surge.
+    pub demand_surge_remaining_secs: f32,
+    /// Demand multiplier while surge is active (1.0 = normal).
+    pub demand_surge_multiplier: f32,
+}
+
+impl ScenarioEffects {
+    /// Combined demand multiplier from all active scenario effects.
+    pub fn demand_multiplier(&self) -> f32 {
+        let swap = if self.battery_swap_remaining_secs > 0.0 {
+            self.battery_swap_demand_multiplier
+        } else {
+            1.0
+        };
+        let surge = if self.demand_surge_remaining_secs > 0.0 {
+            self.demand_surge_multiplier
+        } else {
+            1.0
+        };
+        swap * surge
+    }
+
+    /// Capacity penalty from monsoon flooding (0.0 = none, 0.3 = 30% reduction).
+    pub fn capacity_penalty(&self) -> f32 {
+        if self.monsoon_flood_remaining_secs > 0.0 {
+            self.monsoon_flood_capacity_penalty
+        } else {
+            0.0
+        }
+    }
+}
+
 /// Complete state for a single site
 ///
 /// Contains all per-site simulation state to enable concurrent operation.
@@ -203,6 +249,9 @@ pub struct SiteState {
     /// Remaining game-seconds of hacker overload attack (0 = inactive).
     /// While active, load shedding is bypassed and chargers draw max power.
     pub hacker_overload_remaining_secs: f32,
+
+    /// Active scenario-driven effects (monsoon flood, battery-swap competitor, demand surge).
+    pub scenario_effects: ScenarioEffects,
 }
 
 impl SiteState {
@@ -252,7 +301,10 @@ impl SiteState {
             bess_state: BessState::default(),
             grid_import: GridImport::default(),
             utility_meter: UtilityMeter::default(),
-            site_energy_config: SiteEnergyConfig::default(),
+            site_energy_config: match archetype {
+                SiteArchetype::ScooterHub => SiteEnergyConfig::scooter_hub(),
+                _ => SiteEnergyConfig::default(),
+            },
             grid_events: GridEventState::default(),
             service_strategy: ServiceStrategy::default(),
             site_upgrades: SiteUpgrades::default(),
@@ -268,6 +320,7 @@ impl SiteState {
             pending_video_ad_chargers: std::collections::HashSet::new(),
             thermal_throttle_factor: 1.0,
             hacker_overload_remaining_secs: 0.0,
+            scenario_effects: ScenarioEffects::default(),
         }
     }
 
@@ -326,7 +379,7 @@ impl SiteState {
             .iter()
             .any(|(_, _, ct)| ct.is_dcfc());
 
-        if has_dcfc && !has_transformer {
+        let base = if has_dcfc && !has_transformer {
             let l2_load_kw: f32 = self
                 .grid
                 .get_charger_bays()
@@ -337,7 +390,16 @@ impl SiteState {
             l2_load_kw.min(self.grid_capacity_kva)
         } else {
             self.grid_capacity_kva
-        }
+        };
+
+        // Apply capacity penalties from active scenario effects and grid events.
+        let grid_event_penalty = self
+            .grid_events
+            .active_event
+            .map_or(0.0, |e| e.capacity_reduction());
+        let scenario_penalty = self.scenario_effects.capacity_penalty();
+        let total_penalty = (grid_event_penalty + scenario_penalty).min(0.9);
+        base * (1.0 - total_penalty)
     }
 
     /// Get the world offset for this site (for positioning entities)
@@ -609,6 +671,7 @@ impl MultiSiteManager {
                 crate::resources::AmenityType::WifiRestrooms => 7500.0, // 15k → 7.5k
                 crate::resources::AmenityType::LoungeSnacks => 25000.0, // 50k → 25k
                 crate::resources::AmenityType::Restaurant => 75000.0,   // 150k → 75k
+                crate::resources::AmenityType::DriverRestLounge => 12500.0, // 25k → 12.5k
             };
         }
 

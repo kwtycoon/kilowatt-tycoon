@@ -335,6 +335,8 @@ pub enum TariffDimensionType {
     FlatRate,
     ParkingTime,
     Time,
+    /// OCPI 2.3.0 maximum power dimension: price per kW of peak demand.
+    MaxPower,
 }
 
 #[derive(Clone, Debug, Serialize)]

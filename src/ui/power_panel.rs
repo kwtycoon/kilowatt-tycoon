@@ -302,9 +302,10 @@ pub fn update_power_panel(
     let tou_period = energy_config.current_tou_period(game_clock.game_time);
 
     // Tariff
+    let window_min = (energy_config.demand_window_seconds / 60.0) as u32;
     for mut text in &mut tariff_q {
         **text = format!(
-            "Off-Peak: ${:.2}/kWh\nOn-Peak: ${:.2}/kWh\nDemand: ${:.0}/kW\nPeriod: {}",
+            "Off-Peak: ${:.2}/kWh\nOn-Peak: ${:.2}/kWh\nDemand: ${:.0}/kW ({window_min}m)\nPeriod: {}",
             energy_config.off_peak_rate,
             energy_config.on_peak_rate,
             energy_config.demand_rate_per_kw,
@@ -315,7 +316,7 @@ pub fn update_power_panel(
     // Metering
     for mut text in &mut metering_q {
         **text = format!(
-            "Grid: {:.0} kW\nImported: {:.1} kWh\n15-min Avg: {:.0} kW\nPeak: {:.0} kW",
+            "Grid: {:.0} kW\nImported: {:.1} kWh\n{window_min}-min Avg: {:.0} kW\nPeak: {:.0} kW",
             grid_import.current_kw,
             utility_meter.total_imported_kwh(),
             utility_meter.current_avg_kw,

@@ -121,6 +121,9 @@ pub struct ScriptedEvent {
     pub temp_threshold: Option<f32>,
     #[serde(default)]
     pub phase: Option<String>,
+    /// Severity level for events like `monsoon_flood` (1=mild, 2=moderate, 3=severe).
+    #[serde(default)]
+    pub severity: Option<u8>,
     #[serde(default)]
     pub notes: String,
 }

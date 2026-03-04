@@ -1299,7 +1299,7 @@ fn test_maintenance_reduces_operating_hours() {
 fn test_maintenance_opex_is_real_cost() {
     let strategy = ServiceStrategy {
         maintenance_investment: 30.0,
-        amenity_counts: [0, 1, 0], // 1x Lounge + Snacks ($15/hr)
+        amenity_counts: [0, 1, 0, 0], // 1x Lounge + Snacks ($15/hr)
         ..Default::default()
     };
 
@@ -1492,7 +1492,7 @@ fn test_reputation_not_death_spiral() {
 fn test_large_site_profitable_with_upgrades() {
     let strategy = ServiceStrategy {
         maintenance_investment: 30.0,
-        amenity_counts: [0, 1, 0], // 1x Lounge + Snacks ($15/hr)
+        amenity_counts: [0, 1, 0, 0], // 1x Lounge + Snacks ($15/hr)
         ..Default::default()
     };
     let energy_config = SiteEnergyConfig::default();

@@ -21,10 +21,11 @@ pub enum BuildTool {
     Transformer2500kVA, // 2500 kVA transformer
     SolarCanopy,
     BatteryStorage,
-    SecuritySystem,       // Lot-wide security system (2x2)
-    AmenityWifiRestrooms, // Level 1 amenity
-    AmenityLoungeSnacks,  // Level 2 amenity
-    AmenityRestaurant,    // Level 3 amenity
+    SecuritySystem,          // Lot-wide security system (2x2)
+    AmenityWifiRestrooms,    // Level 1 amenity
+    AmenityLoungeSnacks,     // Level 2 amenity
+    AmenityRestaurant,       // Level 3 amenity
+    AmenityDriverRestLounge, // Driver Rest Lounge (gig-worker dormitory)
     Sell,
 }
 
@@ -49,6 +50,7 @@ impl BuildTool {
             BuildTool::AmenityWifiRestrooms => "WiFi+Restrooms",
             BuildTool::AmenityLoungeSnacks => "Lounge+Snacks",
             BuildTool::AmenityRestaurant => "Restaurant",
+            BuildTool::AmenityDriverRestLounge => "Driver Rest",
             BuildTool::Sell => "Sell",
         }
     }
@@ -74,6 +76,7 @@ impl BuildTool {
             BuildTool::AmenityWifiRestrooms => 15000, // $15k for 3x3 WiFi+Restrooms
             BuildTool::AmenityLoungeSnacks => 50000, // $50k for 4x4 Lounge+Snacks
             BuildTool::AmenityRestaurant => 150000, // $150k for 5x4 Restaurant
+            BuildTool::AmenityDriverRestLounge => 25000, // $25k for 3x3 Driver Rest Lounge
             BuildTool::Sell => 0,
         }
     }
@@ -137,6 +140,7 @@ impl BuildTool {
             BuildTool::AmenityWifiRestrooms,
             BuildTool::AmenityLoungeSnacks,
             BuildTool::AmenityRestaurant,
+            BuildTool::AmenityDriverRestLounge,
         ]
     }
 
@@ -158,6 +162,7 @@ impl BuildTool {
             BuildTool::AmenityWifiRestrooms
                 | BuildTool::AmenityLoungeSnacks
                 | BuildTool::AmenityRestaurant
+                | BuildTool::AmenityDriverRestLounge
         )
     }
 
@@ -174,6 +179,7 @@ impl BuildTool {
             BuildTool::AmenityWifiRestrooms => Some(StructureSize::ThreeByThree),
             BuildTool::AmenityLoungeSnacks => Some(StructureSize::FourByFour),
             BuildTool::AmenityRestaurant => Some(StructureSize::FiveByFour),
+            BuildTool::AmenityDriverRestLounge => Some(StructureSize::ThreeByThree),
             _ => None,
         }
     }

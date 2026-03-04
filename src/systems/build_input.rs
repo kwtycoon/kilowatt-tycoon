@@ -38,6 +38,7 @@ fn get_tool_image(tool: BuildTool, assets: &ImageAssets) -> Option<Handle<Image>
         BuildTool::AmenityWifiRestrooms => Some(assets.prop_amenity_wifi_restrooms.clone()),
         BuildTool::AmenityLoungeSnacks => Some(assets.prop_amenity_lounge_snacks.clone()),
         BuildTool::AmenityRestaurant => Some(assets.prop_amenity_restaurant_premium.clone()),
+        BuildTool::AmenityDriverRestLounge => Some(assets.prop_amenity_driver_rest_lounge.clone()),
     }
 }
 
@@ -74,6 +75,7 @@ fn get_tool_visual_scale(tool: BuildTool, image: &Image) -> f32 {
         BuildTool::AmenityWifiRestrooms => sprite_metadata::prop_world_size(3.0, 3.0),
         BuildTool::AmenityLoungeSnacks => sprite_metadata::prop_world_size(4.0, 4.0),
         BuildTool::AmenityRestaurant => sprite_metadata::prop_world_size(5.0, 4.0),
+        BuildTool::AmenityDriverRestLounge => sprite_metadata::prop_world_size(3.0, 3.0),
     };
 
     intended_size.scale_for_image(image)
@@ -302,6 +304,17 @@ fn try_place_tile(
                 info!("Placed Restaurant (5x4) at ({}, {})", x, y);
             }
         }
+        BuildTool::AmenityDriverRestLounge => {
+            if game_state.can_afford_build(cost)
+                && grid
+                    .place_amenity(x, y, AmenityType::DriverRestLounge)
+                    .is_ok()
+            {
+                game_state.try_spend_build(cost);
+                build_state.last_placed_tile = Some((x, y));
+                info!("Placed Driver Rest Lounge (3x3) at ({}, {})", x, y);
+            }
+        }
         BuildTool::Sell => {
             // Burned transformers are forced demolition: $0 resale.
             let destroyed_transformer_target = {
@@ -354,6 +367,7 @@ fn try_place_tile(
                         TileContent::AmenityWifiRestrooms => 15000, // 3x3
                         TileContent::AmenityLoungeSnacks => 50000, // 4x4
                         TileContent::AmenityRestaurant => 150000, // 5x4
+                        TileContent::AmenityDriverRestLounge => 25000, // 3x3
                         _ => 0,
                     },
                 };
@@ -565,6 +579,9 @@ fn validate_placement(
         BuildTool::AmenityRestaurant => grid
             .can_place_footprint(x, y, crate::resources::StructureSize::FiveByFour)
             .is_ok(),
+        BuildTool::AmenityDriverRestLounge => grid
+            .can_place_footprint(x, y, crate::resources::StructureSize::ThreeByThree)
+            .is_ok(),
     }
 }
 
@@ -767,6 +784,12 @@ fn determine_sell_target(
             let (anchor_x, anchor_y) = find_anchor(grid, x, y, content);
             let center = SiteGrid::multi_tile_center(anchor_x, anchor_y, StructureSize::FiveByFour);
             (Some(true), (5, 4), (center.x, center.y))
+        }
+        TileContent::AmenityDriverRestLounge => {
+            let (anchor_x, anchor_y) = find_anchor(grid, x, y, content);
+            let center =
+                SiteGrid::multi_tile_center(anchor_x, anchor_y, StructureSize::ThreeByThree);
+            (Some(true), (3, 3), (center.x, center.y))
         }
         TileContent::TransformerOccupied
         | TileContent::SolarOccupied
