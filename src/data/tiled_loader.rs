@@ -89,7 +89,7 @@ pub fn parse_tile_content(content_type: &str) -> TileContent {
         "AmenityRestaurant" => TileContent::AmenityRestaurant,
         "AmenityOccupied" => TileContent::AmenityOccupied,
         // Road with yellow line (visually different, same gameplay as Road)
-        "RoadYellowLine" => TileContent::Road,
+        "RoadYellowLine" | "RoadLaneTop" | "RoadLaneBottom" => TileContent::Road,
         // Curbs (treat as not driveable grass/concrete edge)
         "CurbAsphaltGrass" | "CurbAsphaltConcrete" => TileContent::Grass,
         _ => {
@@ -166,7 +166,9 @@ pub fn tile_id_to_content(tile_id: u32) -> TileContent {
         57 => TileContent::Road, // Decorative road - same gameplay as Road
         // Decoration-only tiles (no gameplay content_type in tileset)
         58..=91 => TileContent::Grass,
-        92..=149 => TileContent::Grass,
+        92 => TileContent::Grass,     // fuel_cover fixed sprite
+        93 | 94 => TileContent::Road, // RoadLaneTop / RoadLaneBottom - 2-lane road tiles
+        95..=149 => TileContent::Grass,
         _ => {
             warn!("Unknown tile ID {}, defaulting to Grass", tile_id);
             TileContent::Grass

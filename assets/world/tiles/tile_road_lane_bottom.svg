@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <pattern id="asphalt_noise_bot" patternUnits="userSpaceOnUse" width="8" height="8">
+      <rect width="8" height="8" fill="#3A3F4B"/>
+      <circle cx="2" cy="3" r="0.7" fill="#2E323A" opacity="0.35"/>
+      <circle cx="6" cy="1" r="0.5" fill="#4A5160" opacity="0.25"/>
+      <circle cx="4" cy="6" r="0.6" fill="#2E323A" opacity="0.3"/>
+      <circle cx="1" cy="7" r="0.4" fill="#4A5160" opacity="0.2"/>
+    </pattern>
+  </defs>
+  <rect x="0" y="0" width="64" height="64" fill="#3A3F4B"/>
+  <rect x="0" y="0" width="64" height="64" fill="url(#asphalt_noise_bot)"/>
+  <!-- Yellow center-line stripe at bottom edge (meets top tile above) -->
+  <rect x="0" y="61" width="64" height="3" fill="#F5C542"/>
+  <!-- Subtle wear mark -->
+  <rect x="40" y="62" width="8" height="2" fill="#3A3F4B" opacity="0.2"/>
+</svg>

@@ -441,13 +441,15 @@ impl SiteGrid {
     pub fn new(width: i32, height: i32) -> Self {
         let road_y = height - 1;
 
+        let drive_lane = if road_y > 0 { road_y - 1 } else { road_y };
+
         let mut grid = Self {
             width,
             height,
             tiles: HashMap::new(),
             transformers: Vec::new(),
-            entry_pos: (0, road_y),
-            exit_pos: (width - 1, road_y),
+            entry_pos: (0, drive_lane),
+            exit_pos: (width - 1, drive_lane),
             needs_visual_refresh: true,
             revision: 1,
             solar_positions: Vec::new(),
@@ -471,12 +473,20 @@ impl SiteGrid {
             }
         }
 
-        grid.set_tile_content(grid.entry_pos.0, grid.entry_pos.1, TileContent::Entry);
-        grid.set_tile_content(grid.exit_pos.0, grid.exit_pos.1, TileContent::Exit);
-
-        for x in 1..(width - 1) {
+        // Upper road row (center-line side)
+        for x in 0..width {
             grid.set_tile_content(x, road_y, TileContent::Road);
         }
+
+        // Lower road row (driving lane) with entry/exit on the right side
+        if road_y > 0 {
+            for x in 0..width {
+                grid.set_tile_content(x, drive_lane, TileContent::Road);
+            }
+        }
+
+        grid.set_tile_content(grid.entry_pos.0, grid.entry_pos.1, TileContent::Entry);
+        grid.set_tile_content(grid.exit_pos.0, grid.exit_pos.1, TileContent::Exit);
 
         grid
     }

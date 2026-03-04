@@ -109,6 +109,10 @@ pub enum EmotionReason {
     ChargingComplete,
     ChargerBroken,
     LeavingAngry,
+    /// Driver found and switched to an alternative charger at the site
+    SwitchedCharger,
+    /// Driver is plugged in but receiving 0 kW (Rule 2: direct experience)
+    NoPower,
     // Frustration reasons (short texts for speech bubbles)
     /// Station/chargers busy - driver must wait or leave
     FrustrationBusy,
@@ -116,6 +120,8 @@ pub enum EmotionReason {
     FrustrationDidntWork,
     /// Price is too high for the driver
     FrustrationTooExpensive,
+    /// Charger delivered zero energy — driver gave up (Rule 2)
+    FrustrationNoPower,
 }
 
 impl EmotionReason {
@@ -126,8 +132,10 @@ impl EmotionReason {
             EmotionReason::FrustrationBusy
                 | EmotionReason::FrustrationDidntWork
                 | EmotionReason::FrustrationTooExpensive
+                | EmotionReason::FrustrationNoPower
                 | EmotionReason::WaitingTooLong
                 | EmotionReason::ChargerBroken
+                | EmotionReason::NoPower
                 | EmotionReason::PriceTooHigh
         )
     }
@@ -142,6 +150,7 @@ impl EmotionReason {
             EmotionReason::FrustrationTooExpensive | EmotionReason::PriceTooHigh => {
                 Some("Too expensive")
             }
+            EmotionReason::FrustrationNoPower | EmotionReason::NoPower => Some("No power"),
             _ => None,
         }
     }
@@ -287,7 +296,43 @@ impl EmotionReason {
                 "What a waste of time.",
                 "You lost a customer.",
             ],
+            EmotionReason::SwitchedCharger => &[
+                "Found another one!",
+                "This one works.",
+                "Switching over.",
+                "Plan B it is.",
+                "Okay, trying this one.",
+                "Second time's the charm.",
+                "New plug, who dis?",
+                "Let's try next door.",
+                "Musical chargers!",
+                "Backup plan: engaged.",
+            ],
+            EmotionReason::NoPower => &[
+                "Zero kilowatts?!",
+                "Nothing's flowing...",
+                "Hello? Power?",
+                "It says 0 kW!",
+                "Am I even plugged in?",
+                "My car says zero.",
+                "Is this thing on?",
+                "No juice at all!",
+                "The meter won't move.",
+                "Getting nothing here.",
+            ],
             // Short frustration texts (fit in bubble)
+            EmotionReason::FrustrationNoPower => &[
+                "Zero power!",
+                "No charge!",
+                "0 kW!!",
+                "Nothing!",
+                "Dead outlet!",
+                "Zilch. Nada.",
+                "Paying for air.",
+                "Phantom charger.",
+                "Power? What power?",
+                "Just a nightlight.",
+            ],
             EmotionReason::FrustrationBusy => &[
                 "So busy!",
                 "No spots?!",
@@ -343,10 +388,13 @@ impl EmotionReason {
             EmotionReason::ChargingComplete => 6.0,
             EmotionReason::ChargerBroken => 8.0, // Critical issue
             EmotionReason::LeavingAngry => 7.0,  // Important feedback
+            EmotionReason::SwitchedCharger => 6.0,
+            EmotionReason::NoPower => 8.0, // Important — player needs to see this
             // Frustration reasons - show longer for feedback
             EmotionReason::FrustrationBusy => 7.0,
             EmotionReason::FrustrationDidntWork => 8.0,
             EmotionReason::FrustrationTooExpensive => 7.0,
+            EmotionReason::FrustrationNoPower => 8.0,
         }
     }
 }
