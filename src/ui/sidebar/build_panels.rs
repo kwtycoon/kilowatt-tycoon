@@ -237,9 +237,12 @@ fn spawn_build_infra_panel(parent: &mut ChildSpawnerCommands, image_assets: &Ima
             spawn_build_tool_button(panel, BuildTool::SolarCanopy);
             spawn_build_tool_button(panel, BuildTool::BatteryStorage);
             spawn_build_tool_button(panel, BuildTool::SecuritySystem);
+            spawn_build_tool_button(panel, BuildTool::RfBooster);
 
             panel.spawn((
-                Text::new("Add power infrastructure and security to support your chargers."),
+                Text::new(
+                    "Add power infrastructure, security, and RF boosters to support your chargers.",
+                ),
                 TextFont {
                     font_size: 11.0,
                     ..default()

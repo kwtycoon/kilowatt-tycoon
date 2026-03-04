@@ -35,6 +35,7 @@ fn get_tool_image(tool: BuildTool, assets: &ImageAssets) -> Option<Handle<Image>
         BuildTool::SolarCanopy => Some(assets.prop_solar_array_ground.clone()),
         BuildTool::BatteryStorage => Some(assets.prop_battery_container.clone()),
         BuildTool::SecuritySystem => Some(assets.prop_security_system.clone()),
+        BuildTool::RfBooster => Some(assets.prop_rf_booster.clone()),
         BuildTool::AmenityWifiRestrooms => Some(assets.prop_amenity_wifi_restrooms.clone()),
         BuildTool::AmenityLoungeSnacks => Some(assets.prop_amenity_lounge_snacks.clone()),
         BuildTool::AmenityRestaurant => Some(assets.prop_amenity_restaurant_premium.clone()),
@@ -72,6 +73,7 @@ fn get_tool_visual_scale(tool: BuildTool, image: &Image) -> f32 {
         BuildTool::SolarCanopy => sprite_metadata::prop_world_size(3.0, 2.0),
         BuildTool::BatteryStorage => sprite_metadata::prop_world_size(2.0, 2.0),
         BuildTool::SecuritySystem => sprite_metadata::prop_world_size(2.0, 2.0),
+        BuildTool::RfBooster => sprite_metadata::prop_world_size(1.0, 1.0),
         BuildTool::AmenityWifiRestrooms => sprite_metadata::prop_world_size(3.0, 3.0),
         BuildTool::AmenityLoungeSnacks => sprite_metadata::prop_world_size(4.0, 4.0),
         BuildTool::AmenityRestaurant => sprite_metadata::prop_world_size(5.0, 4.0),
@@ -277,6 +279,14 @@ fn try_place_tile(
                 info!("Placed security system (2x2) at ({}, {})", x, y);
             }
         }
+        BuildTool::RfBooster => {
+            if game_state.can_afford_build(cost) && grid.get_content(x, y) == TileContent::Lot {
+                grid.set_tile_content(x, y, TileContent::BoosterPad);
+                game_state.try_spend_build(cost);
+                build_state.last_placed_tile = Some((x, y));
+                info!("Placed RF booster at ({}, {})", x, y);
+            }
+        }
         BuildTool::AmenityWifiRestrooms => {
             if game_state.can_afford_build(cost)
                 && grid.place_amenity(x, y, AmenityType::WifiRestrooms).is_ok()
@@ -364,6 +374,7 @@ fn try_place_tile(
                         TileContent::SolarPad => 24000,   // 3x2 solar
                         TileContent::BatteryPad => 50000, // 2x2 battery
                         TileContent::SecurityPad => 80000, // 2x2 security system
+                        TileContent::BoosterPad => 25000, // 1x1 RF booster
                         TileContent::AmenityWifiRestrooms => 15000, // 3x3
                         TileContent::AmenityLoungeSnacks => 50000, // 4x4
                         TileContent::AmenityRestaurant => 150000, // 5x4
@@ -570,6 +581,7 @@ fn validate_placement(
         BuildTool::SecuritySystem => grid
             .can_place_footprint(x, y, crate::resources::StructureSize::TwoByTwo)
             .is_ok(),
+        BuildTool::RfBooster => grid.get_content(x, y) == TileContent::Lot,
         BuildTool::AmenityWifiRestrooms => grid
             .can_place_footprint(x, y, crate::resources::StructureSize::ThreeByThree)
             .is_ok(),
@@ -806,6 +818,10 @@ fn determine_sell_target(
             }
             // Fallback
             (None, (1, 1), (0.0, 0.0))
+        }
+        TileContent::BoosterPad => {
+            let world_pos = SiteGrid::grid_to_world(x, y);
+            (Some(true), (1, 1), (world_pos.x, world_pos.y))
         }
         TileContent::ChargerPad | TileContent::Lot => {
             // These are other tile types that shouldn't normally be encountered

@@ -74,7 +74,7 @@ impl WarrantyTier {
             WarrantyTier::None => "No warranty coverage",
             WarrantyTier::Standard => "Damaged parts only. No theft. Price scales with # chargers.",
             WarrantyTier::Comprehensive => {
-                "All parths including theft. Price scales with # chargers."
+                "All parts including theft. Price is for all chargers at site. Price will scale with the number of chargers."
             }
             WarrantyTier::Premium => "All parts including theft. 80% of labor covered.",
         }

@@ -125,6 +125,9 @@ pub fn update_operations_panel(
             &image_assets,
         );
 
+        // Section 2.5: RF Environment
+        spawn_rf_stats_section(parent, &multi_site);
+
         // Section 3: Active Faults (if any)
         spawn_faults_section(parent, &faulted, &tech_state, &image_assets);
     });
@@ -498,6 +501,100 @@ fn spawn_faults_section(
 }
 
 // ============ Helper Functions ============
+
+fn spawn_rf_stats_section(parent: &mut ChildSpawnerCommands, multi_site: &MultiSiteManager) {
+    let rf = multi_site
+        .active_site()
+        .map(|s| &s.rf_environment)
+        .cloned()
+        .unwrap_or_default();
+
+    let noise_dbm = -90.0 + rf.noise_floor * 40.0;
+    let snr_db = rf.snr * 30.0;
+
+    let noise_color = if noise_dbm < -75.0 {
+        Color::srgb(0.3, 0.9, 0.3)
+    } else if noise_dbm < -60.0 {
+        Color::srgb(0.8, 0.8, 0.3)
+    } else {
+        Color::srgb(1.0, 0.4, 0.3)
+    };
+
+    let snr_color = if snr_db > 20.0 {
+        Color::srgb(0.3, 0.9, 0.3)
+    } else if snr_db > 10.0 {
+        Color::srgb(0.8, 0.8, 0.3)
+    } else {
+        Color::srgb(1.0, 0.4, 0.3)
+    };
+
+    let (risk_label, risk_color) = if rf.comm_fault_multiplier <= 0.3 {
+        ("Low", Color::srgb(0.3, 0.9, 0.3))
+    } else if rf.comm_fault_multiplier <= 0.7 {
+        ("Moderate", Color::srgb(0.8, 0.8, 0.3))
+    } else if rf.comm_fault_multiplier <= 1.2 {
+        ("High", Color::srgb(1.0, 0.6, 0.3))
+    } else {
+        ("Critical", Color::srgb(1.0, 0.4, 0.3))
+    };
+
+    parent
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                padding: UiRect::all(Val::Px(10.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(6.0),
+                ..default()
+            },
+            BackgroundColor(Color::srgb(0.12, 0.12, 0.15)),
+            BorderRadius::all(Val::Px(6.0)),
+        ))
+        .with_children(|section| {
+            section
+                .spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(8.0),
+                    align_items: AlignItems::Center,
+                    margin: UiRect::bottom(Val::Px(4.0)),
+                    ..default()
+                })
+                .with_children(|header| {
+                    header.spawn((
+                        Text::new("RF ENVIRONMENT"),
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
+                        TextColor(colors::TEXT_PRIMARY),
+                    ));
+                });
+
+            spawn_stat_row(
+                section,
+                "Noise Floor:",
+                &format!("{noise_dbm:.0} dBm"),
+                noise_color,
+            );
+            spawn_stat_row(section, "SNR:", &format!("{snr_db:.0} dB"), snr_color);
+            spawn_stat_row(section, "Comm Fault Risk:", risk_label, risk_color);
+
+            if rf.booster_count > 0 {
+                spawn_stat_row(
+                    section,
+                    "Boosters:",
+                    &format!("{} active", rf.booster_count),
+                    colors::TEXT_SECONDARY,
+                );
+            } else {
+                spawn_stat_row(section, "Boosters:", "None", Color::srgb(0.5, 0.5, 0.5));
+            }
+
+            if rf.staff_detection_bonus {
+                spawn_stat_row(section, "Staff:", "On-site", Color::srgb(0.3, 0.8, 0.3));
+            }
+        });
+}
 
 fn spawn_stat_row(parent: &mut ChildSpawnerCommands, label: &str, value: &str, value_color: Color) {
     parent

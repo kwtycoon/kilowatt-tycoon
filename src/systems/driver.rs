@@ -1421,10 +1421,12 @@ pub fn charging_system(
             };
 
             // Check for connector jam BEFORE completing the session
+            let rf_jam = site_state.rf_environment.jam_multiplier;
             let jammed = check_connector_jam(
                 &mut charger,
                 game_clock.total_game_time,
                 tutorial_fix_active,
+                rf_jam,
             );
 
             if jammed {
@@ -1495,11 +1497,13 @@ pub fn charging_system(
             );
             let revenue = driver.charge_received_kwh * price_per_kwh;
 
-            // Check for connector jam
+            // Check for connector jam (post-session)
+            let rf_jam_post = site_state.rf_environment.jam_multiplier;
             let jammed = check_connector_jam(
                 &mut charger,
                 game_clock.total_game_time,
                 tutorial_fix_active,
+                rf_jam_post,
             );
 
             if jammed {

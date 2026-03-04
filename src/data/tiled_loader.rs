@@ -89,6 +89,7 @@ pub fn parse_tile_content(content_type: &str) -> TileContent {
         "AmenityRestaurant" => TileContent::AmenityRestaurant,
         "AmenityDriverRestLounge" => TileContent::AmenityDriverRestLounge,
         "AmenityOccupied" => TileContent::AmenityOccupied,
+        "BoosterPad" => TileContent::BoosterPad,
         // Road with yellow line (visually different, same gameplay as Road)
         "RoadYellowLine" | "RoadLaneTop" | "RoadLaneBottom" => TileContent::Road,
         // Curbs (treat as not driveable grass/concrete edge)
@@ -413,6 +414,7 @@ fn tile_content_to_string(content: &TileContent) -> String {
         TileContent::AmenityRestaurant => "AmenityRestaurant",
         TileContent::AmenityDriverRestLounge => "AmenityDriverRestLounge",
         TileContent::AmenityOccupied => "AmenityOccupied",
+        TileContent::BoosterPad => "BoosterPad",
     }
     .to_string()
 }

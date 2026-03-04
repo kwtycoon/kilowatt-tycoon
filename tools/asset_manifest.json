@@ -2432,6 +2432,11 @@
         "id": 14,
         "name": "SecurityCameraHead",
         "filename": "prop_security_camera_head.png"
+      },
+      {
+        "id": 15,
+        "name": "RfBooster",
+        "filename": "prop_rf_booster.png"
       }
     ]
   },

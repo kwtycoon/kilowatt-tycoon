@@ -168,7 +168,12 @@ impl Plugin for SystemsPlugin {
         // Environment systems
         app.add_systems(
             Update,
-            (environment_system, log_environment_changes).in_set(GameSystemSet::Environment),
+            (
+                environment_system,
+                log_environment_changes,
+                rf_environment_system,
+            )
+                .in_set(GameSystemSet::Environment),
         );
 
         // Build mode input systems

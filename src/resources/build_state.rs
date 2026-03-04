@@ -22,6 +22,7 @@ pub enum BuildTool {
     SolarCanopy,
     BatteryStorage,
     SecuritySystem,          // Lot-wide security system (2x2)
+    RfBooster,               // RF signal booster (1x1)
     AmenityWifiRestrooms,    // Level 1 amenity
     AmenityLoungeSnacks,     // Level 2 amenity
     AmenityRestaurant,       // Level 3 amenity
@@ -47,6 +48,7 @@ impl BuildTool {
             BuildTool::SolarCanopy => "Solar 25kW",
             BuildTool::BatteryStorage => "Battery 200kWh",
             BuildTool::SecuritySystem => "Security System",
+            BuildTool::RfBooster => "RF Booster",
             BuildTool::AmenityWifiRestrooms => "WiFi+Restrooms",
             BuildTool::AmenityLoungeSnacks => "Lounge+Snacks",
             BuildTool::AmenityRestaurant => "Restaurant",
@@ -73,6 +75,7 @@ impl BuildTool {
             BuildTool::SolarCanopy => 24000,    // $24k for 3x2 (25kW) solar array
             BuildTool::BatteryStorage => 50000, // $50k for 2x2 (200kWh) battery
             BuildTool::SecuritySystem => 80000, // $80k for 2x2 lot-wide security system
+            BuildTool::RfBooster => 25000,      // $25k for 1x1 RF signal booster
             BuildTool::AmenityWifiRestrooms => 15000, // $15k for 3x3 WiFi+Restrooms
             BuildTool::AmenityLoungeSnacks => 50000, // $50k for 4x4 Lounge+Snacks
             BuildTool::AmenityRestaurant => 150000, // $150k for 5x4 Restaurant
@@ -156,6 +159,7 @@ impl BuildTool {
             BuildTool::SolarCanopy,
             BuildTool::BatteryStorage,
             BuildTool::SecuritySystem,
+            BuildTool::RfBooster,
             BuildTool::AmenityWifiRestrooms,
             BuildTool::AmenityLoungeSnacks,
             BuildTool::AmenityRestaurant,

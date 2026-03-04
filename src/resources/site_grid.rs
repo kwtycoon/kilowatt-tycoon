@@ -132,6 +132,7 @@ pub enum TileContent {
     AmenityRestaurant,       // Restaurant anchor (5x4)
     AmenityDriverRestLounge, // Driver Rest Lounge anchor (3x3)
     AmenityOccupied,         // Other tiles occupied by amenity
+    BoosterPad,              // RF Booster (1x1) — improves site SNR
     Entry,                   // Road tile that's the entry point
     Exit,                    // Road tile that's the exit point
     // Gas station specific tiles
@@ -688,6 +689,11 @@ impl SiteGrid {
             .get(&(x, y))
             .map(|t| t.content)
             .unwrap_or(TileContent::Empty)
+    }
+
+    /// Count how many tiles have the given content type.
+    pub fn count_content(&self, target: TileContent) -> u32 {
+        self.tiles.values().filter(|t| t.content == target).count() as u32
     }
 
     /// Set tile content (low-level, doesn't check rules)

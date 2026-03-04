@@ -97,6 +97,7 @@ pub struct ImageAssets {
     pub prop_security_system: Handle<Image>,
     pub prop_security_pole: Handle<Image>,
     pub prop_security_camera_head: Handle<Image>,
+    pub prop_rf_booster: Handle<Image>,
 
     // Amenity Buildings
     pub prop_amenity_wifi_restrooms: Handle<Image>,
@@ -343,6 +344,7 @@ pub fn load_image_assets(mut commands: Commands, asset_server: Res<AssetServer>)
         prop_security_system: asset_server.load("props/prop_security_system.png"),
         prop_security_pole: asset_server.load("props/prop_security_pole.png"),
         prop_security_camera_head: asset_server.load("props/prop_security_camera_head.png"),
+        prop_rf_booster: asset_server.load("props/prop_rf_booster.png"),
 
         // Amenity Buildings
         prop_amenity_wifi_restrooms: asset_server.load("props/prop_amenity_wifi_restrooms.png"),

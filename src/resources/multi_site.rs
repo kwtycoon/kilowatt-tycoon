@@ -252,6 +252,43 @@ pub struct SiteState {
 
     /// Active scenario-driven effects (monsoon flood, battery-swap competitor, demand surge).
     pub scenario_effects: ScenarioEffects,
+
+    /// RF environment state (noise floor, SNR, fault multipliers) — recomputed each frame.
+    pub rf_environment: RfEnvironment,
+}
+
+/// RF environment state for a single site.
+/// Recomputed every frame by `rf_environment_system`.
+#[derive(Debug, Clone)]
+pub struct RfEnvironment {
+    /// Raw noise level (0.0 = silent, 1.0+ = heavily congested)
+    pub noise_floor: f32,
+    /// Signal-to-noise ratio (higher = better comms reliability)
+    pub snr: f32,
+    /// Multiplier on CommunicationError fault probability (0.0 = no comm faults, 2.0 = max)
+    pub comm_fault_multiplier: f32,
+    /// Multiplier on connector jam probability (0.5 = half, 2.5 = max)
+    pub jam_multiplier: f32,
+    /// Multiplier on all fault probabilities from restaurant staff (1.0 = no effect)
+    pub staff_fault_multiplier: f32,
+    /// Whether restaurant staff provide faster fault detection
+    pub staff_detection_bonus: bool,
+    /// Number of RF boosters at this site
+    pub booster_count: u32,
+}
+
+impl Default for RfEnvironment {
+    fn default() -> Self {
+        Self {
+            noise_floor: 0.0,
+            snr: 1.0,
+            comm_fault_multiplier: 0.0,
+            jam_multiplier: 1.0,
+            staff_fault_multiplier: 1.0,
+            staff_detection_bonus: false,
+            booster_count: 0,
+        }
+    }
 }
 
 impl SiteState {
@@ -321,6 +358,7 @@ impl SiteState {
             thermal_throttle_factor: 1.0,
             hacker_overload_remaining_secs: 0.0,
             scenario_effects: ScenarioEffects::default(),
+            rf_environment: RfEnvironment::default(),
         }
     }
 

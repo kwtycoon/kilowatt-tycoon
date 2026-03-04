@@ -8,8 +8,111 @@ use crate::components::driver::{Driver, DriverState};
 use crate::data::LoadedChargers;
 use crate::events::{ChargerFaultEvent, DriverLeftEvent};
 use crate::resources::{
-    GameClock, GameState, MultiSiteManager, OemTier, SiteConfig, TutorialState, TutorialStep,
+    EnvironmentState, GameClock, GameState, MultiSiteManager, OemTier, SiteConfig, TileContent,
+    TutorialState, TutorialStep, WeatherType,
 };
+
+// ============ RF Environment Constants ============
+
+const BASE_SIGNAL: f32 = 1.0;
+const BOOSTER_GAIN_PER_UNIT: f32 = 0.20;
+const BOOSTER_DIMINISHING_EXP: f32 = 0.7;
+const STAFF_FAULT_REDUCTION: f32 = 0.85;
+pub const STAFF_DETECTION_DELAY_SECS: f32 = 60.0;
+
+fn rush_hour_noise(hour: u32) -> f32 {
+    match hour {
+        0..=5 => 0.00,
+        6 => 0.05,
+        7..=8 => 0.12,
+        9..=11 => 0.05,
+        12 => 0.08,
+        13..=16 => 0.05,
+        17..=18 => 0.15,
+        19..=20 => 0.08,
+        21..=23 => 0.03,
+        _ => 0.0,
+    }
+}
+
+fn weather_noise(weather: WeatherType) -> f32 {
+    match weather {
+        WeatherType::Sunny => 0.0,
+        WeatherType::Overcast => 0.03,
+        WeatherType::Rainy => 0.15,
+        WeatherType::Heatwave => 0.10,
+        WeatherType::Cold => 0.05,
+    }
+}
+
+/// Computes per-site RF environment (noise floor, SNR, fault multipliers).
+/// Runs in GameSystemSet::Environment before fault systems.
+pub fn rf_environment_system(
+    chargers: Query<(&Charger, &crate::components::BelongsToSite)>,
+    mut multi_site: ResMut<MultiSiteManager>,
+    environment: Res<EnvironmentState>,
+    game_clock: Res<GameClock>,
+) {
+    if game_clock.is_paused() {
+        return;
+    }
+
+    let hour = game_clock.hour();
+    let current_weather = environment.current_weather;
+
+    // Pre-count active sessions per site
+    let mut sessions_per_site = std::collections::HashMap::new();
+    for (charger, belongs) in &chargers {
+        if charger.is_charging {
+            *sessions_per_site.entry(belongs.site_id).or_insert(0u32) += 1;
+        }
+    }
+
+    for (site_id, site) in multi_site.owned_sites.iter_mut() {
+        let active_sessions = sessions_per_site.get(site_id).copied().unwrap_or(0);
+
+        let charging_noise = 0.06 * active_sessions as f32;
+        let vehicle_noise = 0.03 * site.driver_count as f32;
+        let w_noise = weather_noise(current_weather);
+        let r_noise = rush_hour_noise(hour);
+
+        let amenity_counts = site.service_strategy.amenity_counts;
+        let wifi_count = amenity_counts[0];
+        let lounge_count = amenity_counts[1];
+        let restaurant_count = amenity_counts[2];
+        let amenity_noise =
+            0.05 * wifi_count as f32 + 0.08 * lounge_count as f32 + 0.12 * restaurant_count as f32;
+
+        let noise_floor = charging_noise + vehicle_noise + w_noise + r_noise + amenity_noise;
+
+        let booster_count = site.grid.count_content(TileContent::BoosterPad);
+        let booster_bonus = if booster_count > 0 {
+            BOOSTER_GAIN_PER_UNIT
+                * bevy::math::ops::powf(booster_count as f32, BOOSTER_DIMINISHING_EXP)
+        } else {
+            0.0
+        };
+
+        let snr = (BASE_SIGNAL + booster_bonus - noise_floor).max(0.0);
+
+        let comm_fault_multiplier = (1.0 - snr).clamp(0.0, 2.0);
+        let jam_multiplier = (1.5 - snr).clamp(0.5, 2.5);
+
+        let staff_fault_multiplier =
+            bevy::math::ops::powf(STAFF_FAULT_REDUCTION, restaurant_count as f32);
+        let staff_detection_bonus = restaurant_count > 0;
+
+        site.rf_environment = crate::resources::RfEnvironment {
+            noise_floor,
+            snr,
+            comm_fault_multiplier,
+            jam_multiplier,
+            staff_fault_multiplier,
+            staff_detection_bonus,
+            booster_count,
+        };
+    }
+}
 
 /// Spawn charger entities from loaded data
 pub fn spawn_chargers_system(
@@ -179,17 +282,20 @@ pub fn charger_state_system(mut chargers: Query<&mut Charger>, game_clock: Res<G
 
 /// Check for connector jam when session ends (uses tier-adjusted chance).
 /// Suppressed during the FixCharger tutorial step to avoid blocking tutorial progression.
-pub fn check_connector_jam(charger: &mut Charger, game_time: f32, tutorial_active: bool) -> bool {
-    // Suppress connector jams during the FixCharger tutorial step
+pub fn check_connector_jam(
+    charger: &mut Charger,
+    game_time: f32,
+    tutorial_active: bool,
+    rf_jam_multiplier: f32,
+) -> bool {
     if tutorial_active {
         return false;
     }
 
-    let effective_chance = charger.effective_jam_chance();
+    let effective_chance = charger.effective_jam_chance() * rf_jam_multiplier;
     if effective_chance > 0.0 {
         let mut rng = rand::rng();
         if rng.random::<f32>() < effective_chance {
-            // Use inject_fault to ensure all session state is cleared
             inject_fault(charger, FaultType::CableDamage, game_time);
             return true;
         }
@@ -254,30 +360,54 @@ pub fn stochastic_fault_system(
         charger.operating_hours += delta_hours;
         charger.hours_since_last_fault += delta_hours;
 
-        // Check for random fault (scaled by maintenance investment)
+        // RF-driven fault injection: comm faults scale with RF noise, hw faults use MTBF
         let failure_mult = strategy.map(|s| s.failure_rate_multiplier()).unwrap_or(1.0);
-        let fault_prob = charger.fault_probability(delta_hours) * failure_mult;
-        if fault_prob > 0.0 && rng.random::<f32>() < fault_prob {
-            // Pick a random fault type (weighted towards less severe)
+        let rf = multi_site
+            .get_site(belongs_to_site.site_id)
+            .map(|s| &s.rf_environment);
+
+        let base_fault_prob = charger.fault_probability(delta_hours);
+        let staff_mult = rf.map(|r| r.staff_fault_multiplier).unwrap_or(1.0);
+        let comm_mult = rf.map(|r| r.comm_fault_multiplier).unwrap_or(0.5);
+
+        // Communication faults: driven by RF environment
+        let comm_prob = 0.4 * base_fault_prob * comm_mult * staff_mult * failure_mult;
+        if comm_prob > 0.0 && rng.random::<f32>() < comm_prob {
+            inject_fault(
+                &mut charger,
+                FaultType::CommunicationError,
+                game_clock.total_game_time,
+            );
+            charger.hours_since_last_fault = 0.0;
+            info!(
+                "RF comm fault on {} (SNR {:.2}, noise {:.2}): CommunicationError",
+                charger.id,
+                rf.map(|r| r.snr).unwrap_or(1.0),
+                rf.map(|r| r.noise_floor).unwrap_or(0.0),
+            );
+            if !game_state.first_fault_seen {
+                game_state.first_fault_seen = true;
+            }
+            continue;
+        }
+
+        // Hardware faults: MTBF-based, unaffected by RF
+        let hw_prob = 0.6 * base_fault_prob * staff_mult * failure_mult;
+        if hw_prob > 0.0 && rng.random::<f32>() < hw_prob {
             let fault_type = match rng.random_range(0..100) {
-                0..=40 => FaultType::CommunicationError, // 40%
-                41..=65 => FaultType::PaymentError,      // 25%
-                66..=85 => FaultType::FirmwareFault,     // 20%
-                86..=95 => FaultType::GroundFault,       // 10%
-                _ => FaultType::CableDamage,             // 5%
+                0..=34 => FaultType::PaymentError,   // 35%
+                35..=64 => FaultType::FirmwareFault, // 30%
+                65..=84 => FaultType::GroundFault,   // 20%
+                _ => FaultType::CableDamage,         // 15%
             };
 
-            // Inject fault and clear all session state immediately
             inject_fault(&mut charger, fault_type, game_clock.total_game_time);
             charger.hours_since_last_fault = 0.0;
 
             info!(
-                "Random fault on {} (tier {:?}, {:.0} operating hours): {:?} (detection pending)",
+                "Hardware fault on {} (tier {:?}, {:.0} operating hours): {:?} (detection pending)",
                 charger.id, charger.tier, charger.operating_hours, fault_type
             );
-
-            // NOTE: ChargerFaultEvent is now emitted by fault_detection_system
-            // after the detection delay, NOT immediately here.
 
             if !game_state.first_fault_seen {
                 game_state.first_fault_seen = true;
@@ -486,11 +616,20 @@ pub fn fault_detection_system(
         // Use total_game_time for elapsed calculation (monotonic, survives day boundaries)
         let elapsed = game_clock.total_game_time - occurred_at;
 
-        // Without O&M, faults are not auto-detected — they stay hidden until a driver
-        // tries to use the charger (handled in driver.rs). With O&M, detection is near-instant.
+        let staff_bonus = multi_site
+            .get_site(belongs.site_id)
+            .map(|s| s.rf_environment.staff_detection_bonus)
+            .unwrap_or(false);
+
         let should_detect = match oem_tier.detection_delay_secs() {
             Some(delay) => elapsed >= delay,
-            None => false, // No O&M: not detected until a driver tries to charge
+            None => {
+                if staff_bonus {
+                    elapsed >= STAFF_DETECTION_DELAY_SECS
+                } else {
+                    false
+                }
+            }
         };
 
         if should_detect {
@@ -662,5 +801,103 @@ pub fn reliability_degradation_system(
         if charger.current_fault.is_some() {
             charger.degrade_reliability_downtime(delta_hours);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::resources::RfEnvironment;
+
+    #[test]
+    fn rf_environment_default_is_clean() {
+        let rf = RfEnvironment::default();
+        assert!((rf.noise_floor - 0.0).abs() < f32::EPSILON);
+        assert!((rf.snr - 1.0).abs() < f32::EPSILON);
+        assert!((rf.comm_fault_multiplier - 0.0).abs() < f32::EPSILON);
+        assert!((rf.jam_multiplier - 1.0).abs() < f32::EPSILON);
+        assert!((rf.staff_fault_multiplier - 1.0).abs() < f32::EPSILON);
+        assert!(!rf.staff_detection_bonus);
+        assert_eq!(rf.booster_count, 0);
+    }
+
+    #[test]
+    fn rush_hour_noise_peaks_during_commute() {
+        assert!((rush_hour_noise(3) - 0.0).abs() < f32::EPSILON);
+        assert!((rush_hour_noise(7) - 0.12).abs() < f32::EPSILON);
+        assert!((rush_hour_noise(8) - 0.12).abs() < f32::EPSILON);
+        assert!((rush_hour_noise(12) - 0.08).abs() < f32::EPSILON);
+        assert!((rush_hour_noise(17) - 0.15).abs() < f32::EPSILON);
+        assert!((rush_hour_noise(18) - 0.15).abs() < f32::EPSILON);
+        assert!((rush_hour_noise(22) - 0.03).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn weather_noise_values() {
+        assert!((weather_noise(WeatherType::Sunny) - 0.0).abs() < f32::EPSILON);
+        assert!((weather_noise(WeatherType::Rainy) - 0.15).abs() < f32::EPSILON);
+        assert!((weather_noise(WeatherType::Heatwave) - 0.10).abs() < f32::EPSILON);
+        assert!((weather_noise(WeatherType::Cold) - 0.05).abs() < f32::EPSILON);
+        assert!((weather_noise(WeatherType::Overcast) - 0.03).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn snr_computation_empty_site() {
+        let noise_floor = 0.0;
+        let booster_bonus = 0.0;
+        let snr = (BASE_SIGNAL + booster_bonus - noise_floor).max(0.0);
+        assert!((snr - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn snr_computation_noisy_site() {
+        let noise_floor = 0.6;
+        let booster_bonus = 0.0;
+        let snr = (BASE_SIGNAL + booster_bonus - noise_floor).max(0.0);
+        assert!((snr - 0.4).abs() < 0.01);
+    }
+
+    #[test]
+    fn snr_improves_with_boosters() {
+        let noise_floor = 0.6;
+        let booster_count = 2u32;
+        let booster_bonus = BOOSTER_GAIN_PER_UNIT
+            * bevy::math::ops::powf(booster_count as f32, BOOSTER_DIMINISHING_EXP);
+        let snr_boosted = (BASE_SIGNAL + booster_bonus - noise_floor).max(0.0);
+        let snr_unboosted = (BASE_SIGNAL - noise_floor).max(0.0);
+        assert!(snr_boosted > snr_unboosted);
+    }
+
+    #[test]
+    fn comm_fault_multiplier_derivation() {
+        let snr_clean = 1.0_f32;
+        let snr_noisy = 0.2_f32;
+        let mult_clean = (1.0 - snr_clean).clamp(0.0, 2.0);
+        let mult_noisy = (1.0 - snr_noisy).clamp(0.0, 2.0);
+        assert!((mult_clean - 0.0).abs() < f32::EPSILON);
+        assert!((mult_noisy - 0.8).abs() < 0.01);
+    }
+
+    #[test]
+    fn jam_multiplier_derivation() {
+        let snr = 0.5_f32;
+        let jam = (1.5 - snr).clamp(0.5, 2.5);
+        assert!((jam - 1.0).abs() < f32::EPSILON);
+
+        let snr_clean = 1.0_f32;
+        let jam_clean = (1.5 - snr_clean).clamp(0.5, 2.5);
+        assert!((jam_clean - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn staff_multiplier_scales_with_restaurants() {
+        let no_restaurant = bevy::math::ops::powf(STAFF_FAULT_REDUCTION, 0.0);
+        assert!((no_restaurant - 1.0).abs() < f32::EPSILON);
+
+        let one_restaurant = bevy::math::ops::powf(STAFF_FAULT_REDUCTION, 1.0);
+        assert!((one_restaurant - 0.85).abs() < 0.01);
+
+        let two_restaurants = bevy::math::ops::powf(STAFF_FAULT_REDUCTION, 2.0);
+        assert!((two_restaurants - 0.7225).abs() < 0.01);
     }
 }

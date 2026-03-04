@@ -84,6 +84,9 @@ pub struct BatteryStorageVisual;
 #[derive(Component)]
 pub struct SecuritySystemVisual;
 
+#[derive(Component)]
+pub struct RfBoosterVisual;
+
 /// Marker and animation state for the rotating camera head (child entity).
 /// The camera swivels back and forth around its base heading.
 #[derive(Component)]
@@ -185,6 +188,7 @@ pub fn update_grid_visuals(
     existing_solar: Query<Entity, With<SolarArrayVisual>>,
     existing_battery: Query<Entity, With<BatteryStorageVisual>>,
     existing_security: Query<Entity, With<SecuritySystemVisual>>,
+    existing_booster: Query<Entity, With<RfBoosterVisual>>,
     existing_amenity: Query<Entity, With<AmenityBuildingVisual>>,
     mut visual_revision: ResMut<GridVisualRevision>,
 ) {
@@ -224,6 +228,9 @@ pub fn update_grid_visuals(
     for entity in &existing_security {
         commands.entity(entity).try_despawn();
     }
+    for entity in &existing_booster {
+        commands.entity(entity).try_despawn();
+    }
     for entity in &existing_amenity {
         commands.entity(entity).try_despawn();
     }
@@ -259,6 +266,19 @@ pub fn update_grid_visuals(
             }
             TileContent::SecurityPad => {
                 spawn_security_system(&mut commands, root_entity, &image_assets, x, y, site.id);
+            }
+            TileContent::BoosterPad => {
+                let world_pos = SiteGrid::grid_to_world(x, y);
+                let scale = TILE_SCALE * 0.25;
+                commands.entity(root_entity).with_children(|parent| {
+                    parent.spawn((
+                        Sprite::from_image(image_assets.prop_rf_booster.clone()),
+                        Transform::from_xyz(world_pos.x, world_pos.y, 2.0)
+                            .with_scale(Vec3::new(scale, scale, 1.0)),
+                        RfBoosterVisual,
+                        crate::components::BelongsToSite::new(site.id),
+                    ));
+                });
             }
             TileContent::AmenityWifiRestrooms => {
                 spawn_amenity_building(
