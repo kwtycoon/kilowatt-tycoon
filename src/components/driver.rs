@@ -169,6 +169,15 @@ pub struct Driver {
     pub mood: DriverMood,
     /// Whether this driver arrived via an eMSP roaming app (OCPI START_SESSION).
     pub is_roaming: bool,
+    /// Accumulated game-seconds spent receiving zero power while in `Charging` state.
+    /// Resets to 0 whenever power delivery resumes. When this exceeds
+    /// [`ZERO_POWER_TOLERANCE_GAME_SECONDS`](crate::systems::driver::ZERO_POWER_TOLERANCE_GAME_SECONDS)
+    /// the driver will try an alternative charger or leave the site.
+    pub zero_power_seconds: f32,
+    /// Set to true when the driver just switched to an alternative charger.
+    /// The emotion system reads this to show a `SwitchedCharger` speech bubble,
+    /// then the flag is cleared after one evaluation cycle.
+    pub just_switched_charger: bool,
 }
 
 impl Default for Driver {
@@ -189,6 +198,8 @@ impl Default for Driver {
             waiting_tile: None,
             mood: DriverMood::Neutral,
             is_roaming: false,
+            zero_power_seconds: 0.0,
+            just_switched_charger: false,
         }
     }
 }

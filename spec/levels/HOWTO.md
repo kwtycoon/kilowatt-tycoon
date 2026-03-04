@@ -19,8 +19,8 @@ Each level is defined by:
 
 | # | File | Archetype | Grid | kVA | Rent | Pop | Climate |
 |---|------|-----------|------|-----|------|-----|---------|
-| 1 | `01_first_street.tmx` | `ParkingLot` | 16x12 | 1500 | $0 | 60 | Cold (NJ winter) |
-| 2 | `02_quick_charge_express.tmx` | `GasStation` | 16x12 | 500 | $5,000 | 85 | Mild |
+| 1 | `01_first_street.tmx` | `ParkingLot` | 16x12 | 1500 | $0 | 60 | Mild |
+| 2 | `02_quick_charge_express.tmx` | `GasStation` | 16x12 | 500 | $5,000 | 85 | Cold (NJ winter) |
 | 3 | `03_central_fleet_plaza.tmx` | `FleetDepot` | 30x20 | 3000 | $35,000 | 75 | Warm |
 | 4 | `04_scooter_alley.tmx` | `ScooterHub` | 30x20 | 800 | $28,000 | 95 | Hot & Humid (HCMC) |
 
@@ -75,8 +75,8 @@ Every TMX file must have these map properties (set in Tiled via Map > Map Proper
 
 | Enum Variant | TMX String | Climate Offset | Notes |
 |-------------|------------|----------------|-------|
-| `ParkingLot` | `parking_lot` | -35 F | Cold NJ winters slow charging |
-| `GasStation` | `gas_station` | +5 F | Mild, high-traffic conversion |
+| `ParkingLot` | `parking_lot` | +5 F | Mild climate, beginner-friendly |
+| `GasStation` | `gas_station` | -35 F | Cold NJ winters slow charging |
 | `FleetDepot` | `fleet_depot` | +15 F | Hot industrial, high power |
 | `ScooterHub` | `scooter_hub` | +15 F | Tropical HCMC, 97% two-wheelers |
 

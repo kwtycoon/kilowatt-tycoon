@@ -544,3 +544,62 @@ fn test_demand_calculation_with_all_multipliers() {
         effective
     );
 }
+
+// ============ Capacity Demand Multiplier Tests ============
+
+#[test]
+fn test_capacity_demand_multiplier_single_charger() {
+    let mult = kilowatt_tycoon::resources::capacity_demand_multiplier(1);
+    assert!(
+        (mult - 1.0).abs() < 0.001,
+        "1 charger should be 1.0x, got {}",
+        mult
+    );
+}
+
+#[test]
+fn test_capacity_demand_multiplier_four_chargers() {
+    let mult = kilowatt_tycoon::resources::capacity_demand_multiplier(4);
+    assert!(
+        (mult - 2.0).abs() < 0.001,
+        "4 chargers should be 2.0x, got {}",
+        mult
+    );
+}
+
+#[test]
+fn test_capacity_demand_multiplier_36_chargers() {
+    let mult = kilowatt_tycoon::resources::capacity_demand_multiplier(36);
+    assert!(
+        (mult - 6.0).abs() < 0.001,
+        "36 chargers should be 6.0x, got {}",
+        mult
+    );
+}
+
+#[test]
+fn test_capacity_demand_multiplier_zero_chargers_floors_to_one() {
+    let mult = kilowatt_tycoon::resources::capacity_demand_multiplier(0);
+    assert!(
+        (mult - 1.0).abs() < 0.001,
+        "0 chargers should floor to 1.0x, got {}",
+        mult
+    );
+}
+
+#[test]
+fn test_capacity_demand_scales_sublinearly() {
+    let m4 = kilowatt_tycoon::resources::capacity_demand_multiplier(4);
+    let m16 = kilowatt_tycoon::resources::capacity_demand_multiplier(16);
+    let m36 = kilowatt_tycoon::resources::capacity_demand_multiplier(36);
+    assert!(
+        m16 < m4 * 4.0,
+        "16 chargers should be less than 4x the 4-charger value"
+    );
+    assert!(
+        m36 < m16 * 4.0,
+        "36 chargers should be less than 4x the 16-charger value"
+    );
+    assert!(m4 < m16, "More chargers should mean higher demand");
+    assert!(m16 < m36, "More chargers should mean higher demand");
+}

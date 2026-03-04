@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<tileset version="1.10" tiledversion="1.11.0" name="kilowatt_tiles" tilewidth="64" tileheight="64" tilecount="140" columns="0">
+<tileset version="1.10" tiledversion="1.11.0" name="kilowatt_tiles" tilewidth="64" tileheight="64" tilecount="142" columns="0">
  <grid orientation="orthogonal" width="1" height="1"/>
 
  <tile id="0" type="Grass">
@@ -739,6 +739,24 @@
    <property name="locked" type="bool" value="true"/>
   </properties>
   <image width="64" height="64" source="../world/tiles/tile_wheel_stop.png"/>
+ </tile>
+
+ <tile id="93" type="RoadLaneBottom">
+  <properties>
+   <property name="content_type" value="RoadLaneBottom"/>
+   <property name="locked" type="bool" value="true"/>
+   <property name="driveable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_road_lane_bottom.png"/>
+ </tile>
+
+ <tile id="94" type="RoadLaneTop">
+  <properties>
+   <property name="content_type" value="RoadLaneTop"/>
+   <property name="locked" type="bool" value="true"/>
+   <property name="driveable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_road_lane_top.png"/>
  </tile>
 
  <tile id="92">

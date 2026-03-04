@@ -161,6 +161,11 @@ pub fn cable_theft_system(
         site_chance *= 0.5;
     }
 
+    // No robberies during the first 12 game-hours of Day 1 (grace period).
+    if game_clock.day == 1 && game_clock.hour() < 12 {
+        return;
+    }
+
     // Day 1 guarantee: force a robber unless there's a security system
     let force_spawn =
         game_clock.day == 1 && !robbery_tracker.robbery_triggered_today && cam_count == 0;

@@ -1,4 +1,35 @@
-//! Driver spawn and behavior systems
+//! Driver spawn and behavior systems.
+//!
+//! # Driver Decision Rules
+//!
+//! These rules govern how simulated drivers choose chargers and decide to leave.
+//!
+//! ## Rule 1 — OCPI-Only Information (pre-plug-in)
+//!
+//! Before plugging in, a driver can only use data that would be visible on a
+//! public charging app backed by the OCPI 2.3 feed (see [`crate::ocpi::types`]):
+//!
+//! | Available (OCPI)                | NOT available (internal)         |
+//! |---------------------------------|----------------------------------|
+//! | `EvseStatus` (Available, …)     | `charger.health`                 |
+//! | `Connector.max_electric_power`  | `charger.reliability`            |
+//! | `Connector.standard` (CCS/J1772)| `charger.get_derated_power()`    |
+//! | `Connector.power_type` (AC/DC)  | Grid allocation / queue lengths  |
+//!
+//! The charger scoring function therefore uses `rated_power_kw` (the OCPI
+//! advertised max) — not health, reliability, or derated power.
+//!
+//! ## Rule 2 — Direct Experience (post-plug-in)
+//!
+//! Once physically plugged in, a driver can observe their own charging rate on
+//! the vehicle dashboard. This means they **can** detect 0 kW delivery and poor
+//! power ratios — justifying the zero-energy departure logic.
+//!
+//! ## Rule 3 — Visual Observation (at the site)
+//!
+//! A driver physically at the site can see which bays are empty and which
+//! charger screens show errors. This justifies the alternative-charger search
+//! when a driver is frustrated or receiving zero power.
 
 use bevy::prelude::*;
 use bevy_northstar::prelude::*;
@@ -17,7 +48,10 @@ use crate::resources::{
 };
 use crate::systems::charger::check_connector_jam;
 use crate::systems::sprite::spawn_floating_money;
-use rand::prelude::IndexedRandom;
+
+/// How long (in game-seconds) a driver tolerates receiving 0 kW before seeking
+/// an alternative charger or leaving the site. Two game-minutes.
+pub const ZERO_POWER_TOLERANCE_GAME_SECONDS: f32 = 120.0;
 
 /// Check if technician is currently working on this charger
 fn is_technician_active_on_charger(tech_state: &TechnicianState, charger_entity: Entity) -> bool {
@@ -27,7 +61,108 @@ fn is_technician_active_on_charger(tech_state: &TechnicianState, charger_entity:
     ) && tech_state.target_charger == Some(charger_entity)
 }
 
-/// Spawn drivers according to schedule (only when station is open)
+/// Score a charger using only OCPI-visible attributes (Rule 1).
+///
+/// Returns `rated_power_kw` — the advertised maximum power that a driver
+/// would see on their charging app. Internal fields like `health`,
+/// `reliability`, and `get_derated_power()` are intentionally excluded.
+fn score_charger_ocpi(charger: &Charger) -> f32 {
+    charger.rated_power_kw
+}
+
+/// Charger candidate snapshot for [`find_best_alternative_charger`].
+struct ChargerCandidate {
+    entity: Entity,
+    site_id: crate::resources::SiteId,
+    charger_type: ChargerType,
+    can_accept: bool,
+    rated_power_kw: f32,
+    grid_position: Option<(i32, i32)>,
+}
+
+/// Find the best available alternative charger at a site, excluding an
+/// optional entity (typically the driver's current charger).
+///
+/// Uses [`score_charger_ocpi`] to rank candidates by OCPI-visible power
+/// rating (Rule 1). When a driver is physically at the site, they can see
+/// which chargers appear operational and which bays are empty (Rule 3).
+///
+/// Only considers chargers whose linked parking bay is NOT already occupied
+/// by another driver, preventing the "ghost bay" problem where a charger is
+/// used cross-bay while its physical bay appears free.
+///
+/// Returns `(charger_entity, linked_bay_position)` so the caller can move
+/// the driver to the alternative bay.
+fn find_best_alternative_charger(
+    candidates: &[ChargerCandidate],
+    site_id: crate::resources::SiteId,
+    compatible_types: &[ChargerType],
+    exclude_entity: Option<Entity>,
+    tech_state: &TechnicianState,
+    occupied_bays: &[(i32, i32)],
+    grid: &SiteGrid,
+) -> Option<(Entity, (i32, i32))> {
+    let mut best: Option<(Entity, (i32, i32), f32)> = None;
+
+    for cand in candidates {
+        if cand.site_id != site_id {
+            continue;
+        }
+        if Some(cand.entity) == exclude_entity {
+            continue;
+        }
+        if !compatible_types.contains(&cand.charger_type) {
+            continue;
+        }
+        if !cand.can_accept {
+            continue;
+        }
+        if is_technician_active_on_charger(tech_state, cand.entity) {
+            continue;
+        }
+
+        let Some(charger_pos) = cand.grid_position else {
+            continue;
+        };
+        let Some(bay_pos) = grid
+            .get_tile(charger_pos.0, charger_pos.1)
+            .and_then(|t| t.linked_parking_bay)
+        else {
+            continue;
+        };
+
+        if occupied_bays.contains(&bay_pos) {
+            continue;
+        }
+
+        if best.is_none_or(|(_, _, s)| cand.rated_power_kw > s) {
+            best = Some((cand.entity, bay_pos, cand.rated_power_kw));
+        }
+    }
+
+    best.map(|(e, bay, _)| (e, bay))
+}
+
+/// Collect charger candidate data for [`find_best_alternative_charger`].
+///
+/// Snapshots the charger query into a simple vec so the helper is decoupled
+/// from query mutability.
+fn collect_charger_candidates(
+    chargers: &Query<(Entity, &mut Charger, &crate::components::BelongsToSite)>,
+) -> Vec<ChargerCandidate> {
+    chargers
+        .iter()
+        .map(|(e, c, b)| ChargerCandidate {
+            entity: e,
+            site_id: b.site_id,
+            charger_type: c.charger_type,
+            can_accept: c.can_accept_driver(),
+            rated_power_kw: score_charger_ocpi(c),
+            grid_position: c.grid_position,
+        })
+        .collect()
+}
+
 /// Spawn drivers according to schedule (only when station is open)
 ///
 /// Uses bevy_northstar for pathfinding - spawns vehicles with AgentPos and Pathfind
@@ -46,6 +181,7 @@ pub fn driver_spawn_system(
     blocking_map: Res<BlockingMap>,
     profile: Res<crate::resources::PlayerProfile>,
     transformers: Query<&crate::components::power::Transformer>,
+    charger_index: Res<crate::hooks::ChargerIndex>,
 ) {
     // Only spawn drivers when station is open
     if !build_state.is_open {
@@ -97,14 +233,15 @@ pub fn driver_spawn_system(
     let entry_pos = site_state.grid.entry_pos;
     let entry_uvec = UVec3::new(entry_pos.0 as u32, entry_pos.1 as u32, 0);
 
-    // Check entry tile and the tile immediately inside the lot (y-1 since entry is at top)
     let entry_blocked = blocking_map.0.contains_key(&entry_uvec)
-        || (entry_pos.1 > 0
-            && blocking_map.0.contains_key(&UVec3::new(
-                entry_pos.0 as u32,
-                (entry_pos.1 - 1) as u32,
-                0,
-            )));
+        || [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|&(dx, dy)| {
+            let nx = entry_pos.0 + dx;
+            let ny = entry_pos.1 + dy;
+            site_state.grid.get_content(nx, ny).is_public_road()
+                && blocking_map
+                    .0
+                    .contains_key(&UVec3::new(nx as u32, ny as u32, 0))
+        });
 
     if entry_blocked {
         return;
@@ -338,11 +475,29 @@ pub fn driver_spawn_system(
                 break;
             }
 
-            // Normal spawn with available bay
-            let selected_bay = available_compatible
-                .choose(&mut rand::rng())
-                .copied()
-                .copied();
+            // Pick the bay with the highest OCPI-advertised charger power (Rule 1).
+            // Small random jitter breaks ties when chargers have equal power.
+            let selected_bay = {
+                let mut best: Option<(
+                    &(i32, i32, crate::resources::site_grid::ChargerPadType),
+                    f32,
+                )> = None;
+                for bay in &available_compatible {
+                    let score = site_state
+                        .grid
+                        .get_tile(bay.0, bay.1)
+                        .and_then(|t| t.linked_charger_pad)
+                        .and_then(|(px, py)| charger_index.get_by_position(px, py))
+                        .and_then(|e| chargers.get(e).ok())
+                        .map(|(_, c, _)| score_charger_ocpi(c))
+                        .unwrap_or(0.0)
+                        + rand::random::<f32>() * 0.01;
+                    if best.is_none_or(|(_, s)| score > s) {
+                        best = Some((bay, score));
+                    }
+                }
+                best.map(|(b, _)| b)
+            };
 
             let Some(&(bay_x, bay_y, _charger_type)) = selected_bay else {
                 break;
@@ -482,7 +637,12 @@ pub fn driver_spawn_system(
                 }
                 _ => 1.0,
             };
-            let effective_demand = base_demand * reliability_multiplier * customer_perk_multiplier;
+            let capacity_multiplier =
+                crate::resources::demand::capacity_demand_multiplier(charger_count);
+            let effective_demand = base_demand
+                * reliability_multiplier
+                * customer_perk_multiplier
+                * capacity_multiplier;
 
             let next_interval = site_state
                 .demand_state
@@ -668,11 +828,29 @@ pub fn driver_spawn_system(
                 return;
             }
 
-            // Normal spawn with available bay
-            let selected_bay = available_compatible
-                .choose(&mut rand::rng())
-                .copied()
-                .copied();
+            // Pick the bay with the highest OCPI-advertised charger power (Rule 1).
+            // Small random jitter breaks ties when chargers have equal power.
+            let selected_bay = {
+                let mut best: Option<(
+                    &(i32, i32, crate::resources::site_grid::ChargerPadType),
+                    f32,
+                )> = None;
+                for bay in &available_compatible {
+                    let score = site_state
+                        .grid
+                        .get_tile(bay.0, bay.1)
+                        .and_then(|t| t.linked_charger_pad)
+                        .and_then(|(px, py)| charger_index.get_by_position(px, py))
+                        .and_then(|e| chargers.get(e).ok())
+                        .map(|(_, c, _)| score_charger_ocpi(c))
+                        .unwrap_or(0.0)
+                        + rand::random::<f32>() * 0.01;
+                    if best.is_none_or(|(_, s)| score > s) {
+                        best = Some((bay, score));
+                    }
+                }
+                best.map(|(b, _)| b)
+            };
 
             let Some(&(bay_x, bay_y, _charger_type)) = selected_bay else {
                 return;
@@ -756,10 +934,11 @@ pub fn driver_spawn_system(
 
 /// System to transition drivers from Arriving to Charging when they reach their bay
 pub fn driver_arrival_system(
+    mut commands: Commands,
     mut drivers: Query<(
         Entity,
         &mut Driver,
-        &VehicleMovement,
+        &mut VehicleMovement,
         &crate::components::BelongsToSite,
     )>,
     mut chargers: Query<(Entity, &mut Charger, &crate::components::BelongsToSite)>,
@@ -775,7 +954,18 @@ pub fn driver_arrival_system(
         return;
     }
 
-    for (driver_entity, mut driver, movement, belongs) in &mut drivers {
+    let occupied_bays: Vec<(i32, i32)> = drivers
+        .iter()
+        .filter(|(_, d, _, _)| {
+            !matches!(
+                d.state,
+                DriverState::Leaving | DriverState::LeftAngry | DriverState::Complete
+            )
+        })
+        .filter_map(|(_, d, _, _)| d.assigned_bay)
+        .collect();
+
+    for (driver_entity, mut driver, mut movement, belongs) in &mut drivers {
         // Check if driver just arrived (movement complete and still in Arriving state)
         if driver.state == DriverState::Arriving && movement.phase == MovementPhase::Parked {
             // Get the site's charger queue
@@ -862,41 +1052,41 @@ pub fn driver_arrival_system(
                             );
                         }
                     } else {
-                        // Charger is busy - look for another free compatible charger
+                        // Charger is busy — find an alternative with an unoccupied bay (Rule 3)
                         let compatible_types = driver.vehicle_type.compatible_charger_types();
+                        let candidates = collect_charger_candidates(&chargers);
+                        let alt = find_best_alternative_charger(
+                            &candidates,
+                            belongs.site_id,
+                            compatible_types,
+                            Some(charger_entity),
+                            &tech_state,
+                            &occupied_bays,
+                            &site_state.grid,
+                        );
 
-                        // Search for another available compatible charger at this site
-                        let mut found_alternative = false;
-                        for (alt_entity, mut alt_charger, alt_belongs) in &mut chargers {
-                            if alt_belongs.site_id != belongs.site_id {
-                                continue;
-                            }
-                            if !compatible_types.contains(&alt_charger.charger_type) {
-                                continue;
-                            }
-                            if !alt_charger.can_accept_driver() {
-                                continue;
-                            }
-                            if is_technician_active_on_charger(&tech_state, alt_entity) {
-                                continue;
-                            }
-
-                            // Found a free charger! Reassign and start charging
+                        let found_alternative = if let Some((alt_entity, alt_bay)) = alt
+                            && let Ok((_, alt_charger, _)) = chargers.get(alt_entity)
+                            && alt_charger.can_accept_driver()
+                        {
                             driver.assigned_charger = Some(alt_entity);
-                            driver.state = DriverState::Charging;
-                            alt_charger.is_charging = true;
-                            alt_charger.session_start_game_time = Some(game_clock.game_time);
-                            alt_charger.requested_power_kw = alt_charger.get_derated_power();
+                            driver.assigned_bay = Some(alt_bay);
+                            driver.state = DriverState::Arriving;
+                            driver.just_switched_charger = true;
+                            movement.phase = MovementPhase::Arriving;
+                            commands
+                                .entity(driver_entity)
+                                .try_insert(Pathfind::new_2d(alt_bay.0 as u32, alt_bay.1 as u32));
                             info!(
-                                "Driver {} found alternative charger {} (original was busy)",
-                                driver.id, alt_charger.id
+                                "Driver {} moving to alternative bay ({},{}) for charger {} (original was busy)",
+                                driver.id, alt_bay.0, alt_bay.1, alt_charger.id
                             );
-                            found_alternative = true;
-                            break;
-                        }
+                            true
+                        } else {
+                            false
+                        };
 
                         if !found_alternative {
-                            // No free chargers - join queues for all compatible types
                             driver.state = DriverState::Queued;
                             for charger_type in compatible_types {
                                 match charger_type {
@@ -1052,7 +1242,15 @@ pub fn queue_assignment_system(
             }
             // If bay is occupied, skip -- driver stays queued, will retry next frame
         } else {
-            // Driver is already at a bay -- start charging immediately
+            // Driver is already at a bay -- only charge if this is the bay's linked charger
+            let charger_bay = charger
+                .grid_position
+                .and_then(|(px, py)| site_state.grid.get_tile(px, py)?.linked_parking_bay);
+
+            if charger_bay != driver.assigned_bay {
+                continue;
+            }
+
             driver.assigned_charger = Some(charger_entity);
             driver.state = DriverState::Charging;
             charger.is_charging = true;
@@ -1156,6 +1354,46 @@ pub fn charging_system(
 
         charger.current_power_kw = power_kw;
         driver.charge_received_kwh += energy_kwh;
+
+        // Track zero-power duration (Rule 2: driver sees 0 kW on dashboard).
+        if power_kw > 0.0 {
+            driver.zero_power_seconds = 0.0;
+        } else {
+            driver.zero_power_seconds += delta_game_seconds;
+
+            if driver.zero_power_seconds >= ZERO_POWER_TOLERANCE_GAME_SECONDS {
+                // Driver has been getting nothing for too long — leave angry.
+                // The frustrated_driver_system handles alternative-charger search
+                // each frame for WaitingForCharger/Frustrated drivers, so here we
+                // just transition to LeftAngry since the charger IS operational
+                // but the grid simply cannot allocate power to it.
+                charger.is_charging = false;
+                charger.current_power_kw = 0.0;
+                charger.requested_power_kw = 0.0;
+                charger.allocated_power_kw = 0.0;
+                charger.session_start_game_time = None;
+
+                driver.state = DriverState::LeftAngry;
+                driver.waiting_tile = None;
+
+                game_state.change_reputation(-3);
+                game_state.sessions_failed += 1;
+                game_state.daily_history.current_day.sessions_failed_today += 1;
+
+                info!(
+                    "Driver {} left angry - received 0 kW for {:.0}s",
+                    driver.id, driver.zero_power_seconds
+                );
+
+                left_events.write(DriverLeftEvent {
+                    driver_entity,
+                    driver_id: driver.id.clone(),
+                    angry: true,
+                    revenue: 0.0,
+                });
+                continue;
+            }
+        }
 
         // Accumulate video ad revenue if enabled (only while actively charging with power > 0).
         // Revenue is flushed to the ledger at session completion, not per-frame.
@@ -1514,15 +1752,29 @@ pub fn patience_system(
     // Don't cleanup leaving drivers here - movement system handles it
 }
 
-/// Handle frustrated drivers at broken chargers
+/// Handle frustrated drivers and drivers whose charger faulted mid-session.
+///
+/// Covers both `Frustrated` (arrived at broken charger) and `WaitingForCharger`
+/// (charger faulted during an active session). In both cases the driver will:
+///
+/// 1. Check if their own charger was repaired → resume charging.
+/// 2. Look for the best alternative charger at the site (Rule 3: visual observation).
+/// 3. If no alternatives, drain patience and eventually leave angry.
 pub fn frustrated_driver_system(
-    _commands: Commands,
-    mut drivers: Query<(Entity, &mut Driver)>,
-    mut chargers: Query<&mut Charger>,
+    mut commands: Commands,
+    mut drivers: Query<(
+        Entity,
+        &mut Driver,
+        &mut VehicleMovement,
+        &crate::components::BelongsToSite,
+    )>,
+    mut chargers: Query<(Entity, &mut Charger, &crate::components::BelongsToSite)>,
+    multi_site: Res<crate::resources::MultiSiteManager>,
     game_clock: Res<GameClock>,
     time: Res<Time>,
     mut game_state: ResMut<GameState>,
     mut left_events: MessageWriter<DriverLeftEvent>,
+    tech_state: Res<TechnicianState>,
 ) {
     if game_clock.is_paused() {
         return;
@@ -1535,44 +1787,117 @@ pub fn frustrated_driver_system(
 
     let delta = time.delta_secs() * game_clock.speed.multiplier();
 
-    for (driver_entity, mut driver) in &mut drivers {
-        if driver.state != DriverState::Frustrated {
+    // Snapshot charger state for the alternative-charger search (avoids borrow conflicts).
+    let candidates = collect_charger_candidates(&chargers);
+
+    let occupied_bays: Vec<(i32, i32)> = drivers
+        .iter()
+        .filter(|(_, d, _, _)| {
+            !matches!(
+                d.state,
+                DriverState::Leaving | DriverState::LeftAngry | DriverState::Complete
+            )
+        })
+        .filter_map(|(_, d, _, _)| d.assigned_bay)
+        .collect();
+
+    for (driver_entity, mut driver, mut movement, belongs) in &mut drivers {
+        let is_frustrated = driver.state == DriverState::Frustrated;
+        let is_waiting_for_charger = driver.state == DriverState::WaitingForCharger;
+
+        if !is_frustrated && !is_waiting_for_charger {
             continue;
         }
 
-        // Drain patience faster (2x rate)
-        driver.patience -= delta * 2.0;
+        // Drain patience (faster when frustrated, normal rate when waiting)
+        if is_frustrated {
+            driver.patience -= delta * 2.0;
+        }
+        // WaitingForCharger patience drain is handled by patience_system
 
-        // Check if charger has been repaired
+        // 1) Check if their own charger was repaired
         if let Some(charger_entity) = driver.assigned_charger
-            && let Ok(mut charger) = chargers.get_mut(charger_entity)
+            && let Ok((_, mut charger, _)) = chargers.get_mut(charger_entity)
             && charger.current_fault.is_none()
+            && !charger.is_disabled
         {
-            // Charger fixed! Start charging directly (driver is already parked)
-            // (mood will be set by emotion system based on state)
             if charger.can_accept_driver() {
                 driver.state = DriverState::Charging;
-                driver.patience += 10.0; // Small patience recovery
-                // Start charging session
+                driver.zero_power_seconds = 0.0;
+                if is_frustrated {
+                    driver.patience += 10.0;
+                }
                 charger.is_charging = true;
                 charger.session_start_game_time = Some(game_clock.game_time);
                 charger.requested_power_kw = charger.get_derated_power();
                 info!(
-                    "Driver {} recovered and started charging - charger {} repaired!",
+                    "Driver {} resumed charging - charger {} repaired!",
                     driver.id, charger.id
                 );
             }
             continue;
         }
 
-        // If patience runs out, leave angrily (mood set by emotion system)
+        // 2) Look for an alternative charger whose bay is unoccupied (Rule 3)
+        let compatible_types = driver.vehicle_type.compatible_charger_types();
+        let grid = multi_site
+            .owned_sites
+            .get(&belongs.site_id)
+            .map(|s| &s.grid);
+        let found_alt = grid.and_then(|g| {
+            find_best_alternative_charger(
+                &candidates,
+                belongs.site_id,
+                compatible_types,
+                driver.assigned_charger,
+                &tech_state,
+                &occupied_bays,
+                g,
+            )
+        });
+        let alt_accepted = found_alt.and_then(|(alt_entity, alt_bay)| {
+            let (_, alt_charger, _) = chargers.get(alt_entity).ok()?;
+            alt_charger
+                .can_accept_driver()
+                .then(|| (alt_entity, alt_bay, alt_charger.id.clone()))
+        });
+        if let Some((alt_entity, alt_bay, alt_id)) = alt_accepted {
+            // Clear charging state on the old charger
+            if let Some(old_entity) = driver.assigned_charger
+                && let Ok((_, mut old_charger, _)) = chargers.get_mut(old_entity)
+            {
+                old_charger.is_charging = false;
+                old_charger.current_power_kw = 0.0;
+                old_charger.requested_power_kw = 0.0;
+                old_charger.allocated_power_kw = 0.0;
+                old_charger.session_start_game_time = None;
+            }
+            driver.assigned_charger = Some(alt_entity);
+            driver.assigned_bay = Some(alt_bay);
+            driver.state = DriverState::Arriving;
+            driver.zero_power_seconds = 0.0;
+            driver.just_switched_charger = true;
+            if is_frustrated {
+                driver.patience += 5.0;
+            }
+            movement.phase = MovementPhase::Arriving;
+            commands
+                .entity(driver_entity)
+                .try_insert(Pathfind::new_2d(alt_bay.0 as u32, alt_bay.1 as u32));
+            info!(
+                "Driver {} moving to alternative bay ({},{}) for charger {} (original broken/faulted)",
+                driver.id, alt_bay.0, alt_bay.1, alt_id
+            );
+            continue;
+        }
+
+        // 3) No alternatives — if patience depleted, leave angry
         if driver.patience <= 0.0 {
             driver.state = DriverState::LeftAngry;
             driver.waiting_tile = None;
 
-            // Clear charger state if driver was assigned to one
             if let Some(charger_entity) = driver.assigned_charger
-                && let Ok(mut charger) = chargers.get_mut(charger_entity)
+                && let Ok((_, mut charger, _)) = chargers.get_mut(charger_entity)
             {
                 charger.is_charging = false;
                 charger.current_power_kw = 0.0;
@@ -1585,12 +1910,19 @@ pub fn frustrated_driver_system(
                 );
             }
 
-            // Leave without charging - reputation hit
             game_state.change_reputation(-5);
             game_state.sessions_failed += 1;
             game_state.daily_history.current_day.sessions_failed_today += 1;
 
-            info!("Frustrated driver {} left due to broken charger", driver.id);
+            info!(
+                "Driver {} left angry (state was {:?})",
+                driver.id,
+                if is_frustrated {
+                    "Frustrated"
+                } else {
+                    "WaitingForCharger"
+                }
+            );
 
             left_events.write(DriverLeftEvent {
                 driver_entity,
@@ -1598,8 +1930,164 @@ pub fn frustrated_driver_system(
                 angry: true,
                 revenue: 0.0,
             });
-
-            // Don't despawn immediately - let departure animation play
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::resources::site_grid::{SiteGrid, TileContent};
+
+    fn make_grid_with_bay_and_charger(
+        grid: &mut SiteGrid,
+        bay: (i32, i32),
+        charger_pad: (i32, i32),
+    ) {
+        grid.set_tile_content(bay.0, bay.1, TileContent::ParkingBaySouth);
+        if let Some(tile) = grid.get_tile_mut(bay.0, bay.1) {
+            tile.linked_charger_pad = Some(charger_pad);
+        }
+        grid.set_tile_content(charger_pad.0, charger_pad.1, TileContent::ChargerPad);
+        if let Some(tile) = grid.get_tile_mut(charger_pad.0, charger_pad.1) {
+            tile.linked_parking_bay = Some(bay);
+        }
+    }
+
+    fn candidate(
+        entity_index: u32,
+        site_id: crate::resources::SiteId,
+        charger_type: ChargerType,
+        can_accept: bool,
+        power: f32,
+        grid_pos: (i32, i32),
+    ) -> ChargerCandidate {
+        ChargerCandidate {
+            entity: Entity::from_bits(entity_index as u64),
+            site_id,
+            charger_type,
+            can_accept,
+            rated_power_kw: power,
+            grid_position: Some(grid_pos),
+        }
+    }
+
+    #[test]
+    fn alternative_charger_skips_occupied_bay() {
+        let site = crate::resources::SiteId(1);
+        let mut grid = SiteGrid::default();
+        make_grid_with_bay_and_charger(&mut grid, (5, 10), (5, 11));
+        make_grid_with_bay_and_charger(&mut grid, (8, 10), (8, 11));
+
+        let candidates = vec![
+            candidate(10, site, ChargerType::DcFast, true, 150.0, (5, 11)),
+            candidate(20, site, ChargerType::DcFast, true, 150.0, (8, 11)),
+        ];
+        let tech = TechnicianState::default();
+
+        let occupied = vec![(5, 10)];
+        let result = find_best_alternative_charger(
+            &candidates,
+            site,
+            &[ChargerType::DcFast],
+            None,
+            &tech,
+            &occupied,
+            &grid,
+        );
+        assert_eq!(result.map(|(e, _)| e), Some(Entity::from_bits(20)));
+
+        let occupied_both = vec![(5, 10), (8, 10)];
+        let result = find_best_alternative_charger(
+            &candidates,
+            site,
+            &[ChargerType::DcFast],
+            None,
+            &tech,
+            &occupied_both,
+            &grid,
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn alternative_charger_returns_bay_position() {
+        let site = crate::resources::SiteId(1);
+        let mut grid = SiteGrid::default();
+        make_grid_with_bay_and_charger(&mut grid, (5, 10), (5, 11));
+
+        let candidates = vec![candidate(
+            10,
+            site,
+            ChargerType::DcFast,
+            true,
+            150.0,
+            (5, 11),
+        )];
+        let tech = TechnicianState::default();
+
+        let result = find_best_alternative_charger(
+            &candidates,
+            site,
+            &[ChargerType::DcFast],
+            None,
+            &tech,
+            &[],
+            &grid,
+        );
+        assert_eq!(result, Some((Entity::from_bits(10), (5, 10))));
+    }
+
+    #[test]
+    fn alternative_charger_prefers_higher_power() {
+        let site = crate::resources::SiteId(1);
+        let mut grid = SiteGrid::default();
+        make_grid_with_bay_and_charger(&mut grid, (5, 10), (5, 11));
+        make_grid_with_bay_and_charger(&mut grid, (8, 10), (8, 11));
+
+        let candidates = vec![
+            candidate(10, site, ChargerType::DcFast, true, 50.0, (5, 11)),
+            candidate(20, site, ChargerType::DcFast, true, 150.0, (8, 11)),
+        ];
+        let tech = TechnicianState::default();
+
+        let result = find_best_alternative_charger(
+            &candidates,
+            site,
+            &[ChargerType::DcFast],
+            None,
+            &tech,
+            &[],
+            &grid,
+        );
+        assert_eq!(result.map(|(e, _)| e), Some(Entity::from_bits(20)));
+    }
+
+    #[test]
+    fn alternative_charger_skips_cannot_accept() {
+        let site = crate::resources::SiteId(1);
+        let mut grid = SiteGrid::default();
+        make_grid_with_bay_and_charger(&mut grid, (5, 10), (5, 11));
+
+        let candidates = vec![candidate(
+            10,
+            site,
+            ChargerType::DcFast,
+            false,
+            150.0,
+            (5, 11),
+        )];
+        let tech = TechnicianState::default();
+
+        let result = find_best_alternative_charger(
+            &candidates,
+            site,
+            &[ChargerType::DcFast],
+            None,
+            &tech,
+            &[],
+            &grid,
+        );
+        assert!(result.is_none());
     }
 }

@@ -1476,6 +1476,40 @@
         },
         "colors": [],
         "ai_prompt": "concrete wheel stop bumper in parking space"
+      },
+      {
+        "id": 93,
+        "name": "RoadLaneBottom",
+        "rust_variant": "RoadLaneBottom",
+        "filename": "tile_road_lane_bottom.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "asphalt",
+          "asphalt_dark"
+        ],
+        "ai_prompt": "bottom half of a two-lane road with lane markings, asphalt surface #3A3F4B"
+      },
+      {
+        "id": 94,
+        "name": "RoadLaneTop",
+        "rust_variant": "RoadLaneTop",
+        "filename": "tile_road_lane_top.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [
+          "asphalt",
+          "asphalt_dark"
+        ],
+        "ai_prompt": "top half of a two-lane road with lane markings, asphalt surface #3A3F4B"
       }
     ],
     "fixed_tiles": [

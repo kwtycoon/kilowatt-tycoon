@@ -38,7 +38,7 @@ pub fn init_driver_emotions(
 /// Continuously evaluate and update driver emotions
 /// Reads per-site ServiceStrategy so drivers react to the player's actual price
 pub fn evaluate_driver_emotions(
-    mut drivers: Query<(&Driver, &mut DriverEmotion, &BelongsToSite)>,
+    mut drivers: Query<(&mut Driver, &mut DriverEmotion, &BelongsToSite)>,
     chargers: Query<&Charger>,
     multi_site: Res<MultiSiteManager>,
     environment: Res<EnvironmentState>,
@@ -48,12 +48,18 @@ pub fn evaluate_driver_emotions(
         return;
     }
 
-    for (driver, mut emotion, belongs) in &mut drivers {
+    for (mut driver, mut emotion, belongs) in &mut drivers {
+        let switched = driver.just_switched_charger;
         let state_changed = emotion.last_driver_state != Some(driver.state);
         let emotion_expired = emotion.is_expired(game_clock.total_real_time);
 
-        if !emotion_expired && !state_changed {
+        if !emotion_expired && !state_changed && !switched {
             continue;
+        }
+
+        // Clear the one-shot flag now that we've observed it
+        if switched {
+            driver.just_switched_charger = false;
         }
 
         let Some(site_state) = multi_site.get_site(belongs.site_id) else {
@@ -66,7 +72,7 @@ pub fn evaluate_driver_emotions(
             site_state.charger_utilization,
         );
         let (new_mood, new_reason) =
-            evaluate_emotion_for_state(driver, &chargers, effective_price, &environment);
+            evaluate_emotion_for_state(&driver, &chargers, effective_price, &environment, switched);
 
         let would_change = emotion.mood != new_mood || emotion.reason != new_reason;
 
@@ -82,13 +88,22 @@ pub fn evaluate_driver_emotions(
     }
 }
 
-/// Helper to determine what emotion a driver should have based on their state
+/// Helper to determine what emotion a driver should have based on their state.
+///
+/// `just_switched` is true when the driver just moved to an alternative charger
+/// and should show a `SwitchedCharger` bubble before the normal charging emotion.
 fn evaluate_emotion_for_state(
     driver: &Driver,
     chargers: &Query<&Charger>,
     effective_price: f32,
     environment: &EnvironmentState,
+    just_switched: bool,
 ) -> (EmotionMood, EmotionReason) {
+    // One-shot: driver just switched to an alternative charger
+    if just_switched && driver.state == DriverState::Charging {
+        return (EmotionMood::Happy, EmotionReason::SwitchedCharger);
+    }
+
     match driver.state {
         DriverState::Arriving => {
             // Check if they're assigned vs waiting
@@ -146,7 +161,15 @@ fn evaluate_emotion_for_state(
             }
         }
         DriverState::Charging => {
-            // Check charge progress and power delivery
+            // Zero power takes priority — driver can see 0 kW on their dashboard (Rule 2)
+            if driver.zero_power_seconds > 0.0 {
+                return if driver.zero_power_seconds > 60.0 {
+                    (EmotionMood::Angry, EmotionReason::FrustrationNoPower)
+                } else {
+                    (EmotionMood::Frustrated, EmotionReason::NoPower)
+                };
+            }
+
             let progress = driver.charge_progress();
 
             if progress < 0.1 {
@@ -154,7 +177,6 @@ fn evaluate_emotion_for_state(
             } else if progress > 0.9 {
                 (EmotionMood::VeryHappy, EmotionReason::ChargingAlmostDone)
             } else if let Some(charger_entity) = driver.assigned_charger {
-                // Mid-session: check power delivery satisfaction
                 if let Ok(charger) = chargers.get(charger_entity) {
                     let power_ratio = if charger.requested_power_kw > 0.0 {
                         charger.allocated_power_kw / charger.requested_power_kw
@@ -162,12 +184,10 @@ fn evaluate_emotion_for_state(
                         1.0
                     };
 
-                    // If getting poor power delivery, show frustration
                     if power_ratio < 0.5 {
                         return (EmotionMood::Frustrated, EmotionReason::WaitingTooLong);
                     }
                 }
-                // Default: keep current emotion for mid-charging (return current)
                 (EmotionMood::Happy, EmotionReason::ChargingStarted)
             } else {
                 (EmotionMood::Happy, EmotionReason::ChargingStarted)

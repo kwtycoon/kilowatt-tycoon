@@ -26,6 +26,15 @@ pub fn base_demand_for_archetype(archetype: crate::resources::SiteArchetype) -> 
     }
 }
 
+/// Demand multiplier based on installed charger capacity.
+///
+/// Larger stations attract more drivers: apps show availability, word spreads,
+/// and the station becomes a known destination. Uses `sqrt(count)` so demand
+/// grows sub-linearly — doubling chargers doesn't double demand.
+pub fn capacity_demand_multiplier(active_charger_count: u32) -> f32 {
+    (active_charger_count.max(1) as f32).sqrt()
+}
+
 /// Initial procedural spawn delay (game seconds) per archetype.
 ///
 /// ScooterHub floods the player almost immediately.

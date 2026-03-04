@@ -50,9 +50,12 @@ The `Driver` component has a separate `DriverMood` enum synced from `EmotionMood
 | ChargingComplete | VeryHappy | "All set!" |
 | ChargerBroken | Angry | "Are you kidding me?!" |
 | LeavingAngry | Angry | "Never coming back!" |
+| SwitchedCharger | Happy | "Found another one!" |
+| NoPower | Frustrated | "Zero kilowatts?!" |
 | FrustrationBusy | Angry | "Too busy" |
 | FrustrationDidntWork | Angry | "Broken" |
 | FrustrationTooExpensive | Angry | "Too expensive" |
+| FrustrationNoPower | Angry | "Zero power!" |
 
 #### Implementation
 
@@ -238,6 +241,62 @@ When the player places or removes chargers:
 2. `rebuild_site_pathfinding_grids` detects revision change
 3. Grid nav is rebuilt via `sync_grid_nav()`
 4. Active pathfind requests are invalidated
+
+### 4.7 Driver Decision Rules
+
+Three rules govern how drivers choose chargers and decide to leave. These
+rules create a realistic information asymmetry between drivers and the
+player (who has full visibility into charger health, grid allocation, etc.).
+
+#### Rule 1: OCPI-Only Information (pre-plug-in)
+
+Before plugging in, a driver can only use data visible on a public charging
+app backed by the OCPI 2.3 feed (`src/ocpi/types.rs`):
+
+| Available (OCPI)                | NOT available (internal)         |
+|---------------------------------|----------------------------------|
+| `EvseStatus` (Available, …)     | `charger.health`                 |
+| `Connector.max_electric_power`  | `charger.reliability`            |
+| `Connector.standard` (CCS/J1772)| `charger.get_derated_power()`    |
+| `Connector.power_type` (AC/DC)  | Grid allocation / queue lengths  |
+
+**Charger scoring** uses `rated_power_kw` (the OCPI-advertised max), not
+health, reliability, or derated power. A 150 kW charger at 50% health still
+looks like a 150 kW charger to the driver.
+
+#### Rule 2: Direct Experience (post-plug-in)
+
+Once plugged in, a driver observes their charging rate on the vehicle
+dashboard. They can detect 0 kW delivery and poor power ratios.
+
+**Zero-energy departure:** If `allocated_power_kw == 0` for
+`ZERO_POWER_TOLERANCE_GAME_SECONDS` (120 game-seconds), the driver leaves
+angry. The `zero_power_seconds` field on `Driver` tracks this.
+
+#### Rule 3: Visual Observation (at the site)
+
+A driver physically at the site can see which bays are empty and which
+charger screens show errors. This justifies the alternative-charger search
+when a driver is frustrated or receiving zero power.
+
+**Alternative-charger search:** `frustrated_driver_system` (which handles
+both `Frustrated` and `WaitingForCharger` states) checks all chargers at
+the site each frame and reassigns the driver to the best available
+alternative before falling through to patience drain.
+
+#### Best-Charger Selection at Spawn
+
+`driver_spawn_system` picks the bay whose linked charger has the highest
+OCPI-advertised power (`rated_power_kw`). Random selection is only used as
+a tiebreaker. This replaces the previous purely-random bay assignment.
+
+#### Implementation
+
+| Helper | Location | Purpose |
+|--------|----------|---------|
+| `score_charger_ocpi()` | `systems/driver.rs` | Returns `rated_power_kw` (Rule 1) |
+| `find_best_alternative_charger()` | `systems/driver.rs` | Best available charger by OCPI score |
+| `collect_charger_candidates()` | `systems/driver.rs` | Snapshots charger query to avoid borrow conflicts |
 
 ---
 

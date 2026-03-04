@@ -1,18 +1,19 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="16" height="12" tilewidth="64" tileheight="64" infinite="0" nextlayerid="5" nextobjectid="8">
+<?xml version='1.0' encoding='utf-8'?>
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="16" height="13" tilewidth="64" tileheight="64" infinite="0" nextlayerid="5" nextobjectid="8">
  <properties>
-  <property name="archetype" value="parking_lot"/>
-  <property name="challenge_level" type="int" value="1"/>
-  <property name="description" value="Your starter site. Standard retail parking lot with balanced traffic. 1500 kVA utility connection available. Purchase and place a transformer to get started."/>
-  <property name="grid_capacity_kva" type="float" value="1500"/>
-  <property name="popularity" type="float" value="60"/>
-  <property name="rent_cost" type="float" value="0"/>
-  <property name="site_name" value="First Street Station"/>
+  <property name="archetype" value="parking_lot" />
+  <property name="challenge_level" type="int" value="1" />
+  <property name="description" value="Your starter site. Standard retail parking lot with balanced traffic. 1500 kVA utility connection available. Purchase and place a transformer to get started." />
+  <property name="grid_capacity_kva" type="float" value="1500" />
+  <property name="popularity" type="float" value="60" />
+  <property name="rent_cost" type="float" value="0" />
+  <property name="site_name" value="First Street Station" />
  </properties>
- <tileset firstgid="1" source="../tilesets/kilowatt_tiles.tsx"/>
- <layer id="1" name="tiles" width="16" height="12">
+ <tileset firstgid="1" source="../tilesets/kilowatt_tiles.tsx" />
+ <layer id="1" name="tiles" width="16" height="13">
   <data encoding="csv">
-57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,57,
+94,94,94,94,94,94,94,94,94,94,94,94,94,94,94,94,
+95,95,95,95,95,95,95,95,95,95,95,95,95,95,95,95,
 1,1,1,5,5,5,5,5,5,5,5,5,5,1,1,1,
 1,1,1,5,37,5,37,5,37,5,37,5,5,1,1,1,
 1,1,1,5,7,5,7,5,7,5,7,5,5,1,1,1,
@@ -27,17 +28,17 @@
 </data>
  </layer>
  <objectgroup id="2" name="zones">
-  <object id="4" type="exit" x="964" y="0" width="64" height="64"/>
-  <object id="1" type="parking_area" x="192" y="128" width="640" height="384">
+  <object id="4" type="exit" x="964" y="64.0" width="64" height="64" />
+  <object id="1" type="parking_area" x="192" y="192.0" width="640" height="384">
    <properties>
-    <property name="generates_bays" type="bool" value="true"/>
+    <property name="generates_bays" type="bool" value="true" />
    </properties>
   </object>
-  <object id="2" type="transformer_zone" x="832" y="576" width="128" height="128">
+  <object id="2" type="transformer_zone" x="832" y="640.0" width="128" height="128">
    <properties>
-    <property name="suggested_placement" type="bool" value="true"/>
+    <property name="suggested_placement" type="bool" value="true" />
    </properties>
   </object>
-  <object id="4" type="entry" x="0" y="0" width="64" height="64"/>
+  <object id="4" type="entry" x="0" y="64.0" width="64" height="64" />
  </objectgroup>
 </map>

@@ -551,6 +551,8 @@ pub fn ambient_to_customer_system(
             state: DriverState::Arriving,
             mood: DriverMood::Neutral,
             is_roaming,
+            zero_power_seconds: 0.0,
+            just_switched_charger: false,
         };
 
         // Update movement phase

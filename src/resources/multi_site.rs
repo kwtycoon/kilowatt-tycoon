@@ -42,10 +42,10 @@ impl SiteArchetype {
     pub fn description(&self) -> &'static str {
         match self {
             SiteArchetype::ParkingLot => {
-                "Retail parking lot in the Northeast. Cold winters may slow charging during cold snaps."
+                "Retail parking lot with high visibility. Mild climate, ideal for beginners."
             }
             SiteArchetype::GasStation => {
-                "Converted fuel station with canopy. High traffic, compact layout."
+                "Converted fuel station in the Northeast. Cold winters may slow charging during cold snaps."
             }
             SiteArchetype::FleetDepot => {
                 "Commercial fleet depot. Endgame scale with 50+ bays, multiple vehicle types, 3 MW power."
@@ -71,10 +71,10 @@ impl SiteArchetype {
     /// Positive = hotter climate, negative = colder climate.
     pub fn temperature_offset_f(&self) -> f32 {
         match self {
-            SiteArchetype::ParkingLot => -35.0, // NJ winter: can dip below 0F during cold snaps
-            SiteArchetype::GasStation => 5.0,   // Slightly warmer (Southern location)
-            SiteArchetype::FleetDepot => 15.0,  // Industrial area, hot
-            SiteArchetype::ScooterHub => 15.0,  // Ho Chi Minh City tropical climate
+            SiteArchetype::ParkingLot => 5.0, // Mild climate, beginner-friendly
+            SiteArchetype::GasStation => -35.0, // NJ winter: can dip below 0F during cold snaps
+            SiteArchetype::FleetDepot => 15.0, // Industrial area, hot
+            SiteArchetype::ScooterHub => 15.0, // Ho Chi Minh City tropical climate
         }
     }
 
