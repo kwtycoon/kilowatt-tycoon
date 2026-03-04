@@ -242,13 +242,14 @@ pub fn spawn_grid_event_toast(
     commands: &mut Commands,
     container: Entity,
     event: crate::resources::GridEventType,
+    weather: crate::resources::WeatherType,
     game_time: f32,
     real_time: f32,
     icon: Handle<Image>,
     has_power_management: bool,
 ) {
     let name = event.name();
-    let headline = event.headline();
+    let headline = event.headline(weather);
     let export_mult = event.export_multiplier();
     let import_mult = event.import_multiplier();
     let message =

@@ -708,9 +708,9 @@ pub fn show_tooltip_on_cold_site_switch(
     >,
 ) {
     for _event in switch_events.read() {
-        // Check if the new active site has a cold climate
+        // Check if the new active site has a cold climate (negative temp offset)
         if let Some(site) = multi_site.active_site()
-            && site.archetype.climate_warning().is_some()
+            && site.archetype.temperature_offset_f() < 0.0
         {
             // This is a cold site - show the tooltip automatically
             let site_temp = environment.temperature_for_site(site.archetype);

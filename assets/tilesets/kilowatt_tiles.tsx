@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<tileset version="1.10" tiledversion="1.11.0" name="kilowatt_tiles" tilewidth="64" tileheight="64" tilecount="142" columns="0">
+<tileset version="1.10" tiledversion="1.11.0" name="kilowatt_tiles" tilewidth="64" tileheight="64" tilecount="146" columns="0">
  <grid orientation="orthogonal" width="1" height="1"/>
 
  <tile id="0" type="Grass">
@@ -953,6 +953,22 @@
 
  <tile id="145">
   <image width="64" height="64" source="../fixed/qceg_r3c7.png"/>
+ </tile>
+
+ <tile id="146">
+  <image width="64" height="64" source="../fixed/tent1.png"/>
+ </tile>
+
+ <tile id="147">
+  <image width="64" height="64" source="../fixed/tent4.png"/>
+ </tile>
+
+ <tile id="148">
+  <image width="64" height="64" source="../fixed/tent3.png"/>
+ </tile>
+
+ <tile id="149">
+  <image width="64" height="64" source="../fixed/tent2.png"/>
  </tile>
 
 </tileset>

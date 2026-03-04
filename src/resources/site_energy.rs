@@ -532,9 +532,16 @@ impl GridEventType {
         }
     }
 
-    pub fn headline(&self) -> &'static str {
+    pub fn headline(&self, weather: crate::resources::WeatherType) -> &'static str {
+        use crate::resources::WeatherType;
         match self {
-            GridEventType::RecordDemand => "Everyone's cranking the AC - grid maxed out!",
+            GridEventType::RecordDemand => match weather {
+                WeatherType::Heatwave | WeatherType::Sunny => {
+                    "Everyone's cranking the AC - grid maxed out!"
+                }
+                WeatherType::Cold => "Heaters on full blast - grid maxed out!",
+                _ => "Record energy demand - grid maxed out!",
+            },
             GridEventType::GeneratorTrip => "Major generator tripped offline - prices spiking!",
             GridEventType::TransmissionConstraint => "Power lines jammed - local rates surging!",
             GridEventType::HeatEmergency => "Heat wave declared - grid operator calls emergency!",
@@ -543,6 +550,36 @@ impl GridEventType {
                 "Wind died, clouds rolled in - renewables tanking!"
             }
             GridEventType::GridCongestion => "Grid bottleneck - congestion fees kicking in!",
+        }
+    }
+
+    /// Relative weight for this event given the current weather.
+    /// A weight of 0.0 means the event cannot occur in that weather.
+    pub fn weather_weight(&self, weather: crate::resources::WeatherType) -> f32 {
+        use crate::resources::WeatherType;
+        match self {
+            GridEventType::HeatEmergency => match weather {
+                WeatherType::Heatwave => 3.0,
+                WeatherType::Sunny => 1.0,
+                WeatherType::Overcast => 0.5,
+                WeatherType::Rainy | WeatherType::Cold => 0.0,
+            },
+            GridEventType::RecordDemand => match weather {
+                WeatherType::Heatwave => 2.0,
+                WeatherType::Sunny => 1.5,
+                WeatherType::Overcast => 1.0,
+                WeatherType::Rainy | WeatherType::Cold => 0.5,
+            },
+            GridEventType::RenewableShortfall => match weather {
+                WeatherType::Rainy => 2.0,
+                WeatherType::Overcast => 1.5,
+                WeatherType::Cold => 1.0,
+                WeatherType::Sunny | WeatherType::Heatwave => 0.5,
+            },
+            GridEventType::GeneratorTrip
+            | GridEventType::TransmissionConstraint
+            | GridEventType::UnexpectedPlantOutage
+            | GridEventType::GridCongestion => 1.0,
         }
     }
 
@@ -626,14 +663,19 @@ impl GridEventState {
     ///
     /// `challenge_level`: site difficulty -- controls event probability
     /// `game_time`: current absolute game time (for event timing)
+    /// `weather`: current weather, used to weight which events can occur
     /// `rng`: random number generator
-    pub fn tick(&mut self, challenge_level: u8, game_time: f32, rng: &mut impl rand::Rng) {
-        // 1. Expire active grid event if past its end time
+    pub fn tick(
+        &mut self,
+        challenge_level: u8,
+        game_time: f32,
+        weather: crate::resources::WeatherType,
+        rng: &mut impl rand::Rng,
+    ) {
         if self.active_event.is_some() && game_time >= self.event_end_time {
             self.active_event = None;
         }
 
-        // 2. Roll for new grid event (throttled to 1 roll per game-hour)
         let event_chance = match challenge_level {
             0..=1 => 0.0,
             2 => 0.05,
@@ -648,20 +690,33 @@ impl GridEventState {
 
             let roll: f32 = rng.random();
             if roll < event_chance {
-                let all = GridEventType::ALL;
-                let event_idx = (rng.random::<f32>() * all.len() as f32) as usize % all.len();
-                let event_type = all[event_idx];
+                let total_weight: f32 = GridEventType::ALL
+                    .iter()
+                    .map(|e| e.weather_weight(weather))
+                    .sum();
 
-                let duration_hours: f32 = 2.0 + rng.random::<f32>() * 4.0;
-                let duration_seconds = duration_hours * 3600.0;
+                if total_weight > 0.0 {
+                    let mut pick = rng.random::<f32>() * total_weight;
+                    let mut chosen = GridEventType::ALL[0];
+                    for &candidate in GridEventType::ALL {
+                        let w = candidate.weather_weight(weather);
+                        pick -= w;
+                        if pick <= 0.0 {
+                            chosen = candidate;
+                            break;
+                        }
+                    }
 
-                self.active_event = Some(event_type);
-                self.event_end_time = game_time + duration_seconds;
-                self.current_event_revenue = 0.0;
+                    let duration_hours: f32 = 2.0 + rng.random::<f32>() * 4.0;
+                    let duration_seconds = duration_hours * 3600.0;
+
+                    self.active_event = Some(chosen);
+                    self.event_end_time = game_time + duration_seconds;
+                    self.current_event_revenue = 0.0;
+                }
             }
         }
 
-        // 3. Track best grid event today
         if let Some(event) = self.active_event
             && event.export_multiplier() > self.best_event_export_multiplier
         {

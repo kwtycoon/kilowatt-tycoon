@@ -11,7 +11,9 @@ use bevy::prelude::*;
 
 use crate::components::BelongsToSite;
 use crate::components::charger::Charger;
-use crate::resources::{CharacterPerk, GameClock, ImageAssets, MultiSiteManager, PlayerProfile};
+use crate::resources::{
+    CharacterPerk, EnvironmentState, GameClock, ImageAssets, MultiSiteManager, PlayerProfile,
+};
 
 /// Minimum challenge level required for grid events.
 /// Level 1 (starter) keeps fixed TOU rates with no events.
@@ -28,6 +30,7 @@ pub fn grid_event_system(
     game_clock: Res<GameClock>,
     time: Res<Time>,
     image_assets: Res<ImageAssets>,
+    environment: Res<EnvironmentState>,
     toast_container: Single<Entity, With<crate::ui::toast::ToastContainer>>,
 ) {
     if game_clock.is_paused() {
@@ -40,6 +43,7 @@ pub fn grid_event_system(
     }
 
     let game_time = game_clock.game_time;
+    let weather = environment.current_weather;
 
     let mut rng = rand::rng();
 
@@ -56,7 +60,7 @@ pub fn grid_event_system(
 
         site_state
             .grid_events
-            .tick(site_state.challenge_level, game_time, &mut rng);
+            .tick(site_state.challenge_level, game_time, weather, &mut rng);
 
         if !had_event && let Some(event) = site_state.grid_events.active_event {
             let has_pm = site_state.site_upgrades.has_power_management();
@@ -64,6 +68,7 @@ pub fn grid_event_system(
                 &mut commands,
                 *toast_container,
                 event,
+                weather,
                 game_clock.game_time,
                 time.elapsed_secs(),
                 image_assets.icon_bolt.clone(),
