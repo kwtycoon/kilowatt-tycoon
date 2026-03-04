@@ -31,6 +31,7 @@ pub enum Account {
     RepairParts,
     RepairLabor,
     Maintenance,
+    Amenity,
     CableTheft,
     Warranty,
     WarrantyRecovery,
@@ -62,6 +63,7 @@ impl Account {
         Account::RepairParts,
         Account::RepairLabor,
         Account::Maintenance,
+        Account::Amenity,
         Account::CableTheft,
         Account::Warranty,
         Account::WarrantyRecovery,
@@ -85,6 +87,7 @@ impl Account {
             Self::RepairParts => "Expenses:RepairParts",
             Self::RepairLabor => "Expenses:RepairLabor",
             Self::Maintenance => "Expenses:Maintenance",
+            Self::Amenity => "Expenses:Amenity",
             Self::CableTheft => "Expenses:CableTheft",
             Self::Warranty => "Expenses:Warranty",
             Self::WarrantyRecovery => "Expenses:WarrantyRecovery",
@@ -109,6 +112,7 @@ impl Account {
             "Expenses:RepairParts" => Some(Self::RepairParts),
             "Expenses:RepairLabor" => Some(Self::RepairLabor),
             "Expenses:Maintenance" => Some(Self::Maintenance),
+            "Expenses:Amenity" => Some(Self::Amenity),
             "Expenses:CableTheft" => Some(Self::CableTheft),
             "Expenses:Warranty" => Some(Self::Warranty),
             "Expenses:WarrantyRecovery" => Some(Self::WarrantyRecovery),
@@ -134,6 +138,7 @@ impl Account {
             Self::RepairParts => "Repair Parts",
             Self::RepairLabor => "Repair Labor",
             Self::Maintenance => "Maintenance",
+            Self::Amenity => "Amenities",
             Self::CableTheft => "Cable Theft",
             Self::Warranty => "Warranty",
             Self::WarrantyRecovery => "Warranty Recovery",
@@ -167,6 +172,7 @@ impl Account {
             Self::RepairParts
             | Self::RepairLabor
             | Self::Maintenance
+            | Self::Amenity
             | Self::CableTheft
             | Self::Warranty
             | Self::WarrantyRecovery
@@ -208,6 +214,7 @@ pub struct DailyFinancials {
     pub repair_parts: f32,
     pub repair_labor: f32,
     pub maintenance: f32,
+    pub amenity: f32,
     pub cable_theft_cost: f32,
     pub warranty_cost: f32,
     pub warranty_recovery: f32,
@@ -232,6 +239,7 @@ impl DailyFinancials {
             Account::RepairParts => self.repair_parts,
             Account::RepairLabor => self.repair_labor,
             Account::Maintenance => self.maintenance,
+            Account::Amenity => self.amenity,
             Account::CableTheft => self.cable_theft_cost,
             Account::Warranty => self.warranty_cost,
             Account::WarrantyRecovery => self.warranty_recovery,
@@ -243,9 +251,9 @@ impl DailyFinancials {
         }
     }
 
-    /// Combined repair + maintenance cost (replaces the old single `opex` field).
+    /// Combined repair + maintenance + amenity cost (replaces the old single `opex` field).
     pub fn total_opex_line(&self) -> f32 {
-        self.repair_parts + self.repair_labor + self.maintenance
+        self.repair_parts + self.repair_labor + self.maintenance + self.amenity
     }
 
     /// Compute the net total for an expense category, automatically
@@ -528,6 +536,7 @@ impl Ledger {
                     Account::RepairParts => f.repair_parts += val,
                     Account::RepairLabor => f.repair_labor += val,
                     Account::Maintenance => f.maintenance += val,
+                    Account::Amenity => f.amenity += val,
                     Account::CableTheft => f.cable_theft_cost += val,
                     Account::Warranty => f.warranty_cost += val,
                     Account::WarrantyRecovery => f.warranty_recovery += val,

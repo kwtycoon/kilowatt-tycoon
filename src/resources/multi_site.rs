@@ -234,8 +234,10 @@ pub struct SiteState {
     /// Charging sessions completed today (reset at end of day)
     pub sessions_today: i32,
 
-    /// Accumulated opex cost this day, flushed to ledger at day-end
-    pub pending_opex: f32,
+    /// Accumulated maintenance cost this day, flushed to ledger at day-end
+    pub pending_maintenance: f32,
+    /// Accumulated amenity cost this day, flushed to ledger at day-end
+    pub pending_amenity: f32,
     /// Accumulated warranty cost this day, flushed to ledger at day-end
     pub pending_warranty: f32,
 
@@ -352,7 +354,8 @@ impl SiteState {
             },
             energy_delivered_kwh_today: 0.0,
             sessions_today: 0,
-            pending_opex: 0.0,
+            pending_maintenance: 0.0,
+            pending_amenity: 0.0,
             pending_warranty: 0.0,
             pending_video_ad_chargers: std::collections::HashSet::new(),
             thermal_throttle_factor: 1.0,

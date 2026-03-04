@@ -398,13 +398,21 @@ impl GameState {
                     "Solar grid export",
                 );
             }
-            if site.pending_opex > 0.0 {
+            if site.pending_maintenance > 0.0 {
                 self.ledger.record_expense(
-                    site.pending_opex,
+                    site.pending_maintenance,
                     Account::Maintenance,
                     "Site maintenance",
                 );
-                site.pending_opex = 0.0;
+                site.pending_maintenance = 0.0;
+            }
+            if site.pending_amenity > 0.0 {
+                self.ledger.record_expense(
+                    site.pending_amenity,
+                    Account::Amenity,
+                    "Amenity operating costs",
+                );
+                site.pending_amenity = 0.0;
             }
             if site.pending_warranty > 0.0 {
                 self.ledger.record_expense(

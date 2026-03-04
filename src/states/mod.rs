@@ -576,7 +576,8 @@ fn on_enter_day_end(
     let repair_parts = daily_record.financials.repair_parts;
     let repair_labor = daily_record.financials.repair_labor;
     let maintenance = daily_record.financials.maintenance;
-    let opex = repair_parts + repair_labor + maintenance;
+    let amenity = daily_record.financials.amenity;
+    let opex = repair_parts + repair_labor + maintenance + amenity;
     let cable_theft_cost = daily_record.financials.cable_theft_cost;
     let warranty_cost = daily_record.financials.warranty_cost;
     let warranty_recovery = daily_record.financials.warranty_recovery;
@@ -773,12 +774,27 @@ fn on_enter_day_end(
     } else {
         None
     };
-    let expense_hint: Option<&str> = if total_opex > total_energy && total_opex > 0.01 {
-        Some("(Mostly Repairs...)")
-    } else if total_energy > 0.01 {
-        Some("(Energy Costs)")
-    } else {
+    let expense_hint: Option<&str> = if total_expenses < 0.01 {
         None
+    } else {
+        let repairs = repair_parts + repair_labor;
+        let categories: [(&str, f32); 4] = [
+            ("energy", total_energy),
+            ("repairs", repairs),
+            ("maintenance", maintenance),
+            ("amenities", amenity),
+        ];
+        categories
+            .iter()
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .filter(|(_, v)| *v > 0.01)
+            .map(|(name, _)| match *name {
+                "energy" => "(Feeding the Grid)",
+                "repairs" => "(Duct Tape Budget)",
+                "maintenance" => "(Keeping the Lights On)",
+                "amenities" => "(The Snack Tax)",
+                _ => "(Misc.)",
+            })
     };
 
     // Unit economy (per-session)
@@ -1092,8 +1108,16 @@ fn on_enter_day_end(
                                             if maintenance > 0.01 {
                                                 spawn_indented_row(
                                                     section,
-                                                    "  Maintenance/Amenities",
+                                                    "  Maintenance",
                                                     &format!("-${:.2}", maintenance),
+                                                    Color::srgb(0.9, 0.6, 0.4),
+                                                );
+                                            }
+                                            if amenity > 0.01 {
+                                                spawn_indented_row(
+                                                    section,
+                                                    "  Amenities",
+                                                    &format!("-${:.2}", amenity),
                                                     Color::srgb(0.9, 0.6, 0.4),
                                                 );
                                             }

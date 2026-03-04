@@ -193,12 +193,15 @@ pub fn utility_billing_system(
         demand_perk_multiplier,
     );
 
-    // Accumulate opex on site (flushed to ledger at day-end)
-    let hourly_opex = site_state.service_strategy.hourly_maintenance_cost()
-        + site_state.service_strategy.amenity_cost_per_hour();
-    let opex_this_tick = hourly_opex * (delta_game_seconds / 3600.0);
-    if opex_this_tick > 0.0 {
-        site_state.pending_opex += opex_this_tick;
+    // Accumulate maintenance and amenity costs separately (flushed to ledger at day-end)
+    let tick_hours = delta_game_seconds / 3600.0;
+    let maint_this_tick = site_state.service_strategy.hourly_maintenance_cost() * tick_hours;
+    if maint_this_tick > 0.0 {
+        site_state.pending_maintenance += maint_this_tick;
+    }
+    let amenity_this_tick = site_state.service_strategy.amenity_cost_per_hour() * tick_hours;
+    if amenity_this_tick > 0.0 {
+        site_state.pending_amenity += amenity_this_tick;
     }
 
     // Accumulate warranty on site (flushed to ledger at day-end)
