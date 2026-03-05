@@ -127,23 +127,30 @@ impl GameClock {
     }
 
     pub fn pause(&mut self) {
+        if !self.is_paused() {
+            self.previous_speed = self.speed;
+        }
         self.speed = GameSpeed::Paused;
     }
 
     pub fn resume(&mut self) {
         if self.is_paused() {
-            self.speed = GameSpeed::Fast;
+            self.speed = self.previous_speed;
         }
     }
 
     pub fn set_speed(&mut self, speed: GameSpeed) {
+        if speed != GameSpeed::Paused {
+            self.previous_speed = speed;
+        }
         self.speed = speed;
     }
 
     pub fn toggle_pause(&mut self) {
         if self.is_paused() {
-            self.speed = GameSpeed::Fast;
+            self.speed = self.previous_speed;
         } else {
+            self.previous_speed = self.speed;
             self.speed = GameSpeed::Paused;
         }
     }
@@ -236,6 +243,7 @@ impl GameClock {
         self.game_time = 0.0;
         self.real_time = 0.0;
         self.speed = GameSpeed::Fast;
+        self.previous_speed = GameSpeed::Fast;
         self.day_ending = false;
         self.day_ending_since = 0.0;
     }
@@ -247,6 +255,7 @@ impl GameClock {
         self.real_time = 0.0;
         self.total_real_time = 0.0;
         self.speed = GameSpeed::Fast;
+        self.previous_speed = GameSpeed::Fast;
         self.day = 1;
         self.month = 1;
         self.year = 1;
