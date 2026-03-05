@@ -40,9 +40,18 @@ pub struct FaultToast(pub String);
 #[derive(Component)]
 pub struct SellNowButton;
 
+/// Marker on gameplay tip toasts (max one visible at a time).
+#[derive(Component)]
+pub struct TipToast;
+
+/// Marker on the "Don't show tips" button inside a tip toast.
+#[derive(Component)]
+pub struct DismissAllTipsButton;
+
 // ============ Constants ============
 
 const TOAST_DURATION_REAL: f32 = 5.0;
+const TIP_TOAST_DURATION_REAL: f32 = 8.0;
 const MAX_VISIBLE_TOASTS: usize = 3;
 
 // ============ Container Setup ============
@@ -539,6 +548,120 @@ pub fn handle_sell_now_button(
                     **text = "[OK] SELLING".to_string();
                     *text_color = TextColor(Color::srgb(1.0, 1.0, 1.0));
                 }
+            }
+        }
+    }
+}
+
+// ============ Tip Toasts ============
+
+const TIP_BG_COLOR: Color = Color::srgba(0.15, 0.45, 0.65, 0.95);
+
+/// Spawn a gameplay tip toast with a "Don't show tips" dismiss button.
+/// Despawns any existing tip toast first (max one at a time).
+pub fn spawn_tip_toast(
+    commands: &mut Commands,
+    container: Entity,
+    message: &str,
+    game_time: f32,
+    real_time: f32,
+    icon: Handle<Image>,
+    existing_tips: &Query<Entity, With<TipToast>>,
+) {
+    for entity in existing_tips.iter() {
+        commands.entity(entity).try_despawn();
+    }
+
+    let entity = commands
+        .spawn((
+            TipToast,
+            Node {
+                width: Val::Px(320.0),
+                padding: UiRect::all(Val::Px(15.0)),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(8.0),
+                ..default()
+            },
+            BackgroundColor(TIP_BG_COLOR),
+            BorderRadius::all(Val::Px(8.0)),
+            ToastNotification {
+                created_at: game_time,
+                duration: TIP_TOAST_DURATION_REAL * 100.0,
+            },
+            RealTimeToast {
+                created_at_real: real_time,
+                duration_real: TIP_TOAST_DURATION_REAL,
+            },
+        ))
+        .with_children(|parent| {
+            parent
+                .spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(10.0),
+                    align_items: AlignItems::FlexStart,
+                    ..default()
+                })
+                .with_children(|row| {
+                    row.spawn((
+                        ImageNode::new(icon),
+                        Node {
+                            width: Val::Px(24.0),
+                            height: Val::Px(24.0),
+                            ..default()
+                        },
+                    ));
+
+                    row.spawn((
+                        Text::new(message),
+                        TextFont {
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(1.0, 1.0, 1.0)),
+                        ToastText,
+                    ));
+                });
+
+            parent
+                .spawn((
+                    Button,
+                    DismissAllTipsButton,
+                    Node {
+                        padding: UiRect::axes(Val::Px(10.0), Val::Px(4.0)),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        align_self: AlignSelf::FlexEnd,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.15)),
+                    BorderRadius::all(Val::Px(4.0)),
+                ))
+                .with_child((
+                    Text::new("Don't show tips"),
+                    TextFont {
+                        font_size: 11.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.7)),
+                ));
+        })
+        .id();
+
+    commands.entity(container).add_child(entity);
+}
+
+/// Handle "Don't show tips" button: sets `dismissed_all` and despawns the tip toast.
+pub fn handle_dismiss_all_tips_button(
+    mut commands: Commands,
+    interaction_query: Query<&Interaction, (Changed<Interaction>, With<DismissAllTipsButton>)>,
+    tip_toasts: Query<Entity, With<TipToast>>,
+    mut tips_state: ResMut<crate::systems::gameplay_tips::GameplayTipsState>,
+) {
+    for interaction in &interaction_query {
+        if *interaction == Interaction::Pressed {
+            tips_state.dismissed_all = true;
+            for entity in &tip_toasts {
+                commands.entity(entity).try_despawn();
             }
         }
     }

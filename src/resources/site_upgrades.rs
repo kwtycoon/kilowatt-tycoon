@@ -235,55 +235,55 @@ impl SiteUpgrades {
         vec![
             UpgradeInfo {
                 id: UpgradeId::DemandBoost,
-                name: "Demand Blitz",
+                name: UpgradeId::DemandBoost.display_name(),
                 description: "2x customer demand for 4 hours",
                 cost: upgrade_costs::DEMAND_BOOST,
             },
             UpgradeInfo {
                 id: UpgradeId::Marketing,
-                name: "Marketing Campaign",
+                name: UpgradeId::Marketing.display_name(),
                 description: "+10% customer demand",
                 cost: upgrade_costs::MARKETING_CAMPAIGN,
             },
             UpgradeInfo {
                 id: UpgradeId::SmartLoadShedding,
-                name: "Smart Load Shedding",
+                name: UpgradeId::SmartLoadShedding.display_name(),
                 description: "Auto-throttles chargers when transformer overheats",
                 cost: upgrade_costs::SMART_LOAD_SHEDDING,
             },
             UpgradeInfo {
                 id: UpgradeId::DynamicPricing,
-                name: "Dynamic Pricing Engine",
+                name: UpgradeId::DynamicPricing.display_name(),
                 description: "Unlocks TOU, cost-plus, and surge pricing modes",
                 cost: upgrade_costs::DYNAMIC_PRICING,
             },
             UpgradeInfo {
                 id: UpgradeId::AdvancedPowerManagement,
-                name: "Advanced Power Management",
+                name: UpgradeId::AdvancedPowerManagement.display_name(),
                 description: "Unlocks power density + battery controls",
                 cost: upgrade_costs::ADVANCED_POWER_MANAGEMENT,
             },
             UpgradeInfo {
                 id: UpgradeId::OemDetect,
-                name: "O&M: Detect",
+                name: UpgradeId::OemDetect.display_name(),
                 description: "Immediate fault detection, auto-remediation",
                 cost: upgrade_costs::OEM_DETECT,
             },
             UpgradeInfo {
                 id: UpgradeId::OemOptimize,
-                name: "O&M: Optimize",
+                name: UpgradeId::OemOptimize.display_name(),
                 description: "Auto-dispatch technicians, 25% faster repairs",
                 cost: upgrade_costs::OEM_OPTIMIZE,
             },
             UpgradeInfo {
                 id: UpgradeId::CyberFirewall,
-                name: "Cyber Firewall",
+                name: UpgradeId::CyberFirewall.display_name(),
                 description: "Reduces hacker attacks by 60%, 50% block rate",
                 cost: upgrade_costs::CYBER_FIREWALL,
             },
             UpgradeInfo {
                 id: UpgradeId::AgenticSoc,
-                name: "Agentic SOC",
+                name: UpgradeId::AgenticSoc.display_name(),
                 description: "AI infosec: 90% fewer hackers, 95% block, auto-terminate",
                 cost: upgrade_costs::AGENTIC_SOC,
             },
@@ -374,6 +374,22 @@ pub enum UpgradeId {
     CyberFirewall,
     /// Tier 2 infosec — agentic SOC auto-blocks attacks (requires Firewall)
     AgenticSoc,
+}
+
+impl UpgradeId {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            UpgradeId::SmartLoadShedding => "Smart Load Shedding",
+            UpgradeId::AdvancedPowerManagement => "Advanced Power Management",
+            UpgradeId::Marketing => "Marketing Campaign",
+            UpgradeId::DynamicPricing => "Dynamic Pricing Engine",
+            UpgradeId::OemDetect => "O&M: Detect",
+            UpgradeId::OemOptimize => "O&M: Optimize",
+            UpgradeId::DemandBoost => "Demand Blitz",
+            UpgradeId::CyberFirewall => "Cyber Firewall",
+            UpgradeId::AgenticSoc => "Agentic SOC",
+        }
+    }
 }
 
 /// Info about an upgrade for UI display

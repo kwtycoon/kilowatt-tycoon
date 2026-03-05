@@ -40,6 +40,16 @@ pub enum PrimaryNav {
 }
 
 impl PrimaryNav {
+    /// Display name shown in the top navigation bar.
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            PrimaryNav::Build => "Build",
+            PrimaryNav::Strategy => "Strategy",
+            PrimaryNav::Stats => "Stats",
+            PrimaryNav::Rent => "Location",
+        }
+    }
+
     /// Get the default secondary tab for this primary
     pub fn default_secondary(&self) -> SecondaryNav {
         SecondaryNav::tabs_for_primary(*self)[0]
@@ -105,6 +115,15 @@ impl SecondaryNav {
             ],
             PrimaryNav::Rent => &[SecondaryNav::RentLocations],
         }
+    }
+
+    /// Full navigation path, e.g. `"Build > Upgrades"`.
+    pub fn nav_path(&self) -> String {
+        format!(
+            "{} > {}",
+            self.primary().display_name(),
+            self.display_name()
+        )
     }
 
     /// Display name for the tab button

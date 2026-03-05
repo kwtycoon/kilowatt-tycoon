@@ -70,7 +70,8 @@ impl Plugin for UiPlugin {
             .init_resource::<GifAnimationFrames>()
             .init_resource::<LeaderboardModalState>()
             .init_resource::<AchievementModalState>()
-            .init_resource::<LedgerModalState>();
+            .init_resource::<LedgerModalState>()
+            .init_resource::<crate::systems::gameplay_tips::GameplayTipsState>();
 
         // Main game UI setup - runs when entering Playing state
         // Initialization + HUD + character selection overlay (if first play)
@@ -185,6 +186,9 @@ impl Plugin for UiPlugin {
                     update_toasts,
                     handle_toast_clicks,
                     toast::handle_sell_now_button,
+                    // Gameplay tip toast systems
+                    crate::systems::gameplay_tips::check_gameplay_tips,
+                    toast::handle_dismiss_all_tips_button,
                     // Demand warning toast systems
                     demand_toasts::spawn_demand_burden_toast,
                     demand_toasts::update_toast_action_button_styles,

@@ -133,18 +133,22 @@ pub fn spawn_top_nav_content(parent: &mut ChildSpawnerCommands, image_assets: &I
             // Navigation Buttons with icons (Location, Build, Strategy, Stats)
             let nav_items: Vec<(&str, PrimaryNav, Handle<Image>)> = vec![
                 (
-                    "Location",
+                    PrimaryNav::Rent.display_name(),
                     PrimaryNav::Rent,
                     image_assets.icon_briefcase.clone(),
                 ),
-                ("Build", PrimaryNav::Build, image_assets.icon_plug.clone()),
                 (
-                    "Strategy",
+                    PrimaryNav::Build.display_name(),
+                    PrimaryNav::Build,
+                    image_assets.icon_plug.clone(),
+                ),
+                (
+                    PrimaryNav::Strategy.display_name(),
                     PrimaryNav::Strategy,
                     image_assets.icon_cash.clone(),
                 ),
                 (
-                    "Stats",
+                    PrimaryNav::Stats.display_name(),
                     PrimaryNav::Stats,
                     image_assets.icon_dashboard.clone(),
                 ),

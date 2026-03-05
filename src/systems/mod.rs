@@ -13,6 +13,7 @@ pub mod demand_warnings;
 pub mod driver;
 pub mod emotion;
 pub mod environment;
+pub mod gameplay_tips;
 pub mod hacker;
 pub mod interaction;
 pub mod northstar_movement;
