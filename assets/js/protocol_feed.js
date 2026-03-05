@@ -32,6 +32,17 @@
     }
   }
 
+  var detailState = null; // { tabId, runIndex } when side panel is open
+  var detailPanel = null; // right-column DOM element (created once)
+  var detailTitle = null;
+  var detailPre = null;
+  var detailPrevBtn = null;
+  var detailNextBtn = null;
+  var detailCopyBtn = null;
+  var detailPosLabel = null;
+  var highlightedRunEl = null;
+  var leftCol = null;
+
   var analysisRunning = false;
   var analyzeBtn = null;
   var resultsPanel = null;
@@ -424,6 +435,172 @@
     }
   }
 
+  // ─── JSON syntax highlighting ───
+
+  function escapeHtml(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function highlightJson(obj) {
+    var raw = JSON.stringify(obj, null, 2);
+    if (!raw) return "";
+    return escapeHtml(raw).replace(
+      /("(?:\\.|[^"\\])*")\s*:/g,
+      '<span style="color:#22d3ee;">$1</span>:'
+    ).replace(
+      /:\s*("(?:\\.|[^"\\])*")/g,
+      function (m, val) { return ': <span style="color:#4ade80;">' + val + "</span>"; }
+    ).replace(
+      /:\s*(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+      function (m, val) { return ': <span style="color:#c084fc;">' + val + "</span>"; }
+    ).replace(
+      /:\s*(true|false|null)/g,
+      function (m, val) { return ': <span style="color:#fb923c;">' + val + "</span>"; }
+    );
+  }
+
+  // ─── OCPP response matcher ───
+
+  function findOcppResponse(uniqueId) {
+    var msgs = buffers.ocpp.messages;
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      try {
+        var arr = JSON.parse(msgs[i].msg);
+        if (arr[0] === 3 && arr[1] === uniqueId) {
+          return arr[2] || {};
+        }
+      } catch (_) { /* skip */ }
+    }
+    return null;
+  }
+
+  // ─── Payload extraction per protocol ───
+
+  function extractPayloadForDrawer(tabId, entry) {
+    try {
+      if (tabId === "ocpp") {
+        var arr = JSON.parse(entry.msg);
+        var uniqueId = arr[1];
+        var payload = arr[3] || arr[2] || {};
+        if (typeof payload === "string") payload = JSON.parse(payload);
+        var response = findOcppResponse(uniqueId);
+        return { request: payload, response: response };
+      }
+      return { request: JSON.parse(entry.msg), response: null };
+    } catch (_) {
+      return { request: entry.msg, response: null };
+    }
+  }
+
+  // ─── Detail side panel ───
+
+  function clearHighlight() {
+    if (highlightedRunEl) {
+      highlightedRunEl.style.borderLeft = "none";
+      highlightedRunEl.style.paddingLeft = "10px";
+      highlightedRunEl.style.background = "transparent";
+      highlightedRunEl = null;
+    }
+  }
+
+  function closeDetail() {
+    if (!detailState) return;
+    detailState = null;
+    clearHighlight();
+    if (detailPanel) detailPanel.style.display = "none";
+    if (container) container.style.width = "500px";
+  }
+
+  function populatePanel(tabId, run) {
+    if (!run.lastEntry || !detailPanel) return;
+    var data = extractPayloadForDrawer(tabId, run.lastEntry);
+
+    detailTitle.innerHTML =
+      '<span style="color:' + run.color + ';font-weight:bold;">' +
+      escapeHtml(run.label) + '</span> ' +
+      '<span style="color:#6b7280;">' + formatTime(run.lastTs) + '</span>';
+
+    var html = "";
+    if (data.response !== null) {
+      html += '<span style="color:#94a3b8;font-weight:bold;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;">Request</span>\n';
+    }
+    if (typeof data.request === "object") {
+      html += highlightJson(data.request);
+    } else {
+      html += escapeHtml(String(data.request));
+    }
+    if (data.response !== null) {
+      html += '\n\n<span style="color:#94a3b8;font-weight:bold;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;">Response</span>\n';
+      html += highlightJson(data.response);
+    }
+    detailPre.innerHTML = html;
+    detailPre.scrollTop = 0;
+
+    detailCopyBtn._data = data;
+  }
+
+  function openDetail(tabId, runIndex) {
+    var runs = tabs[tabId].runs;
+    if (runIndex < 0 || runIndex >= runs.length) return;
+
+    if (detailState && detailState.tabId === tabId && detailState.runIndex === runIndex) {
+      closeDetail();
+      return;
+    }
+
+    clearHighlight();
+    detailState = { tabId: tabId, runIndex: runIndex };
+    var run = runs[runIndex];
+
+    run.el.style.borderLeft = "3px solid " + run.color;
+    run.el.style.paddingLeft = "7px";
+    run.el.style.background = "rgba(255,255,255,0.04)";
+    highlightedRunEl = run.el;
+
+    populatePanel(tabId, run);
+
+    detailPrevBtn.disabled = runIndex <= 0;
+    detailPrevBtn.style.opacity = runIndex <= 0 ? "0.3" : "1";
+    detailNextBtn.disabled = runIndex >= runs.length - 1;
+    detailNextBtn.style.opacity = runIndex >= runs.length - 1 ? "0.3" : "1";
+    detailPosLabel.textContent = (runIndex + 1) + "/" + runs.length;
+
+    detailPanel.style.display = "flex";
+    if (container) container.style.width = "960px";
+  }
+
+  function navigateDetail(delta) {
+    if (!detailState) return;
+    var newIndex = detailState.runIndex + delta;
+    var runs = tabs[detailState.tabId].runs;
+    if (newIndex < 0 || newIndex >= runs.length) return;
+    openDetail(detailState.tabId, newIndex);
+  }
+
+  function doCopy() {
+    var data = detailCopyBtn._data;
+    if (!data) return;
+    var text = "";
+    if (data.response !== null) {
+      text = "// Request\n" + JSON.stringify(data.request, null, 2);
+      text += "\n\n// Response\n" + JSON.stringify(data.response, null, 2);
+    } else if (typeof data.request === "object") {
+      text = JSON.stringify(data.request, null, 2);
+    } else {
+      text = String(data.request);
+    }
+    navigator.clipboard.writeText(text).then(function () {
+      detailCopyBtn.textContent = "\u2714 Copied!";
+      detailCopyBtn.style.background = "#166534";
+      detailCopyBtn.style.color = "#4ade80";
+      setTimeout(function () {
+        detailCopyBtn.textContent = "\uD83D\uDCCB Copy";
+        detailCopyBtn.style.background = "#1e293b";
+        detailCopyBtn.style.color = "#94a3b8";
+      }, 1500);
+    });
+  }
+
   // ─── Overlay construction ───
 
   function createOverlay() {
@@ -459,10 +636,14 @@
       "position:fixed;bottom:12px;right:12px;width:500px;height:360px;" +
       "z-index:50;background:rgba(10,10,20,0.92);border:1px solid #334155;" +
       "border-radius:8px;font-family:'SF Mono','Fira Code',monospace;" +
-      "font-size:11px;color:#e0e0e0;display:flex;flex-direction:column;" +
-      "box-shadow:0 4px 24px rgba(0,0,0,0.5);pointer-events:auto;" +
-      "transition:transform 0.3s ease,opacity 0.3s ease;" +
+      "font-size:11px;color:#e0e0e0;display:flex;flex-direction:row;" +
+      "box-shadow:0 4px 24px rgba(0,0,0,0.5);pointer-events:auto;overflow:hidden;" +
+      "transition:transform 0.3s ease,opacity 0.3s ease,width 0.25s ease;" +
       "transform:translateX(calc(100% + 24px));opacity:0;";
+
+    leftCol = document.createElement("div");
+    leftCol.style.cssText =
+      "width:500px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;";
 
     // Header
     var header = document.createElement("div");
@@ -591,20 +772,94 @@
     tabs.openadr.body = makeBody();
     tabs.ocpi.body = makeBody();
 
-    container.appendChild(header);
-    container.appendChild(tabBar);
-    container.appendChild(kwwhatRow);
-    container.appendChild(tabs.ocpp.body);
-    container.appendChild(tabs.openadr.body);
-    container.appendChild(tabs.ocpi.body);
+    leftCol.appendChild(header);
+    leftCol.appendChild(tabBar);
+    leftCol.appendChild(kwwhatRow);
+    leftCol.appendChild(tabs.ocpp.body);
+    leftCol.appendChild(tabs.openadr.body);
+    leftCol.appendChild(tabs.ocpi.body);
+
+    // ─── Detail side panel (right column, hidden initially) ───
+    detailPanel = document.createElement("div");
+    detailPanel.style.cssText =
+      "width:460px;flex-shrink:0;display:none;flex-direction:column;" +
+      "border-left:1px solid #334155;background:rgba(15,15,30,0.95);";
+
+    var panelToolbar = document.createElement("div");
+    panelToolbar.style.cssText =
+      "display:flex;align-items:center;padding:6px 8px;border-bottom:1px solid #334155;" +
+      "flex-shrink:0;gap:4px;";
+
+    detailTitle = document.createElement("div");
+    detailTitle.style.cssText =
+      "flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:11px;";
+
+    var navBtnCss =
+      "background:#1e293b;color:#94a3b8;border:1px solid #334155;width:24px;height:22px;" +
+      "border-radius:4px;font-family:inherit;font-size:12px;cursor:pointer;display:flex;" +
+      "align-items:center;justify-content:center;flex-shrink:0;";
+
+    detailPrevBtn = document.createElement("button");
+    detailPrevBtn.innerHTML = "\u2039";
+    detailPrevBtn.title = "Previous message";
+    detailPrevBtn.style.cssText = navBtnCss;
+    detailPrevBtn.addEventListener("click", function () { navigateDetail(-1); });
+
+    detailPosLabel = document.createElement("span");
+    detailPosLabel.style.cssText =
+      "color:#6b7280;font-size:9px;min-width:36px;text-align:center;flex-shrink:0;";
+
+    detailNextBtn = document.createElement("button");
+    detailNextBtn.innerHTML = "\u203A";
+    detailNextBtn.title = "Next message";
+    detailNextBtn.style.cssText = navBtnCss;
+    detailNextBtn.addEventListener("click", function () { navigateDetail(1); });
+
+    detailCopyBtn = document.createElement("button");
+    detailCopyBtn.textContent = "\uD83D\uDCCB Copy";
+    detailCopyBtn._data = null;
+    detailCopyBtn.style.cssText =
+      "background:#1e293b;color:#94a3b8;border:1px solid #334155;padding:2px 8px;" +
+      "border-radius:4px;font-family:inherit;font-size:10px;cursor:pointer;flex-shrink:0;" +
+      "transition:background 0.15s,color 0.15s;";
+    detailCopyBtn.addEventListener("click", function (e) { e.stopPropagation(); doCopy(); });
+
+    var detailCloseBtn = document.createElement("button");
+    detailCloseBtn.innerHTML = "\u2715";
+    detailCloseBtn.title = "Close";
+    detailCloseBtn.style.cssText =
+      "background:none;color:#94a3b8;border:1px solid #334155;width:22px;height:22px;" +
+      "border-radius:4px;font-size:11px;cursor:pointer;display:flex;align-items:center;" +
+      "justify-content:center;flex-shrink:0;";
+    detailCloseBtn.addEventListener("click", function () { closeDetail(); });
+
+    panelToolbar.appendChild(detailTitle);
+    panelToolbar.appendChild(detailPrevBtn);
+    panelToolbar.appendChild(detailPosLabel);
+    panelToolbar.appendChild(detailNextBtn);
+    panelToolbar.appendChild(detailCopyBtn);
+    panelToolbar.appendChild(detailCloseBtn);
+
+    detailPre = document.createElement("pre");
+    detailPre.style.cssText =
+      "flex:1;margin:0;padding:8px 10px;overflow-y:auto;white-space:pre-wrap;" +
+      "word-break:break-all;font-size:10px;line-height:1.5;scrollbar-width:thin;" +
+      "scrollbar-color:#334155 transparent;";
+
+    detailPanel.appendChild(panelToolbar);
+    detailPanel.appendChild(detailPre);
+
+    container.appendChild(leftCol);
+    container.appendChild(detailPanel);
     document.body.appendChild(container);
 
     switchTab("ocpp");
   }
 
   function switchTab(id) {
+    closeDetail();
     activeTab = id;
-    var btns = container.querySelectorAll("button[data-tab]");
+    var btns = leftCol.querySelectorAll("button[data-tab]");
     for (var i = 0; i < btns.length; i++) {
       var isActive = btns[i].dataset.tab === id;
       btns[i].style.color = isActive ? "#e0e0e0" : "#94a3b8";
@@ -615,7 +870,7 @@
     tabs.openadr.body.style.display = id === "openadr" ? "block" : "none";
     tabs.ocpi.body.style.display = id === "ocpi" ? "block" : "none";
 
-    var kwr = container && container.querySelector("#kwwhat-row");
+    var kwr = leftCol && leftCol.querySelector("#kwwhat-row");
     if (kwr) kwr.style.display = id === "ocpp" ? "flex" : "none";
 
     var activeBody = tabs[id].body;
@@ -646,7 +901,7 @@
         : "");
   }
 
-  function appendRun(tabId, key, label, color, fontWeight, detail, timestamp) {
+  function appendRun(tabId, key, label, color, fontWeight, detail, timestamp, entry) {
     var tab = tabs[tabId];
     var runs = tab.runs;
     var lastRun = runs.length > 0 ? runs[runs.length - 1] : null;
@@ -657,11 +912,13 @@
       lastRun.color = color;
       lastRun.fontWeight = fontWeight;
       if (detail) lastRun.lastDetail = detail;
+      if (entry) lastRun.lastEntry = entry;
       renderRunEl(lastRun);
     } else {
       var el = document.createElement("div");
       el.style.cssText =
-        "padding:1px 10px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+        "padding:1px 10px;line-height:1.5;white-space:nowrap;overflow:hidden;" +
+        "text-overflow:ellipsis;cursor:pointer;transition:background 0.1s;";
 
       var run = {
         key: key,
@@ -672,8 +929,22 @@
         firstTs: timestamp,
         lastTs: timestamp,
         lastDetail: detail,
+        lastEntry: entry || null,
+        tabId: tabId,
         el: el,
       };
+
+      el.addEventListener("mouseenter", function () {
+        if (highlightedRunEl !== el) el.style.background = "rgba(255,255,255,0.03)";
+      });
+      el.addEventListener("mouseleave", function () {
+        if (highlightedRunEl !== el) el.style.background = "transparent";
+      });
+      el.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var idx = tabs[tabId].runs.indexOf(run);
+        if (idx !== -1) openDetail(tabId, idx);
+      });
 
       renderRunEl(run);
       tab.body.appendChild(el);
@@ -681,8 +952,16 @@
       tab.msgCount++;
 
       while (tab.msgCount > MAX_MESSAGES) {
+        var evicted = runs.shift();
+        if (detailState && detailState.tabId === tabId) {
+          if (detailState.runIndex === 0) {
+            closeDetail();
+          } else {
+            detailState.runIndex--;
+          }
+        }
+        if (highlightedRunEl === evicted.el) clearHighlight();
         if (tab.body.firstChild) tab.body.removeChild(tab.body.firstChild);
-        runs.shift();
         tab.msgCount--;
       }
     }
@@ -702,7 +981,7 @@
     var isFaulted = action === "StatusNotification" && detail.indexOf("Faulted") !== -1;
     if (isFaulted) color = "#f87171";
 
-    appendRun("ocpp", label, label, color, "bold", detail, entry.timestamp);
+    appendRun("ocpp", label, label, color, "bold", detail, entry.timestamp, entry);
   }
 
   function addOpenAdrMessage(entry) {
@@ -717,7 +996,7 @@
       label = "\u2705 " + action;
     }
 
-    appendRun("openadr", action, label, color, "bold", detail, entry.timestamp);
+    appendRun("openadr", action, label, color, "bold", detail, entry.timestamp, entry);
   }
 
   function addOcpiMessage(entry) {
@@ -725,7 +1004,7 @@
     var color = OCPI_COLORS[action] || "#9ca3af";
     var detail = extractOcpiDetail(entry);
 
-    appendRun("ocpi", action, action, color, "bold", detail, entry.timestamp);
+    appendRun("ocpi", action, action, color, "bold", detail, entry.timestamp, entry);
   }
 
   // ─── Polling ───
@@ -793,6 +1072,7 @@
 
   function toggle() {
     visible = !visible;
+    if (!visible) closeDetail();
     if (container) {
       container.style.transform = visible ? "translateX(0)" : "translateX(calc(100% + 24px))";
       container.style.opacity = visible ? "1" : "0";
@@ -812,6 +1092,18 @@
       e.preventDefault();
       toggle();
     }
+    if (e.key === "Escape" && detailState) {
+      e.preventDefault();
+      closeDetail();
+    }
+    if (detailState && e.key === "ArrowLeft") {
+      e.preventDefault();
+      navigateDetail(-1);
+    }
+    if (detailState && e.key === "ArrowRight") {
+      e.preventDefault();
+      navigateDetail(1);
+    }
   });
 
   // ─── kwwhat Analysis (delegates to kwwhat_analyze.js) ───
@@ -822,7 +1114,8 @@
       resultsPanel.style.cssText =
         "position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(10,10,20,0.97);" +
         "border-radius:8px;display:flex;flex-direction:column;overflow:hidden;z-index:10;";
-      container.appendChild(resultsPanel);
+      leftCol.style.position = "relative";
+      leftCol.appendChild(resultsPanel);
     }
     resultsPanel.innerHTML = "";
     resultsPanel.style.display = "flex";

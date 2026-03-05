@@ -54,6 +54,17 @@ Grab a copy of [Tiled](https://github.com/mapeditor/tiled/releases/tag/v1.11.2) 
 
 Open the tiled project in the root of the `/asset` directory, or create a new one as you see fit!
 
+## Levels
+
+Four sites with escalating difficulty -- from a free parking lot in a US suburb to a scooter charging hub in Ho Chi Minh City. See the [Levels Overview](spec/levels/levels.md) for screenshots and summaries of each.
+
+| # | Site | Difficulty | Capacity | Details |
+|---|------|------------|----------|---------|
+| 1 | First Street Station | Easy | 1,500 kVA | [design doc](spec/levels/01_first_street.md) |
+| 2 | Quick Charge Express | Medium | 500 kVA | [design doc](spec/levels/02_quick_charge_express.md) |
+| 3 | Central Fleet Plaza | Hard | 3,000 kVA | [design doc](spec/levels/03_central_fleet_plaza.md) |
+| 4 | Scooter Alley | Expert | 800 kVA | [design doc](spec/levels/04_scooter_alley.md) |
+
 ## Project Structure
 
 ```
