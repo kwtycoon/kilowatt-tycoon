@@ -313,18 +313,29 @@ fn random_vehicle_type_for_site(
 ) -> VehicleType {
     use crate::resources::SiteArchetype;
 
-    if matches!(archetype, SiteArchetype::ScooterHub) {
-        let roll = rng.random::<f32>();
-        return match roll {
+    let roll = rng.random::<f32>();
+
+    match archetype {
+        SiteArchetype::ScooterHub => match roll {
             x if x < 0.78 => VehicleType::Scooter,    // 78%
             x if x < 0.97 => VehicleType::Motorcycle, // 19%
             x if x < 0.985 => VehicleType::Compact,   // 1.5%
             x if x < 0.995 => VehicleType::Sedan,     // 1.0%
             _ => VehicleType::Crossover,              // 0.5%
-        };
+        },
+        SiteArchetype::FleetDepot => match roll {
+            x if x < 0.25 => VehicleType::Semi,      // 25%
+            x if x < 0.47 => VehicleType::Bus,       // 22%
+            x if x < 0.65 => VehicleType::Pickup,    // 18%
+            x if x < 0.75 => VehicleType::Tractor,   // 10%
+            x if x < 0.80 => VehicleType::Firetruck, // 5%
+            x if x < 0.88 => VehicleType::Suv,       // 8%
+            x if x < 0.93 => VehicleType::Sedan,     // 5%
+            x if x < 0.97 => VehicleType::Crossover, // 4%
+            _ => VehicleType::Compact,               // 3%
+        },
+        _ => random_vehicle_type(rng),
     }
-
-    random_vehicle_type(rng)
 }
 
 /// Generate a random vehicle name based on type

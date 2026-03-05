@@ -39,21 +39,14 @@ pub fn try_execute_action(
 
     let is_reboot = matches!(action, RemoteAction::SoftReboot | RemoteAction::HardReboot);
 
-    // Guarantee success on 2nd reboot attempt (cap frustration at 2 tries)
+    // Reboots always succeed; other actions use a probability roll
     let effective_rate = charger.effective_action_success(action);
-    let success = if is_reboot && charger.reboot_attempts >= 1 {
-        true
-    } else {
-        success_roll < effective_rate
-    };
+    let success = is_reboot || success_roll < effective_rate;
 
     // Start cooldown regardless of success
     charger.start_cooldown(action);
 
     if !success {
-        if is_reboot {
-            charger.reboot_attempts += 1;
-        }
         return Ok(ActionExecutionResult {
             success: false,
             fault_resolved: false,

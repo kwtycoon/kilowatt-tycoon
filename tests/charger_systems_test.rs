@@ -268,8 +268,9 @@ fn test_remote_action_cooldowns() {
 
 #[test]
 fn test_remote_action_success_rates() {
-    // Hard reboot more reliable than soft reboot
-    assert!(RemoteAction::HardReboot.success_rate() > RemoteAction::SoftReboot.success_rate());
+    // Both reboots always succeed
+    assert_eq!(RemoteAction::SoftReboot.success_rate(), 1.0);
+    assert_eq!(RemoteAction::HardReboot.success_rate(), 1.0);
 
     // Disable always succeeds
     assert_eq!(RemoteAction::Disable.success_rate(), 1.0);
@@ -1302,56 +1303,36 @@ fn test_no_auto_redispatch_without_om_software() {
 }
 
 #[test]
-fn test_reboot_attempt_tracking_and_guaranteed_second_success() {
+fn test_reboot_always_succeeds_regardless_of_roll() {
     let mut charger = create_test_charger("CHG-001", ChargerType::DcFast);
     charger.current_fault = Some(FaultType::CommunicationError);
-    assert_eq!(charger.reboot_attempts, 0);
 
-    // First attempt with a terrible roll (0.99) should fail
+    // Even the worst possible roll (0.99) should succeed for a reboot
     let result = try_execute_action(&mut charger, RemoteAction::SoftReboot, 0.99).unwrap();
-    assert!(!result.success);
-    assert!(!result.fault_resolved);
-    assert_eq!(charger.reboot_attempts, 1);
-    assert!(charger.current_fault.is_some());
+    assert!(result.success);
+    assert!(result.fault_resolved);
+    assert!(charger.current_fault.is_none());
+}
 
-    // Clear cooldown so we can attempt again
-    charger.update_cooldowns(999.0);
+#[test]
+fn test_hard_reboot_always_succeeds() {
+    let mut charger = create_test_charger("CHG-001", ChargerType::DcFast);
+    charger.current_fault = Some(FaultType::FirmwareFault);
 
-    // Second attempt with the same terrible roll must succeed (guaranteed)
     let result = try_execute_action(&mut charger, RemoteAction::HardReboot, 0.99).unwrap();
     assert!(result.success);
     assert!(result.fault_resolved);
-    assert_eq!(charger.reboot_attempts, 0);
     assert!(charger.current_fault.is_none());
 }
 
 #[test]
-fn test_reboot_first_attempt_can_succeed() {
+fn test_reboot_clears_software_fault_but_not_hardware() {
     let mut charger = create_test_charger("CHG-001", ChargerType::DcFast);
-    charger.current_fault = Some(FaultType::PaymentError);
-    assert_eq!(charger.reboot_attempts, 0);
+    charger.current_fault = Some(FaultType::GroundFault);
 
-    // First attempt with a good roll (0.01) should succeed normally
-    let result = try_execute_action(&mut charger, RemoteAction::SoftReboot, 0.01).unwrap();
+    // Reboot succeeds but cannot resolve a hardware fault
+    let result = try_execute_action(&mut charger, RemoteAction::SoftReboot, 0.5).unwrap();
     assert!(result.success);
-    assert!(result.fault_resolved);
-    assert_eq!(charger.reboot_attempts, 0);
-    assert!(charger.current_fault.is_none());
-}
-
-#[test]
-fn test_reboot_attempts_reset_on_new_fault() {
-    let mut charger = create_test_charger("CHG-001", ChargerType::DcFast);
-    charger.current_fault = Some(FaultType::CommunicationError);
-
-    // Fail one reboot to increment the counter
-    let _ = try_execute_action(&mut charger, RemoteAction::SoftReboot, 0.99).unwrap();
-    assert_eq!(charger.reboot_attempts, 1);
-
-    // Simulate a new fault injection (as inject_fault does)
-    charger.current_fault = Some(FaultType::PaymentError);
-    charger.reboot_attempts = 0;
-
-    // Counter should be fresh for the new fault
-    assert_eq!(charger.reboot_attempts, 0);
+    assert!(!result.fault_resolved);
+    assert!(charger.current_fault.is_some());
 }

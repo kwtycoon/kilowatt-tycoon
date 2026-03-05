@@ -246,7 +246,6 @@ pub fn spawn_ambient_traffic(
     let mut rng = rand::rng();
 
     let roll = rng.random_range(0..100);
-    // Scooter Alley skews heavily toward two-wheel traffic.
     let vehicle_type = match site_state.archetype {
         SiteArchetype::ScooterHub => match roll {
             0..74 => VehicleType::Scooter,
@@ -255,10 +254,18 @@ pub fn spawn_ambient_traffic(
             98..99 => VehicleType::Sedan,
             _ => VehicleType::Crossover,
         },
+        SiteArchetype::FleetDepot => match roll {
+            0..25 => VehicleType::Semi,
+            25..47 => VehicleType::Bus,
+            47..65 => VehicleType::Pickup,
+            65..75 => VehicleType::Tractor,
+            75..80 => VehicleType::Firetruck,
+            80..88 => VehicleType::Suv,
+            88..93 => VehicleType::Sedan,
+            93..97 => VehicleType::Crossover,
+            _ => VehicleType::Compact,
+        },
         _ => match roll {
-            // Common: Sedan (25%), Crossover (18%), SUV (18%), Compact (12%), Pickup (10%)
-            // Two-wheelers: Scooter (5%), Motorcycle (5%)
-            // Commercial (rare): Bus (2%), Semi (2%), Tractor (3%)
             0..12 => VehicleType::Compact,
             12..37 => VehicleType::Sedan,
             37..55 => VehicleType::Crossover,

@@ -241,8 +241,8 @@ impl RemoteAction {
     /// Base success rate (0.0 - 1.0)
     pub fn success_rate(&self) -> f32 {
         match self {
-            RemoteAction::SoftReboot => 0.70,
-            RemoteAction::HardReboot => 0.90,
+            RemoteAction::SoftReboot => 1.0,
+            RemoteAction::HardReboot => 1.0,
             RemoteAction::ReleaseConnector => 0.80,
             RemoteAction::Disable => 1.0,
             RemoteAction::Enable => 0.95,
@@ -301,7 +301,7 @@ pub struct Charger {
     pub fault_detected_at: Option<f32>,
     /// Whether the current fault has been detected/notified to the player
     pub fault_is_detected: bool,
-    /// Failed reboot attempts for the current fault (guarantees success on 2nd try)
+    /// Reboot attempt counter for the current fault (reset on fault clear)
     pub reboot_attempts: u8,
 
     // === KPI Tracking ===

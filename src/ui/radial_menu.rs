@@ -838,6 +838,7 @@ pub fn handle_radial_menu_buttons(
     mut action_events: MessageWriter<RemoteActionRequestEvent>,
     mut dispatch_events: MessageWriter<TechnicianDispatchEvent>,
     mut selected: ResMut<SelectedChargerEntity>,
+    mut tips_state: ResMut<crate::systems::gameplay_tips::GameplayTipsState>,
 ) {
     for (button_entity, interaction, button, mut bg_color, pulse_opt) in &mut interaction_query {
         // Get the charger entity from the menu
@@ -873,13 +874,20 @@ pub fn handle_radial_menu_buttons(
                 *bg_color = BackgroundColor(BUTTON_BG_DISABLED);
             }
             Interaction::Pressed => {
+                // Track that the player attempted a radial menu action (for tip gating)
+                if enabled {
+                    match button.action {
+                        RadialMenuAction::Reboot => tips_state.manual_reboots += 1,
+                        RadialMenuAction::Dispatch => tips_state.manual_dispatches += 1,
+                        RadialMenuAction::UpgradeAntiTheft => {}
+                    }
+                }
+
                 // Start visual flash effect - insert flash component for timed animation
                 let action_success = if enabled {
-                    // Execute action and determine if it succeeded
                     match button.action {
                         RadialMenuAction::Reboot => {
                             let action = if charger.current_fault == Some(FaultType::FirmwareFault)
-                                || charger.reboot_attempts > 0
                             {
                                 RemoteAction::HardReboot
                             } else {
@@ -897,7 +905,6 @@ pub fn handle_radial_menu_buttons(
                             true
                         }
                         RadialMenuAction::Dispatch => {
-                            // Dispatch will queue if tech is busy
                             info!(
                                 "Radial menu: Dispatching technician to charger {}",
                                 charger.id

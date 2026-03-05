@@ -30,6 +30,8 @@ pub enum TipKind {
 pub struct GameplayTipsState {
     pub shown: HashSet<TipKind>,
     pub dismissed_all: bool,
+    pub manual_reboots: u32,
+    pub manual_dispatches: u32,
     last_check_game_time: f32,
 }
 
@@ -100,6 +102,8 @@ pub fn check_gameplay_tips(
         hour,
         demand_boost_active,
         game_state.reputation,
+        tips_state.manual_reboots,
+        tips_state.manual_dispatches,
     );
 
     if let Some(tip) = candidate {
@@ -131,6 +135,8 @@ fn evaluate_tips(
     hour: u32,
     demand_boost_active: bool,
     reputation: i32,
+    manual_reboots: u32,
+    manual_dispatches: u32,
 ) -> Option<TipCandidate> {
     let upgrades_path = SecondaryNav::BuildUpgrades.nav_path();
     let opex_path = SecondaryNav::StrategyOpex.nav_path();
@@ -153,14 +159,16 @@ fn evaluate_tips(
         ),
         (
             TipKind::OmDetect,
-            faulted_count >= 3 && oem_tier == OemTier::None,
+            faulted_count >= 3 && oem_tier == OemTier::None && manual_reboots >= 3,
             format!(
                 "Struggling with faults? Buy {om_detect_name} in {upgrades_path} for instant detection and remote remediation."
             ),
         ),
         (
             TipKind::OmOptimize,
-            dispatches_today >= 2 && !oem_tier.at_least(OemTier::Optimize),
+            dispatches_today >= 2
+                && !oem_tier.at_least(OemTier::Optimize)
+                && manual_dispatches >= 3,
             format!(
                 "Dispatching techs all day? {om_optimize_name} in {upgrades_path} auto-dispatches for hardware faults and speeds up repairs by 25%."
             ),
@@ -221,6 +229,8 @@ mod tests {
             8,
             false,
             50,
+            3,
+            0,
         );
         assert_eq!(tip.as_ref().map(|t| t.kind), Some(TipKind::OmDetect));
     }
@@ -242,18 +252,21 @@ mod tests {
             8,
             false,
             50,
+            5,
+            0,
         );
         assert_ne!(tip.as_ref().map(|t| t.kind), Some(TipKind::OmDetect));
     }
 
     #[test]
-    fn om_optimize_fires_after_two_dispatches() {
-        let state = empty_state();
+    fn om_detect_suppressed_before_3_reboots() {
+        let mut state = empty_state();
+        state.shown.insert(TipKind::Reliability);
         let tip = evaluate_tips(
             &state,
+            3,
+            OemTier::None,
             0,
-            OemTier::Detect,
-            2,
             0.0,
             WarrantyTier::None,
             10.0,
@@ -263,6 +276,35 @@ mod tests {
             8,
             false,
             50,
+            2,
+            0,
+        );
+        assert_ne!(
+            tip.as_ref().map(|t| t.kind),
+            Some(TipKind::OmDetect),
+            "OmDetect should not fire until the player has rebooted at least 3 times"
+        );
+    }
+
+    #[test]
+    fn om_optimize_fires_after_enough_dispatches() {
+        let state = empty_state();
+        let tip = evaluate_tips(
+            &state,
+            0,
+            OemTier::Detect,
+            2,
+            0.0,
+            WarrantyTier::None,
+            20.0,
+            0.0,
+            0.0,
+            0,
+            8,
+            false,
+            50,
+            0,
+            3,
         );
         assert_eq!(tip.as_ref().map(|t| t.kind), Some(TipKind::OmOptimize));
     }
@@ -277,15 +319,44 @@ mod tests {
             2,
             0.0,
             WarrantyTier::None,
-            10.0,
+            20.0,
             0.0,
             0.0,
             0,
             8,
             false,
             50,
+            0,
+            5,
         );
         assert_ne!(tip.as_ref().map(|t| t.kind), Some(TipKind::OmOptimize));
+    }
+
+    #[test]
+    fn om_optimize_suppressed_before_3_dispatches() {
+        let state = empty_state();
+        let tip = evaluate_tips(
+            &state,
+            0,
+            OemTier::Detect,
+            2,
+            0.0,
+            WarrantyTier::None,
+            20.0,
+            0.0,
+            0.0,
+            0,
+            8,
+            false,
+            50,
+            0,
+            2,
+        );
+        assert_ne!(
+            tip.as_ref().map(|t| t.kind),
+            Some(TipKind::OmOptimize),
+            "OmOptimize should not fire until the player has dispatched at least 3 times"
+        );
     }
 
     #[test]
@@ -305,6 +376,8 @@ mod tests {
             8,
             false,
             50,
+            0,
+            0,
         );
         assert_eq!(tip.as_ref().map(|t| t.kind), Some(TipKind::Warranty));
     }
@@ -326,6 +399,8 @@ mod tests {
             8,
             false,
             50,
+            0,
+            0,
         );
         assert_ne!(tip.as_ref().map(|t| t.kind), Some(TipKind::Warranty));
     }
@@ -347,6 +422,8 @@ mod tests {
             8,
             false,
             50,
+            0,
+            0,
         );
         assert_eq!(tip.as_ref().map(|t| t.kind), Some(TipKind::Reliability));
     }
@@ -368,6 +445,8 @@ mod tests {
             8,
             false,
             50,
+            0,
+            0,
         );
         assert_ne!(tip.as_ref().map(|t| t.kind), Some(TipKind::Reliability));
     }
@@ -389,6 +468,8 @@ mod tests {
             12,
             false,
             50,
+            0,
+            0,
         );
         assert_eq!(tip.as_ref().map(|t| t.kind), Some(TipKind::PriceLow));
     }
@@ -410,6 +491,8 @@ mod tests {
             8,
             false,
             50,
+            0,
+            0,
         );
         assert_eq!(tip.as_ref().map(|t| t.kind), Some(TipKind::DemandBoost));
     }
@@ -431,6 +514,8 @@ mod tests {
             8,
             true,
             50,
+            0,
+            0,
         );
         assert_ne!(tip.as_ref().map(|t| t.kind), Some(TipKind::DemandBoost));
     }
@@ -454,6 +539,8 @@ mod tests {
             8,
             false,
             50,
+            5,
+            0,
         );
         assert_ne!(tip.as_ref().map(|t| t.kind), Some(TipKind::OmDetect));
         assert_ne!(tip.as_ref().map(|t| t.kind), Some(TipKind::Reliability));
@@ -476,6 +563,8 @@ mod tests {
             8,
             false,
             50,
+            5,
+            0,
         );
         assert_eq!(
             tip.as_ref().map(|t| t.kind),
@@ -501,6 +590,8 @@ mod tests {
             12,
             true,
             50,
+            0,
+            0,
         );
         assert!(tip.is_none());
     }
@@ -523,6 +614,8 @@ mod tests {
             8,
             false,
             50,
+            3,
+            0,
         );
         let msg = tip.expect("should fire om_detect").message;
         assert!(
@@ -549,6 +642,8 @@ mod tests {
             8,
             false,
             50,
+            3,
+            0,
         );
         let msg = tip.expect("should fire om_detect").message;
         assert!(
@@ -574,6 +669,8 @@ mod tests {
             8,
             false,
             50,
+            0,
+            0,
         );
         let msg = tip.expect("should fire demand_boost").message;
         assert!(
