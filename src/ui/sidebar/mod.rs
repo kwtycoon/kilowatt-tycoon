@@ -252,7 +252,7 @@ pub fn spawn_sidebar_content(
                 flex_direction: FlexDirection::Column,
                 padding: UiRect::all(Val::Px(12.0)),
                 row_gap: Val::Px(10.0),
-                overflow: Overflow::clip_y(),
+                overflow: Overflow::scroll_y(),
                 display: Display::Flex,
                 ..default()
             },

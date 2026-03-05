@@ -430,20 +430,17 @@ test.describe("Full gameplay flow", () => {
 
     // ── 14. Go to Locations panel ───────────────────────────────────
     // Rent panel children (CarouselButton, RentSiteButton) spawned via
-    // deferred commands report zero ComputedNode size due to a Bevy layout
-    // quirk. We use the RentPanel container rect (which IS laid out) as
-    // an anchor and click at relative offsets within it.
+    // deferred commands report zero ComputedNode size (Bevy layout quirk).
+    // We use the RentPanel container rect as an anchor and click at
+    // proportional offsets within it.
     await tapElement(page, "NavButton_Rent");
     await page.waitForTimeout(2_000);
-    const panel = await waitForElement(page, "RentPanel", 15_000);
+    let panel = await waitForElement(page, "RentPanel", 15_000);
     log(`Locations panel visible: x=${panel.x.toFixed(0)} y=${panel.y.toFixed(0)} w=${panel.width.toFixed(0)} h=${panel.height.toFixed(0)}`);
     await snap(page, "14-locations-panel");
 
     // ── 15. Click Next carousel arrow ──────────────────────────────
-    // Rent panel children have zero-size ComputedNode (Bevy deferred-
-    // command layout bug), so we click at proportional offsets from the
-    // RentPanel CSS rect. The ">" button sits at ~17% from the top and
-    // near the right edge.
+    // The ">" button sits at ~17% from the panel top, near the right edge.
     const carouselNextX = panel.x + panel.width * 0.9;
     const carouselNextY = panel.y + panel.height * 0.17;
 
@@ -459,11 +456,15 @@ test.describe("Full gameplay flow", () => {
     await snap(page, "15-location-2");
 
     // ── 16. Buy location 2 (Rent button in the card) ────────────────
-    // The Rent button sits at ~90% from the panel top, centered.
-    // We try a few proportional offsets to handle layout variation.
+    // After carousel advance, the panel content is rebuilt (different site
+    // card). Re-fetch the panel rect so proportional offsets are accurate.
+    await page.waitForTimeout(1_000);
+    panel = await waitForElement(page, "RentPanel", 15_000);
+    log(`Panel rect after carousel: x=${panel.x.toFixed(0)} y=${panel.y.toFixed(0)} w=${panel.width.toFixed(0)} h=${panel.height.toFixed(0)}`);
+
     const firstSiteId = day2State!.viewed_site_id;
     const rentBtnX = panel.x + panel.width * 0.5;
-    const rentPcts = [0.90, 0.85, 0.95, 0.80];
+    const rentPcts = [0.92, 0.88, 0.95, 0.85, 0.80];
 
     for (const pct of rentPcts) {
       const rentBtnY = panel.y + panel.height * pct;
@@ -486,8 +487,6 @@ test.describe("Full gameplay flow", () => {
     await snap(page, "16-bought-location-2");
 
     // ── 17. Verify purchase and new site view ───────────────────────
-    // Site tab entities also have the zero-layout bug, so we verify
-    // ownership and view state via the bridge instead of clicking tabs.
     expect(afterBuy!.viewed_site_id).not.toBe(firstSiteId);
     log(`Verified: 2 sites owned, viewing new site (id=${afterBuy!.viewed_site_id})`);
     await snap(page, "17-verified");

@@ -70,7 +70,7 @@ pub fn update_rent_panel(
     carousel: Res<RentCarouselState>,
     game_state: Res<GameState>,
     image_assets: Res<ImageAssets>,
-    panel_query: Query<Entity, With<RentPanel>>,
+    panel_query: Query<(Entity, &Node), With<RentPanel>>,
     children_query: Query<&Children>,
     mut dirty: ResMut<RentPanelDirty>,
     mut commands: Commands,
@@ -82,9 +82,14 @@ pub fn update_rent_panel(
     if !dirty.0 {
         return;
     }
-    dirty.0 = false;
 
-    for entity in &panel_query {
+    for (entity, node) in &panel_query {
+        if node.display == Display::None {
+            continue;
+        }
+
+        dirty.0 = false;
+
         if let Ok(children) = children_query.get(entity) {
             for child in children.iter() {
                 commands.entity(child).try_despawn();
