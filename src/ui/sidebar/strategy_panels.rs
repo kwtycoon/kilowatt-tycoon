@@ -499,12 +499,13 @@ fn spawn_opex_panel(parent: &mut ChildSpawnerCommands, image_assets: &ImageAsset
                     width: Val::Percent(100.0),
                     padding: UiRect::all(Val::Px(8.0)),
                     margin: UiRect::bottom(Val::Px(8.0)),
+                    display: Display::None,
                     ..default()
                 },
                 BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.8)),
                 OpexControlsLockOverlay,
             )).with_child((
-                Text::new("Purchase O&M: Detect in Build > Upgrades to unlock these controls."),
+                Text::new("Optional: O&M upgrades add fault automation and faster recovery."),
                 TextFont { font_size: 11.0, ..default() },
                 TextColor(Color::srgb(0.9, 0.7, 0.3)),
             ));
@@ -912,7 +913,6 @@ pub fn handle_strategy_panel_buttons(
 
     // Cache upgrade status for gating
     let has_power_management = site_state.site_upgrades.has_power_management();
-    let has_oem = site_state.site_upgrades.has_om_software();
 
     let price_hacked = site_state
         .service_strategy
@@ -955,19 +955,12 @@ pub fn handle_strategy_panel_buttons(
                     (site_state.service_strategy.target_power_density + delta).clamp(0.5, 2.0);
             }
             StrategyControl::Maintenance => {
-                // Requires any OEM tier
-                if !has_oem {
-                    continue;
-                }
                 let maint_delta = if is_minus.is_some() { -5.0 } else { 5.0 };
                 site_state.service_strategy.maintenance_investment =
                     (site_state.service_strategy.maintenance_investment + maint_delta)
                         .clamp(0.0, 50.0);
             }
             StrategyControl::WarrantyTier => {
-                if !has_oem {
-                    continue;
-                }
                 site_state.service_strategy.warranty_tier = if is_minus.is_some() {
                     site_state.service_strategy.warranty_tier.prev()
                 } else {
@@ -1345,26 +1338,17 @@ pub fn update_power_lock_overlay(
 
 /// Update OPEX panel lock overlay visibility based on OEM tier upgrade
 pub fn update_opex_lock_overlay(
-    multi_site: Res<crate::resources::MultiSiteManager>,
+    _multi_site: Res<crate::resources::MultiSiteManager>,
     mut overlay_query: Query<&mut Node, With<OpexControlsLockOverlay>>,
 ) {
-    let has_upgrade = multi_site
-        .active_site()
-        .is_some_and(|site| site.site_upgrades.has_om_software());
-
     for mut node in &mut overlay_query {
-        node.display = if has_upgrade {
-            Display::None
-        } else {
-            Display::Flex
-        };
+        node.display = Display::None;
     }
 }
 
-/// Update maintenance slider visual state based on OEM tier upgrade
-/// Dims buttons, slider, and text when no OEM tier is purchased
+/// Keep maintenance controls visually enabled regardless of OEM tier.
 pub fn update_maintenance_control_visual_state(
-    multi_site: Res<crate::resources::MultiSiteManager>,
+    _multi_site: Res<crate::resources::MultiSiteManager>,
     mut button_query: Query<(&StrategyControl, &mut BackgroundColor), With<Button>>,
     mut slider_fill_query: Query<
         (&SliderFill, &mut BackgroundColor),
@@ -1377,63 +1361,32 @@ pub fn update_maintenance_control_visual_state(
     mut label_text_query: Query<(&SliderLabelText, &mut TextColor)>,
     mut value_text_query: Query<&mut TextColor, (With<MaintenanceLabel>, Without<SliderLabelText>)>,
 ) {
-    let has_upgrade = multi_site
-        .active_site()
-        .is_some_and(|site| site.site_upgrades.has_om_software());
-
-    // Update button colors for maintenance controls
     for (control, mut bg) in &mut button_query {
         if matches!(control, StrategyControl::Maintenance) {
-            *bg = if has_upgrade {
-                BackgroundColor(colors::BUTTON_NORMAL)
-            } else {
-                BackgroundColor(colors::BUTTON_DISABLED)
-            };
+            *bg = BackgroundColor(colors::BUTTON_NORMAL);
         }
     }
 
-    // Update slider fill color for maintenance control
     for (slider_fill, mut bg) in &mut slider_fill_query {
         if matches!(slider_fill.0, StrategyControl::Maintenance) {
-            *bg = if has_upgrade {
-                BackgroundColor(colors::SLIDER_FILL)
-            } else {
-                // Dimmed version of slider fill
-                BackgroundColor(Color::srgba(0.3, 0.5, 0.3, 0.5))
-            };
+            *bg = BackgroundColor(colors::SLIDER_FILL);
         }
     }
 
-    // Update slider track color for maintenance control
     for (slider_track, mut bg) in &mut slider_track_query {
         if matches!(slider_track.0, StrategyControl::Maintenance) {
-            *bg = if has_upgrade {
-                BackgroundColor(colors::SLIDER_TRACK)
-            } else {
-                // Dimmed version of slider track
-                BackgroundColor(Color::srgba(0.15, 0.18, 0.15, 0.5))
-            };
+            *bg = BackgroundColor(colors::SLIDER_TRACK);
         }
     }
 
-    // Update label text color for maintenance control
     for (label_text, mut text_color) in &mut label_text_query {
         if matches!(label_text.0, StrategyControl::Maintenance) {
-            *text_color = if has_upgrade {
-                TextColor(colors::TEXT_SECONDARY)
-            } else {
-                TextColor(colors::TEXT_DISABLED)
-            };
+            *text_color = TextColor(colors::TEXT_SECONDARY);
         }
     }
 
-    // Update value text color for maintenance control
     for mut text_color in &mut value_text_query {
-        *text_color = if has_upgrade {
-            TextColor(colors::TYCOON_GREEN)
-        } else {
-            TextColor(colors::TEXT_DISABLED)
-        };
+        *text_color = TextColor(colors::TYCOON_GREEN);
     }
 }
 

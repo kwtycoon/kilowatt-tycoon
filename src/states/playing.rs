@@ -5,8 +5,8 @@
 
 use bevy::prelude::*;
 
-use super::AppState;
 use crate::resources::BuildState;
+use crate::states::AppState;
 
 /// Run condition: returns true if the game is in the Playing state
 pub fn is_playing(state: Res<State<AppState>>) -> bool {
@@ -47,3 +47,31 @@ pub fn check_game_over_transition(
         next_state.set(AppState::GameOver);
     }
 }
+
+/// Called when entering the playing state.
+pub fn on_enter_playing(
+    mut commands: Commands,
+    mut game_state: ResMut<crate::resources::GameState>,
+    mut multi_site: ResMut<crate::resources::MultiSiteManager>,
+    mut game_clock: ResMut<crate::resources::GameClock>,
+    achievement_state: Res<crate::resources::achievements::AchievementState>,
+) {
+    if game_state.result.is_ended() {
+        game_state.reset();
+        *multi_site = crate::resources::MultiSiteManager::default();
+        game_clock.reset();
+    }
+
+    if let Some(date) =
+        chrono::NaiveDate::from_ymd_opt(game_clock.year as i32, game_clock.month, game_clock.day)
+    {
+        game_state.ledger.current_date = date;
+    }
+
+    commands.insert_resource(crate::resources::achievements::AchievementSnapshot {
+        unlocked_at_day_start: achievement_state.snapshot(),
+    });
+}
+
+/// Called when exiting the playing state.
+pub fn on_exit_playing() {}
