@@ -5,6 +5,7 @@ pub mod asset_handles;
 pub mod build_state;
 pub mod charger_queue;
 pub mod demand;
+pub mod fleet;
 pub mod game_clock;
 pub mod game_data;
 pub mod game_state;
@@ -32,6 +33,7 @@ pub use asset_handles::*;
 pub use build_state::*;
 pub use charger_queue::*;
 pub use demand::*;
+pub use fleet::*;
 pub use game_clock::*;
 pub use game_data::*;
 pub use game_state::*;
@@ -90,6 +92,8 @@ impl Plugin for ResourcesPlugin {
             // Leaderboard data
             .init_resource::<LeaderboardData>()
             .init_resource::<UnitSystem>()
+            .init_resource::<FleetContractManager>()
+            .init_resource::<crate::resources::fleet::FleetDebugMode>()
             .init_resource::<crate::systems::robber::DailyRobberyTracker>()
             .init_resource::<crate::systems::hacker::DailyHackerTracker>()
             .add_systems(Startup, (load_image_assets, load_audio_assets));

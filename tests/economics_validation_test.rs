@@ -15,8 +15,8 @@ mod test_utils;
 
 use kilowatt_tycoon::components::charger::{Charger, ChargerTier};
 use kilowatt_tycoon::resources::{
-    DEFAULT_CUSTOMERS_PER_HOUR, GameState, STARTING_CASH, ServiceStrategy, SiteEnergyConfig,
-    time_of_day_multiplier,
+    DEFAULT_CUSTOMERS_PER_HOUR, GameState, ReputationSource, STARTING_CASH, ServiceStrategy,
+    SiteEnergyConfig, time_of_day_multiplier,
 };
 
 // ============ Revenue Margin Tests ============
@@ -1457,14 +1457,14 @@ fn test_reputation_not_death_spiral() {
 
     // Simulate a bad day: 3 faults during sessions (-4 each),
     // 1 frustrated driver (-5), 1 theft (no direct rep penalty from theft itself)
-    game_state.change_reputation(-4); // Fault 1
-    game_state.change_reputation(-4); // Fault 2
-    game_state.change_reputation(-4); // Fault 3
-    game_state.change_reputation(-5); // Frustrated driver
+    game_state.record_reputation(ReputationSource::ChargerFault);
+    game_state.record_reputation(ReputationSource::ChargerFault);
+    game_state.record_reputation(ReputationSource::ChargerFault);
+    game_state.record_reputation(ReputationSource::AngryDriver(-5));
 
     // But also 15 successful sessions (+2 each)
     for _ in 0..15 {
-        game_state.change_reputation(2);
+        game_state.record_reputation(ReputationSource::ChargingSession);
     }
 
     println!(

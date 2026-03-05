@@ -46,6 +46,8 @@ pub struct OcpiChargerState {
     pub active_driver: Option<Entity>,
     pub active_id_tag: Option<String>,
     pub is_roaming: bool,
+    pub is_fleet: bool,
+    pub fleet_contract_id: Option<String>,
 }
 
 impl Default for OcpiChargerState {
@@ -61,6 +63,8 @@ impl Default for OcpiChargerState {
             active_driver: None,
             active_id_tag: None,
             is_roaming: false,
+            is_fleet: false,
+            fleet_contract_id: None,
         }
     }
 }

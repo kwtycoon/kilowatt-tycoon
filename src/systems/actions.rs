@@ -164,8 +164,7 @@ pub fn action_system(
                         .unwrap_or(1.0);
                     charger.recover_reliability_fast_fix(downtime, oem_recovery);
 
-                    // Successful fault resolution earns a small reputation bonus
-                    game_state.change_reputation(1);
+                    game_state.record_reputation(crate::resources::ReputationSource::Repair);
 
                     // Clear fault timestamps
                     charger.fault_occurred_at = None;

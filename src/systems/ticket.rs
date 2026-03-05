@@ -48,7 +48,7 @@ pub fn ticket_sla_system(
             };
 
             game_state.add_penalty(penalty);
-            game_state.change_reputation(-5);
+            game_state.record_reputation(crate::resources::ReputationSource::TicketEscalation);
             game_state.tickets_escalated += 1;
 
             info!("Ticket {} escalated! Penalty: ${:.2}", ticket.id, penalty);

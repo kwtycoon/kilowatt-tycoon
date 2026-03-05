@@ -313,7 +313,7 @@ pub fn update_transformer_overload_fire_state(
             transformer.overload_seconds = FIRE_IGNITION_OVERLOAD_SECONDS;
             transformer.last_warning_level = 0;
             game_state.add_penalty(FIRE_INCIDENT_FINE);
-            game_state.change_reputation(-10);
+            game_state.record_reputation(crate::resources::ReputationSource::TransformerFire);
             fire_events.write(TransformerFireEvent {
                 grid_pos: transformer.grid_pos,
             });

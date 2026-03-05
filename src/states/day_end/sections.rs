@@ -3,9 +3,10 @@ use bevy::prelude::*;
 
 use crate::states::KpiToggleButton;
 use crate::states::day_end::helpers::{
-    energy_margin_insight, format_delta, format_int_delta, operations_insight, reputation_insight,
-    spawn_indented_row, spawn_insight_row, spawn_prominent_stat_row, spawn_section_divider,
-    spawn_section_header, spawn_stat_row, spawn_stat_row_with_hint, unit_economy_verdict,
+    energy_margin_insight, fleet_insight, format_delta, format_int_delta, operations_insight,
+    reputation_insight, spawn_indented_row, spawn_insight_row, spawn_prominent_stat_row,
+    spawn_section_divider, spawn_section_header, spawn_stat_row, spawn_stat_row_with_hint,
+    unit_economy_verdict,
 };
 use crate::states::day_end::report::DayEndReport;
 use crate::states::day_end::{KpiCollapsed, KpiExpanded};
@@ -343,42 +344,28 @@ fn spawn_kpi_expanded_view(parent: &mut ChildSpawnerCommands, report: &DayEndRep
                 }
             }
 
-            // C. Reputation
+            // C. Reputation (itemised breakdown — every line is actual rep points)
             let rep_section_color = Color::srgb(0.4, 0.7, 0.9);
             spawn_section_header(section, "Reputation", "[#]", rep_section_color);
-            spawn_indented_row(
-                section,
-                "  Successful Charges",
-                &format!("+{}", report.sessions_delta),
-                Color::srgb(0.4, 0.9, 0.4),
-            );
-            if report.sessions_failed_today > 0 {
+            for (name, delta) in report.reputation_breakdown.iter_nonzero() {
+                let color = if delta >= 0 {
+                    Color::srgb(0.4, 0.9, 0.4)
+                } else {
+                    Color::srgb(0.9, 0.4, 0.4)
+                };
                 spawn_indented_row(
                     section,
-                    "  Angry Drivers",
-                    &format!("{}", report.sessions_failed_today),
-                    Color::srgb(0.9, 0.4, 0.4),
+                    &format!("  {name}"),
+                    &format_int_delta(delta),
+                    color,
                 );
             }
-            spawn_indented_row(
-                section,
-                "  Charger Availability",
-                &format!(
-                    "{}/{} online",
-                    report.chargers_online, report.chargers_total
-                ),
-                if report.chargers_online < report.chargers_total {
-                    Color::srgb(0.9, 0.7, 0.4)
-                } else {
-                    Color::srgb(0.4, 0.9, 0.4)
-                },
-            );
             spawn_section_divider(section, rep_section_color);
             spawn_indented_row(
                 section,
                 "  Net Change",
                 &format_int_delta(report.reputation_delta),
-                report.rep_color,
+                report.rep_delta_color,
             );
             spawn_insight_row(
                 section,
@@ -431,7 +418,80 @@ fn spawn_kpi_expanded_view(parent: &mut ChildSpawnerCommands, report: &DayEndRep
                 );
             }
 
-            // E. Solar Export
+            // E. Fleet Contract
+            if report.fleet_active {
+                let fleet_color = Color::srgb(0.4, 0.8, 1.0);
+                spawn_section_header(section, "Fleet Contract", "[F]", fleet_color);
+
+                let status_text = if report.fleet_terminated {
+                    "TERMINATED"
+                } else {
+                    report.fleet_company_name.as_str()
+                };
+                let status_color = if report.fleet_terminated {
+                    Color::srgb(0.9, 0.3, 0.3)
+                } else {
+                    fleet_color
+                };
+                spawn_indented_row(section, "  Status", status_text, status_color);
+                spawn_indented_row(
+                    section,
+                    "  Vehicles Charged",
+                    &format!(
+                        "{}/{}",
+                        report.fleet_vehicles_charged, report.fleet_vehicles_expected
+                    ),
+                    Color::WHITE,
+                );
+                if report.fleet_vehicles_missed > 0 {
+                    spawn_indented_row(
+                        section,
+                        "  Vehicles Missed",
+                        &format!("{}", report.fleet_vehicles_missed),
+                        Color::srgb(0.9, 0.4, 0.4),
+                    );
+                }
+                if report.fleet_retainer > 0.0 {
+                    spawn_indented_row(
+                        section,
+                        "  Retainer Earned",
+                        &format!("+${:.0}", report.fleet_retainer),
+                        Color::srgb(0.4, 0.9, 0.4),
+                    );
+                }
+                if report.fleet_penalties > 0.0 {
+                    spawn_indented_row(
+                        section,
+                        "  Fleet Penalties",
+                        &format!("-${:.0}", report.fleet_penalties),
+                        Color::srgb(0.9, 0.4, 0.4),
+                    );
+                }
+                spawn_section_divider(section, fleet_color);
+                if !report.fleet_terminated {
+                    let health_color = if report.fleet_breaches_remaining <= 3 {
+                        Color::srgb(0.9, 0.4, 0.4)
+                    } else {
+                        Color::srgb(0.6, 0.6, 0.6)
+                    };
+                    spawn_indented_row(
+                        section,
+                        "  Breaches Remaining",
+                        &format!("{}", report.fleet_breaches_remaining),
+                        health_color,
+                    );
+                }
+                spawn_insight_row(
+                    section,
+                    fleet_insight(
+                        report.fleet_vehicles_missed,
+                        report.fleet_breaches_remaining,
+                        report.fleet_terminated,
+                    ),
+                );
+            }
+
+            // F. Solar Export
             if report.has_solar {
                 let solar_color = Color::srgb(1.0, 0.85, 0.1);
                 spawn_section_header(section, "Solar Export", "[>]", solar_color);
@@ -559,20 +619,6 @@ fn spawn_kpi_collapsed_view(parent: &mut ChildSpawnerCommands, report: &DayEndRe
                 ),
                 report.rep_color,
             );
-            spawn_stat_row(
-                section,
-                "Station Status",
-                &format!(
-                    "{}/{} Online",
-                    report.chargers_online, report.chargers_total
-                ),
-                if report.chargers_online < report.chargers_total {
-                    Color::srgb(0.9, 0.7, 0.4)
-                } else {
-                    Color::srgb(0.4, 0.9, 0.4)
-                },
-            );
-
             // Pro-Tip callout box
             section
                 .spawn((

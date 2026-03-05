@@ -193,8 +193,13 @@ fn evaluate_emotion_for_state(
                 (EmotionMood::Happy, EmotionReason::ChargingStarted)
             }
         }
-        DriverState::Complete | DriverState::Leaving => {
-            (EmotionMood::VeryHappy, EmotionReason::ChargingComplete)
+        DriverState::Complete => (EmotionMood::VeryHappy, EmotionReason::ChargingComplete),
+        DriverState::Leaving => {
+            if driver.charge_received_kwh > 0.0 {
+                (EmotionMood::VeryHappy, EmotionReason::ChargingComplete)
+            } else {
+                (EmotionMood::Neutral, EmotionReason::MustWait)
+            }
         }
         DriverState::LeftAngry => (EmotionMood::Angry, EmotionReason::LeavingAngry),
     }

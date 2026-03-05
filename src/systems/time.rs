@@ -119,7 +119,8 @@ pub fn day_ending_system(
                         charger.pending_ad_revenue = 0.0;
                     }
                     game_state.sessions_completed += 1;
-                    game_state.change_reputation(2);
+                    game_state
+                        .record_reputation(crate::resources::ReputationSource::ChargingSession);
 
                     // Update charger KPIs
                     charger.total_energy_delivered_kwh += driver.charge_received_kwh;

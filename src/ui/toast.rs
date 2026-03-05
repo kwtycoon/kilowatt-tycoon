@@ -7,6 +7,7 @@
 use bevy::prelude::*;
 
 use crate::events::{AchievementUnlockedEvent, ChargerFaultEvent, RepairFailedEvent};
+use crate::resources::fleet::FleetContractTerminatedEvent;
 use crate::resources::{GameClock, ImageAssets};
 
 // ============ Components ============
@@ -237,6 +238,34 @@ pub fn spawn_repair_failed_toasts(
             time.elapsed_secs(),
             image_assets.icon_fault.clone(),
             Color::srgba(0.95, 0.7, 0.2, 0.95),
+        );
+        commands.entity(container).add_child(entity);
+    }
+}
+
+/// Spawn a toast when a fleet contract is terminated due to excessive breaches.
+pub fn spawn_fleet_terminated_toasts(
+    mut commands: Commands,
+    mut terminated_events: MessageReader<FleetContractTerminatedEvent>,
+    game_clock: Res<GameClock>,
+    time: Res<Time>,
+    image_assets: Res<ImageAssets>,
+    container: Single<Entity, With<ToastContainer>>,
+) {
+    let container = *container;
+    for event in terminated_events.read() {
+        let message = format!(
+            "Fleet contract terminated: {}\n{} breaches \u{2014} ${:.0} fine",
+            event.company_name, event.breaches_total, event.termination_fine,
+        );
+
+        let entity = spawn_toast_custom(
+            &mut commands,
+            message,
+            game_clock.game_time,
+            time.elapsed_secs(),
+            image_assets.icon_warning.clone(),
+            Color::srgba(0.7, 0.2, 0.15, 0.95),
         );
         commands.entity(container).add_child(entity);
     }

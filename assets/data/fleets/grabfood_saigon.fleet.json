@@ -1,0 +1,19 @@
+{
+  "id": "grabfood_saigon",
+  "company_name": "GrabFood Saigon",
+  "company_color": { "r": 0.0, "g": 0.7, "b": 0.35 },
+  "vehicle_types": ["scooter"],
+  "vehicles_per_day": 25,
+  "time_windows": [
+    { "start_hour": 5, "end_hour": 7, "vehicle_count": 10 },
+    { "start_hour": 14, "end_hour": 16, "vehicle_count": 8 },
+    { "start_hour": 22, "end_hour": 24, "vehicle_count": 7 }
+  ],
+  "contracted_price_per_kwh": 0.10,
+  "daily_payment": 2000.0,
+  "penalty_per_miss": 40.0,
+  "reputation_penalty_per_miss": 2,
+  "max_breaches_before_termination": 15,
+  "termination_fine": 500.0,
+  "site_archetype": "ScooterHub"
+}

@@ -554,8 +554,7 @@ pub fn kick_drivers_from_faulted_chargers(
                 // Driver leaves immediately - angry, no payment
                 driver.state = DriverState::LeftAngry;
 
-                // Reputation penalty - charger broke during their session
-                game_state.change_reputation(-4);
+                game_state.record_reputation(crate::resources::ReputationSource::ChargerFault);
                 game_state.sessions_failed += 1;
                 game_state.daily_history.current_day.sessions_failed_today += 1;
 

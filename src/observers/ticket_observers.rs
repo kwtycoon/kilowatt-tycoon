@@ -66,8 +66,7 @@ pub fn on_ticket_escalated_global(trigger: On<TicketEscalated>, mut game_state: 
     // Update escalation count
     game_state.tickets_escalated += 1;
 
-    // Escalations hurt reputation
-    game_state.change_reputation(-2);
+    game_state.record_reputation(crate::resources::ReputationSource::TicketEscalation);
 }
 
 /// Entity-specific observer for ticket creation.

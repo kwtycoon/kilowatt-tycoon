@@ -13,6 +13,7 @@ pub mod demand_warnings;
 pub mod driver;
 pub mod emotion;
 pub mod environment;
+pub mod fleet;
 pub mod gameplay_tips;
 pub mod hacker;
 pub mod interaction;
@@ -59,6 +60,7 @@ pub use charger::*;
 pub use driver::*;
 pub use emotion::*;
 pub use environment::*;
+pub use fleet::*;
 pub use hacker::*;
 pub use interaction::*;
 pub use northstar_movement::*;
@@ -203,6 +205,7 @@ impl Plugin for SystemsPlugin {
                 driver_spawn_system,
                 driver_arrival_system,
                 ambient_to_customer_system,
+                fleet::fleet_spawn_system,
             )
                 .in_set(GameSystemSet::DriverSpawn),
         );
@@ -303,6 +306,16 @@ impl Plugin for SystemsPlugin {
                 .run_if(in_state(AppState::Playing).and(is_station_open)),
         );
 
+        // Fleet contract offer banner (non-blocking accept/decline prompt)
+        app.add_systems(
+            Update,
+            (
+                fleet::spawn_fleet_offer_banner,
+                fleet::fleet_offer_interaction_system,
+            )
+                .run_if(in_state(AppState::Playing)),
+        );
+
         // Scenario scripted events (monsoon floods, brownouts, swap competitor, etc.)
         app.add_systems(
             Update,
@@ -351,6 +364,7 @@ impl Plugin for SystemsPlugin {
                 init_driver_emotions,
                 evaluate_driver_emotions,
                 sync_mood_with_emotion,
+                fleet::fleet_sla_system,
             )
                 .in_set(GameSystemSet::PatienceUpdate),
         );
@@ -454,8 +468,10 @@ impl Plugin for SystemsPlugin {
                     update_stolen_cable_sprite,
                     update_hacking_glitch_vfx,
                     update_hacker_loot_bubble,
+                    fleet::fleet_visual_system,
+                    fleet::toggle_fleet_debug,
+                    fleet::fleet_debug_label_sync,
                 ),
-                // update_grid_visuals now uses revision-based gating, no clear flag needed
                 update_grid_visuals,
                 // Update infrastructure gauge bars
                 update_transformer_gauges,

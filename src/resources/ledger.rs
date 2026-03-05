@@ -37,9 +37,12 @@ pub enum Account {
     WarrantyRecovery,
     Refunds,
     Penalties,
+    FleetPenalty,
     // Expenses — Fixed
     Rent,
     Upgrades,
+    // Income — Fleet
+    FleetContract,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -55,6 +58,7 @@ impl Account {
         Account::Ads,
         Account::SolarExport,
         Account::CarbonCredits,
+        Account::FleetContract,
     ];
 
     pub const ALL_EXPENSES: &[Account] = &[
@@ -69,6 +73,7 @@ impl Account {
         Account::WarrantyRecovery,
         Account::Refunds,
         Account::Penalties,
+        Account::FleetPenalty,
         Account::Rent,
         Account::Upgrades,
     ];
@@ -93,8 +98,10 @@ impl Account {
             Self::WarrantyRecovery => "Expenses:WarrantyRecovery",
             Self::Refunds => "Expenses:Refunds",
             Self::Penalties => "Expenses:Penalties",
+            Self::FleetPenalty => "Expenses:FleetPenalty",
             Self::Rent => "Expenses:Rent",
             Self::Upgrades => "Expenses:Upgrades",
+            Self::FleetContract => "Income:FleetContract",
         }
     }
 
@@ -107,6 +114,7 @@ impl Account {
             "Income:Ads" => Some(Self::Ads),
             "Income:SolarExport" => Some(Self::SolarExport),
             "Income:CarbonCredits" => Some(Self::CarbonCredits),
+            "Income:FleetContract" => Some(Self::FleetContract),
             "Expenses:Energy" => Some(Self::Energy),
             "Expenses:DemandCharge" => Some(Self::DemandCharge),
             "Expenses:RepairParts" => Some(Self::RepairParts),
@@ -118,6 +126,7 @@ impl Account {
             "Expenses:WarrantyRecovery" => Some(Self::WarrantyRecovery),
             "Expenses:Refunds" => Some(Self::Refunds),
             "Expenses:Penalties" => Some(Self::Penalties),
+            "Expenses:FleetPenalty" => Some(Self::FleetPenalty),
             "Expenses:Rent" => Some(Self::Rent),
             "Expenses:Upgrades" => Some(Self::Upgrades),
             _ => None,
@@ -133,6 +142,7 @@ impl Account {
             Self::Ads => "Ads",
             Self::SolarExport => "Solar Export",
             Self::CarbonCredits => "Carbon Credits",
+            Self::FleetContract => "Fleet Contract",
             Self::Energy => "Energy",
             Self::DemandCharge => "Demand Charge",
             Self::RepairParts => "Repair Parts",
@@ -144,6 +154,7 @@ impl Account {
             Self::WarrantyRecovery => "Warranty Recovery",
             Self::Refunds => "Refunds",
             Self::Penalties => "Penalties",
+            Self::FleetPenalty => "Fleet Penalty",
             Self::Rent => "Rent",
             Self::Upgrades => "Upgrades",
         }
@@ -152,7 +163,11 @@ impl Account {
     pub fn is_income(&self) -> bool {
         matches!(
             self,
-            Self::Charging | Self::Ads | Self::SolarExport | Self::CarbonCredits
+            Self::Charging
+                | Self::Ads
+                | Self::SolarExport
+                | Self::CarbonCredits
+                | Self::FleetContract
         )
     }
 
@@ -177,7 +192,8 @@ impl Account {
             | Self::Warranty
             | Self::WarrantyRecovery
             | Self::Refunds
-            | Self::Penalties => Some(ExpenseCategory::Operations),
+            | Self::Penalties
+            | Self::FleetPenalty => Some(ExpenseCategory::Operations),
             Self::Rent | Self::Upgrades => Some(ExpenseCategory::Fixed),
             _ => None,
         }
@@ -220,8 +236,10 @@ pub struct DailyFinancials {
     pub warranty_recovery: f32,
     pub refunds: f32,
     pub penalties: f32,
+    pub fleet_penalty: f32,
     pub rent: f32,
     pub upgrades: f32,
+    pub fleet_contract_revenue: f32,
     pub capex: f32,
     pub capex_refund: f32,
 }
@@ -245,8 +263,10 @@ impl DailyFinancials {
             Account::WarrantyRecovery => self.warranty_recovery,
             Account::Refunds => self.refunds,
             Account::Penalties => self.penalties,
+            Account::FleetPenalty => self.fleet_penalty,
             Account::Rent => self.rent,
             Account::Upgrades => self.upgrades,
+            Account::FleetContract => self.fleet_contract_revenue,
             Account::Cash | Account::Equipment | Account::Opening => 0.0,
         }
     }
@@ -542,8 +562,10 @@ impl Ledger {
                     Account::WarrantyRecovery => f.warranty_recovery += val,
                     Account::Refunds => f.refunds += val,
                     Account::Penalties => f.penalties += val,
+                    Account::FleetPenalty => f.fleet_penalty += val,
                     Account::Rent => f.rent += val,
                     Account::Upgrades => f.upgrades += val,
+                    Account::FleetContract => f.fleet_contract_revenue += val,
                     Account::Equipment => {
                         if amt.number.is_sign_positive() {
                             f.capex += val;

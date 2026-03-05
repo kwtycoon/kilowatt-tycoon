@@ -549,7 +549,7 @@ pub fn update_hud(
         ),
     >,
     mut rep_q: Query<
-        &mut Text,
+        (&mut Text, &mut TextColor),
         (
             With<ReputationLabel>,
             Without<PowerTotalLabel>,
@@ -613,8 +613,9 @@ pub fn update_hud(
     }
 
     // Reputation
-    for mut text in &mut rep_q {
+    for (mut text, mut color) in &mut rep_q {
         **text = format!("{}/100", game_state.reputation);
+        *color = TextColor(crate::resources::reputation_color(game_state.reputation));
     }
 
     // Chargers (Problems / Total)

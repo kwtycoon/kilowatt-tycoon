@@ -43,8 +43,9 @@ use crate::events::{
     ChargerFaultEvent, ChargingCompleteEvent, DriverArrivedEvent, DriverLeftEvent,
 };
 use crate::resources::{
-    BuildState, EnvironmentState, GameClock, GameState, SiteGrid, TechStatus, TechnicianState,
-    TutorialState, TutorialStep, generate_evcc_mac, generate_procedural_driver_for_site,
+    BuildState, EnvironmentState, GameClock, GameState, ReputationSource, SiteGrid, TechStatus,
+    TechnicianState, TutorialState, TutorialStep, generate_evcc_mac,
+    generate_procedural_driver_for_site,
 };
 use crate::systems::charger::check_connector_jam;
 use crate::systems::sprite::spawn_floating_money;
@@ -1378,7 +1379,7 @@ pub fn charging_system(
                 driver.state = DriverState::LeftAngry;
                 driver.waiting_tile = None;
 
-                game_state.change_reputation(-3);
+                game_state.record_reputation(ReputationSource::AngryDriver(-3));
                 game_state.sessions_failed += 1;
                 game_state.daily_history.current_day.sessions_failed_today += 1;
 
@@ -1445,8 +1446,7 @@ pub fn charging_system(
                 // Driver leaves frustrated - couldn't disconnect, no payment
                 driver.state = DriverState::LeftAngry;
 
-                // Reputation penalty for the terrible experience
-                game_state.change_reputation(-5);
+                game_state.record_reputation(ReputationSource::AngryDriver(-5));
                 game_state.sessions_failed += 1;
                 game_state.daily_history.current_day.sessions_failed_today += 1;
 
@@ -1546,8 +1546,7 @@ pub fn charging_system(
                 charger.pending_ad_revenue = 0.0;
             }
 
-            // Successful session improves reputation
-            game_state.change_reputation(2);
+            game_state.record_reputation(ReputationSource::ChargingSession);
 
             // Achievement tracking: cumulative energy delivered
             game_state.total_energy_delivered_kwh += driver.charge_received_kwh;
@@ -1730,14 +1729,13 @@ pub fn patience_system(
             // Remove from any queue they might be in
             site_state.charger_queue.leave_all_queues(entity);
 
-            // Reputation penalty (worse in extreme weather)
             let rep_penalty =
                 if environment.current_weather == crate::resources::WeatherType::Heatwave {
-                    -5 // Worse reputation hit in extreme conditions
+                    -5
                 } else {
                     -3
                 };
-            game_state.change_reputation(rep_penalty);
+            game_state.record_reputation(ReputationSource::AngryDriver(rep_penalty));
             game_state.sessions_failed += 1;
             game_state.daily_history.current_day.sessions_failed_today += 1;
 
@@ -1916,7 +1914,7 @@ pub fn frustrated_driver_system(
                 );
             }
 
-            game_state.change_reputation(-5);
+            game_state.record_reputation(ReputationSource::AngryDriver(-5));
             game_state.sessions_failed += 1;
             game_state.daily_history.current_day.sessions_failed_today += 1;
 

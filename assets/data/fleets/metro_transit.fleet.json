@@ -1,0 +1,18 @@
+{
+  "id": "metro_transit",
+  "company_name": "Metro Transit Authority",
+  "company_color": { "r": 0.15, "g": 0.35, "b": 0.65 },
+  "vehicle_types": ["bus"],
+  "vehicles_per_day": 8,
+  "time_windows": [
+    { "start_hour": 5, "end_hour": 7, "vehicle_count": 4 },
+    { "start_hour": 22, "end_hour": 24, "vehicle_count": 4 }
+  ],
+  "contracted_price_per_kwh": 0.25,
+  "daily_payment": 8000.0,
+  "penalty_per_miss": 500.0,
+  "reputation_penalty_per_miss": 5,
+  "max_breaches_before_termination": 10,
+  "termination_fine": 1000.0,
+  "site_archetype": "FleetDepot"
+}

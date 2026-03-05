@@ -11,6 +11,121 @@ use crate::resources::multi_site::{SiteId, SiteState};
 pub const STARTING_CASH: f32 = 1_000_000.0;
 pub const STARTING_REPUTATION: i32 = 50;
 
+pub const REPUTATION_GREEN_THRESHOLD: i32 = 80;
+pub const REPUTATION_RED_THRESHOLD: i32 = 40;
+
+/// Map an absolute reputation score to a UI color tier.
+pub fn reputation_color(rep: i32) -> Color {
+    if rep >= REPUTATION_GREEN_THRESHOLD {
+        Color::srgb(0.4, 0.9, 0.4)
+    } else if rep < REPUTATION_RED_THRESHOLD {
+        Color::srgb(0.9, 0.4, 0.4)
+    } else {
+        Color::srgb(0.9, 0.7, 0.4)
+    }
+}
+
+// ============ Reputation Tracking ============
+
+const REPUTATION_CATEGORY_COUNT: usize = 7;
+
+const REPUTATION_CATEGORY_NAMES: [&str; REPUTATION_CATEGORY_COUNT] = [
+    "Charging Sessions",
+    "Angry Drivers",
+    "Charger Faults",
+    "Ticket Escalations",
+    "Repairs",
+    "Fleet Breaches",
+    "Transformer Fires",
+];
+
+/// Every reputation change carries its own score. Fixed-score variants
+/// (e.g. `ChargingSession` is always +2) cannot be mis-stated at the call
+/// site; variable-score variants carry the value in their payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReputationSource {
+    /// Successful charging session — always +2.
+    ChargingSession,
+    /// Driver left angry — variable penalty (e.g. -3 normal, -5 heatwave/jam).
+    AngryDriver(i32),
+    /// Charger faulted during an active session — always -4.
+    ChargerFault,
+    /// Support ticket breached its SLA — always -5.
+    TicketEscalation,
+    /// Technician or remote fault fix — always +1.
+    Repair,
+    /// Fleet contract breach — penalty defined by contract.
+    FleetBreach(i32),
+    /// Transformer caught fire — always -10.
+    TransformerFire,
+}
+
+impl ReputationSource {
+    /// The reputation delta this event represents.
+    pub fn delta(self) -> i32 {
+        match self {
+            Self::ChargingSession => 2,
+            Self::AngryDriver(d) => d,
+            Self::ChargerFault => -4,
+            Self::TicketEscalation => -5,
+            Self::Repair => 1,
+            Self::FleetBreach(d) => d,
+            Self::TransformerFire => -10,
+        }
+    }
+
+    fn category_index(&self) -> usize {
+        match self {
+            Self::ChargingSession => 0,
+            Self::AngryDriver(_) => 1,
+            Self::ChargerFault => 2,
+            Self::TicketEscalation => 3,
+            Self::Repair => 4,
+            Self::FleetBreach(_) => 5,
+            Self::TransformerFire => 6,
+        }
+    }
+}
+
+/// Per-day accumulator keyed by reputation category. Fixed-size, no allocation.
+#[derive(Debug, Clone)]
+pub struct ReputationBreakdown {
+    totals: [i32; REPUTATION_CATEGORY_COUNT],
+}
+
+impl Default for ReputationBreakdown {
+    fn default() -> Self {
+        Self {
+            totals: [0; REPUTATION_CATEGORY_COUNT],
+        }
+    }
+}
+
+impl ReputationBreakdown {
+    pub fn record(&mut self, source: ReputationSource) {
+        self.totals[source.category_index()] += source.delta();
+    }
+
+    pub fn net_change(&self) -> i32 {
+        self.totals.iter().sum()
+    }
+
+    /// Yields `(display_name, accumulated_delta)` for every category with a non-zero total.
+    pub fn iter_nonzero(&self) -> impl Iterator<Item = (&'static str, i32)> + '_ {
+        self.totals
+            .iter()
+            .copied()
+            .enumerate()
+            .filter_map(|(i, v)| {
+                if v != 0 {
+                    Some((REPUTATION_CATEGORY_NAMES[i], v))
+                } else {
+                    None
+                }
+            })
+    }
+}
+
 /// End game result
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameResult {
@@ -56,11 +171,12 @@ pub struct DailyRecord {
 }
 
 impl DailyRecord {
-    /// Total revenue (charging + ads + solar export)
+    /// Total revenue (charging + ads + solar export + fleet retainers)
     pub fn total_revenue(&self) -> f32 {
         self.financials.charging_revenue
             + self.financials.ad_revenue
             + self.financials.solar_export_revenue
+            + self.financials.fleet_contract_revenue
     }
 
     pub fn net_profit(&self) -> f32 {
@@ -73,6 +189,7 @@ impl DailyRecord {
             + self.financials.warranty_recovery
             - self.financials.refunds
             - self.financials.penalties
+            - self.financials.fleet_penalty
             - self.financials.rent
             - self.financials.upgrades
     }
@@ -122,6 +239,9 @@ pub struct CurrentDayTracker {
     pub sessions_failed_today: i32,
     pub dispatches: i32,
     pub starting_reputation: i32,
+
+    /// Per-source reputation deltas accumulated during the day.
+    pub reputation_breakdown: ReputationBreakdown,
 }
 
 impl CurrentDayTracker {
@@ -234,6 +354,24 @@ impl GameState {
         self.cash = self.ledger.cash_balance_f32();
     }
 
+    pub fn add_fleet_contract_revenue(&mut self, amount: f32, company_name: &str) {
+        self.ledger.record_revenue(
+            amount,
+            Account::FleetContract,
+            &format!("Fleet retainer: {company_name}"),
+        );
+        self.cash = self.ledger.cash_balance_f32();
+    }
+
+    pub fn add_fleet_penalty(&mut self, amount: f32, company_name: &str) {
+        self.ledger.record_expense(
+            amount,
+            Account::FleetPenalty,
+            &format!("Fleet penalty: {company_name}"),
+        );
+        self.cash = self.ledger.cash_balance_f32();
+    }
+
     // ============ Expenses ============
 
     pub fn add_refund(&mut self, amount: f32) {
@@ -326,8 +464,14 @@ impl GameState {
 
     // ============ Reputation ============
 
-    pub fn change_reputation(&mut self, delta: i32) {
-        self.reputation = (self.reputation + delta).clamp(0, 100);
+    /// Apply a reputation change. The delta is encoded in the [`ReputationSource`]
+    /// variant itself, so fixed-score events cannot be mis-stated.
+    pub fn record_reputation(&mut self, source: ReputationSource) {
+        self.reputation = (self.reputation + source.delta()).clamp(0, 100);
+        self.daily_history
+            .current_day
+            .reputation_breakdown
+            .record(source);
     }
 
     pub fn reset(&mut self) {
@@ -442,7 +586,8 @@ impl GameState {
             - f.warranty_cost
             + f.warranty_recovery
             - f.refunds
-            - f.penalties;
+            - f.penalties
+            - f.fleet_penalty;
         score as i64
     }
 

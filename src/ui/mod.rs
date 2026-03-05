@@ -183,6 +183,7 @@ impl Plugin for UiPlugin {
                     spawn_fault_toasts,
                     spawn_repair_failed_toasts,
                     toast::spawn_achievement_toasts,
+                    toast::spawn_fleet_terminated_toasts,
                     update_toasts,
                     handle_toast_clicks,
                     toast::handle_sell_now_button,

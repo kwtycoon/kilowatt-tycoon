@@ -55,11 +55,13 @@ pub fn on_enter_playing(
     mut multi_site: ResMut<crate::resources::MultiSiteManager>,
     mut game_clock: ResMut<crate::resources::GameClock>,
     achievement_state: Res<crate::resources::achievements::AchievementState>,
+    mut fleet_mgr: ResMut<crate::resources::FleetContractManager>,
 ) {
     if game_state.result.is_ended() {
         game_state.reset();
         *multi_site = crate::resources::MultiSiteManager::default();
         game_clock.reset();
+        *fleet_mgr = crate::resources::FleetContractManager::default();
     }
 
     if let Some(date) =
@@ -71,6 +73,16 @@ pub fn on_enter_playing(
     commands.insert_resource(crate::resources::achievements::AchievementSnapshot {
         unlocked_at_day_start: achievement_state.snapshot(),
     });
+
+    // Fleet: reset per-day counters and load contracts for the active site
+    fleet_mgr.reset_daily();
+    if let Some(site) = multi_site.active_site() {
+        let archetype = site.archetype;
+        fleet_mgr.load_for_archetype(
+            crate::resources::fleet::builtin_fleet_contracts(),
+            archetype,
+        );
+    }
 }
 
 /// Called when exiting the playing state.

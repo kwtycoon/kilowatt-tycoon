@@ -58,7 +58,9 @@ impl Plugin for EventsPlugin {
             .add_message::<AchievementUnlockedEvent>()
             // Hacker events
             .add_message::<HackerAttackEvent>()
-            .add_message::<HackerDetectedEvent>();
+            .add_message::<HackerDetectedEvent>()
+            // Fleet events
+            .add_message::<crate::resources::fleet::FleetContractTerminatedEvent>();
     }
 }
 

@@ -379,6 +379,22 @@ pub(crate) fn reputation_insight(
     }
 }
 
+pub(crate) fn fleet_insight(
+    vehicles_missed: u32,
+    breaches_remaining: u32,
+    terminated: bool,
+) -> &'static str {
+    if terminated {
+        "Contract terminated. The fleet operator has moved on."
+    } else if breaches_remaining <= 2 {
+        "One or two more missed vehicles and this contract is gone."
+    } else if vehicles_missed > 0 {
+        "Missed fleet vehicles cost you money AND burn through breach allowance."
+    } else {
+        "Perfect fleet day. Keep it up and the operator may extend the contract."
+    }
+}
+
 pub(crate) fn unit_economy_verdict(revenue_per_session: f32, cost_per_session: f32) -> String {
     let margin = revenue_per_session - cost_per_session;
     if margin < 0.0 {

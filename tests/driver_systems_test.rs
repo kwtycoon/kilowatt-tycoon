@@ -11,7 +11,7 @@ use kilowatt_tycoon::components::charger::ChargerType;
 use kilowatt_tycoon::components::driver::{
     Driver, DriverMood, DriverState, MovementPhase, PatienceLevel, VehicleMovement, VehicleType,
 };
-use kilowatt_tycoon::resources::{GameState, STARTING_REPUTATION};
+use kilowatt_tycoon::resources::{GameState, ReputationSource, STARTING_REPUTATION};
 
 use test_utils::*;
 
@@ -137,12 +137,16 @@ fn test_game_state_reputation_tracking() {
 
     assert_eq!(game_state.reputation, STARTING_REPUTATION);
 
-    // Positive change
-    game_state.change_reputation(10);
+    // 5 successful sessions: +2 each = +10
+    for _ in 0..5 {
+        game_state.record_reputation(ReputationSource::ChargingSession);
+    }
     assert_eq!(game_state.reputation, STARTING_REPUTATION + 10);
 
-    // Negative change
-    game_state.change_reputation(-20);
+    // 4 angry drivers at -5 each = -20
+    for _ in 0..4 {
+        game_state.record_reputation(ReputationSource::AngryDriver(-5));
+    }
     assert_eq!(game_state.reputation, STARTING_REPUTATION - 10);
 }
 
@@ -150,12 +154,16 @@ fn test_game_state_reputation_tracking() {
 fn test_game_state_reputation_clamped() {
     let mut game_state = GameState::default();
 
-    // Try to go above 100
-    game_state.change_reputation(100);
+    // Try to go above 100 (50 sessions × +2 = +100, clamped to 100)
+    for _ in 0..50 {
+        game_state.record_reputation(ReputationSource::ChargingSession);
+    }
     assert_eq!(game_state.reputation, 100);
 
-    // Try to go below 0
-    game_state.change_reputation(-200);
+    // Try to go below 0 (transformer fire = -10, repeat enough to exceed 0)
+    for _ in 0..20 {
+        game_state.record_reputation(ReputationSource::TransformerFire);
+    }
     assert_eq!(game_state.reputation, 0);
 }
 
@@ -189,7 +197,9 @@ fn test_game_state_reset() {
 
     // Modify state
     game_state.add_charging_revenue(1000.0);
-    game_state.change_reputation(50);
+    for _ in 0..25 {
+        game_state.record_reputation(ReputationSource::ChargingSession);
+    }
     game_state.sessions_completed = 10;
 
     // Reset

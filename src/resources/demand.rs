@@ -338,7 +338,11 @@ fn random_vehicle_type_for_site(
     }
 }
 
-/// Generate a random vehicle name based on type
+/// Public wrapper for fleet systems that need a random vehicle name.
+pub fn random_vehicle_name_for_type(rng: &mut impl Rng, vehicle: VehicleType) -> String {
+    random_vehicle_name(rng, vehicle)
+}
+
 fn random_vehicle_name(rng: &mut impl Rng, vehicle: VehicleType) -> String {
     let names = match vehicle {
         VehicleType::Compact => vec![

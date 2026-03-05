@@ -263,7 +263,7 @@ impl EmotionReason {
             ],
             EmotionReason::ChargingComplete => &[
                 "All set!",
-                "Full tank!",
+                "Full charge!",
                 "Ready to roll!",
                 "Good to go!",
                 "Topped off. Later!",

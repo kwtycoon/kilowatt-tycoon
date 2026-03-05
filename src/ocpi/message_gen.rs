@@ -82,7 +82,7 @@ fn make_tariff_id(site_id: SiteId, mode: crate::resources::PricingMode) -> Strin
     format!("{prefix}-{}", site_id.0)
 }
 
-fn make_cdr_token(evcc_id: &str, is_roaming: bool) -> CdrToken {
+fn make_cdr_token(evcc_id: &str, is_roaming: bool, is_fleet: bool) -> CdrToken {
     if is_roaming {
         CdrToken {
             country_code: EMSP_COUNTRY_CODE.to_string(),
@@ -90,6 +90,14 @@ fn make_cdr_token(evcc_id: &str, is_roaming: bool) -> CdrToken {
             uid: evcc_id.to_string(),
             token_type: TokenType::AppUser,
             contract_id: format!("US-EVC-{evcc_id}"),
+        }
+    } else if is_fleet {
+        CdrToken {
+            country_code: CPO_COUNTRY_CODE.to_string(),
+            party_id: "FLT".to_string(),
+            uid: evcc_id.to_string(),
+            token_type: TokenType::AppUser,
+            contract_id: format!("US-FLT-{evcc_id}"),
         }
     } else {
         CdrToken {
@@ -100,6 +108,10 @@ fn make_cdr_token(evcc_id: &str, is_roaming: bool) -> CdrToken {
             contract_id: format!("US-KWT-{evcc_id}"),
         }
     }
+}
+
+fn make_fleet_tariff_id(contract_id: &str) -> String {
+    format!("KWT-FLEET-{contract_id}")
 }
 
 fn make_roaming_token(evcc_id: &str, ts_iso: &str) -> Token {
@@ -257,7 +269,11 @@ pub fn ocpi_status_system(
 
 pub fn ocpi_session_start_system(
     chargers: Query<(Entity, &Charger, Option<&BelongsToSite>)>,
-    drivers: Query<(Entity, &Driver)>,
+    drivers: Query<(
+        Entity,
+        &Driver,
+        Option<&crate::resources::fleet::FleetVehicle>,
+    )>,
     mut queue: ResMut<OcpiMessageQueue>,
     game_clock: Res<GameClock>,
 ) {
@@ -284,12 +300,15 @@ pub fn ocpi_session_start_system(
 
         let driver_info = drivers
             .iter()
-            .find(|(_, d)| d.assigned_charger == Some(entity))
-            .map(|(de, d)| (de, d.evcc_id.clone(), d.is_roaming));
+            .find(|(_, d, _)| d.assigned_charger == Some(entity))
+            .map(|(de, d, fv)| {
+                let fleet_cid = fv.map(|f| f.contract_id.clone());
+                (de, d.evcc_id.clone(), d.is_roaming, fv.is_some(), fleet_cid)
+            });
 
-        let (driver_entity, evcc_id, is_roaming) = match driver_info {
-            Some((de, id, roaming)) => (Some(de), id, roaming),
-            None => (None, "000000000000".to_string(), false),
+        let (driver_entity, evcc_id, is_roaming, is_fleet, fleet_contract_id) = match driver_info {
+            Some((de, id, roaming, fleet, fcid)) => (Some(de), id, roaming, fleet, fcid),
+            None => (None, "000000000000".to_string(), false, false, None),
         };
 
         let session_num = queue.next_session_id();
@@ -365,7 +384,7 @@ pub fn ocpi_session_start_system(
             start_date_time: start_ts.clone(),
             end_date_time: None,
             kwh: 0.0,
-            cdr_token: make_cdr_token(&evcc_id, is_roaming),
+            cdr_token: make_cdr_token(&evcc_id, is_roaming, is_fleet),
             auth_method,
             authorization_reference: Some(auth_ref),
             location_id,
@@ -394,6 +413,8 @@ pub fn ocpi_session_start_system(
         state.active_driver = driver_entity;
         state.active_id_tag = Some(evcc_id);
         state.is_roaming = is_roaming;
+        state.is_fleet = is_fleet;
+        state.fleet_contract_id = fleet_contract_id;
     }
 }
 
@@ -405,6 +426,7 @@ pub fn ocpi_session_update_system(
     chargers: Query<(Entity, &Charger, Option<&BelongsToSite>)>,
     drivers: Query<&Driver>,
     multi_site: Res<MultiSiteManager>,
+    fleet_mgr: Res<crate::resources::FleetContractManager>,
     mut queue: ResMut<OcpiMessageQueue>,
     game_clock: Res<GameClock>,
 ) {
@@ -434,18 +456,40 @@ pub fn ocpi_session_update_system(
                 .unwrap_or(0.0);
 
             let site_id = site_tag.map(|s| s.site_id).unwrap_or(SiteId(0));
-            let (price, tariff) = multi_site
-                .get_site(site_id)
-                .map(|s| {
-                    let p = s.service_strategy.pricing.effective_price(
-                        game_clock.game_time,
-                        &s.site_energy_config,
-                        s.charger_utilization,
-                    );
-                    let t = make_tariff_id(site_id, s.service_strategy.pricing.mode);
-                    (p, t)
-                })
-                .unwrap_or((0.0, String::new()));
+
+            // Fleet sessions use their contracted price and fleet tariff
+            let (price, tariff) = if cs.is_fleet {
+                let fleet_price = cs
+                    .fleet_contract_id
+                    .as_ref()
+                    .and_then(|cid| {
+                        fleet_mgr
+                            .active
+                            .iter()
+                            .find(|c| &c.def.id == cid)
+                            .map(|c| c.def.contracted_price_per_kwh)
+                    })
+                    .unwrap_or(0.0);
+                let fleet_tariff = cs
+                    .fleet_contract_id
+                    .as_ref()
+                    .map(|cid| make_fleet_tariff_id(cid))
+                    .unwrap_or_default();
+                (fleet_price, fleet_tariff)
+            } else {
+                multi_site
+                    .get_site(site_id)
+                    .map(|s| {
+                        let p = s.service_strategy.pricing.effective_price(
+                            game_clock.game_time,
+                            &s.site_energy_config,
+                            s.charger_utilization,
+                        );
+                        let t = make_tariff_id(site_id, s.service_strategy.pricing.mode);
+                        (p, t)
+                    })
+                    .unwrap_or((0.0, String::new()))
+            };
 
             let start_gt = cs.session_start_game_time;
             let start_ts = queue.game_time_to_utc(start_gt).to_rfc3339();
@@ -519,6 +563,7 @@ pub fn ocpi_session_update_system(
 pub fn ocpi_cdr_system(
     chargers: Query<(Entity, &Charger, Option<&BelongsToSite>)>,
     multi_site: Res<MultiSiteManager>,
+    fleet_mgr: Res<crate::resources::FleetContractManager>,
     mut queue: ResMut<OcpiMessageQueue>,
     game_clock: Res<GameClock>,
 ) {
@@ -539,6 +584,7 @@ pub fn ocpi_cdr_system(
         charger_type: ChargerType,
         tariff: String,
         is_roaming: bool,
+        is_fleet: bool,
     }
 
     let to_stop: Vec<CdrCandidate> = chargers
@@ -551,20 +597,47 @@ pub fn ocpi_cdr_system(
             let session_num = cs.session_id?;
             let evcc = cs.active_id_tag.clone().unwrap_or_default();
             let is_roaming = cs.is_roaming;
+            let is_fleet = cs.is_fleet;
 
             let site_id = site_tag.map(|s| s.site_id).unwrap_or(SiteId(0));
-            let (site_name, price, tariff) = multi_site
-                .get_site(site_id)
-                .map(|s| {
-                    let p = s.service_strategy.pricing.effective_price(
-                        game_clock.game_time,
-                        &s.site_energy_config,
-                        s.charger_utilization,
-                    );
-                    let t = make_tariff_id(site_id, s.service_strategy.pricing.mode);
-                    (s.name.clone(), p, t)
-                })
-                .unwrap_or_else(|| ("Unknown Site".to_string(), 0.0, String::new()));
+
+            let (site_name, price, tariff) = if is_fleet {
+                let fleet_price = cs
+                    .fleet_contract_id
+                    .as_ref()
+                    .and_then(|cid| {
+                        fleet_mgr
+                            .active
+                            .iter()
+                            .find(|c| &c.def.id == cid)
+                            .map(|c| c.def.contracted_price_per_kwh)
+                    })
+                    .unwrap_or(0.0);
+                let fleet_tariff = cs
+                    .fleet_contract_id
+                    .as_ref()
+                    .map(|cid| make_fleet_tariff_id(cid))
+                    .unwrap_or_default();
+                let name = multi_site
+                    .get_site(site_id)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| "Unknown Site".to_string());
+                (name, fleet_price, fleet_tariff)
+            } else {
+                multi_site
+                    .get_site(site_id)
+                    .map(|s| {
+                        let p = s.service_strategy.pricing.effective_price(
+                            game_clock.game_time,
+                            &s.site_energy_config,
+                            s.charger_utilization,
+                        );
+                        let t = make_tariff_id(site_id, s.service_strategy.pricing.mode);
+                        (s.name.clone(), p, t)
+                    })
+                    .unwrap_or_else(|| ("Unknown Site".to_string(), 0.0, String::new()))
+            };
+
             let loc_id = make_location_id(site_id);
             let archetype = site_archetype(&multi_site, site_id);
 
@@ -581,6 +654,7 @@ pub fn ocpi_cdr_system(
                 charger_type: charger.charger_type,
                 tariff,
                 is_roaming,
+                is_fleet,
             })
         })
         .collect();
@@ -614,6 +688,8 @@ pub fn ocpi_cdr_system(
         state.active_id_tag = None;
         state.session_kwh = 0.0;
         state.is_roaming = false;
+        state.is_fleet = false;
+        state.fleet_contract_id = None;
 
         let total_cost_val = (c.kwh * c.price) as f64;
         let geo = c.archetype.geo();
@@ -625,7 +701,7 @@ pub fn ocpi_cdr_system(
             start_date_time: start_ts.clone(),
             end_date_time: end_ts.clone(),
             session_id: Some(format!("SES-{:05}", c.session_num)),
-            cdr_token: make_cdr_token(&c.evcc, c.is_roaming),
+            cdr_token: make_cdr_token(&c.evcc, c.is_roaming, c.is_fleet),
             auth_method,
             authorization_reference: Some(auth_ref),
             cdr_location: CdrLocation {
@@ -698,6 +774,7 @@ pub fn ocpi_cdr_system(
 
 pub fn ocpi_tariff_system(
     multi_site: Res<MultiSiteManager>,
+    fleet_mgr: Res<crate::resources::FleetContractManager>,
     mut queue: ResMut<OcpiMessageQueue>,
     game_clock: Res<GameClock>,
 ) {
@@ -856,6 +933,62 @@ pub fn ocpi_tariff_system(
             "Tariff",
             "Tariff PUT",
             serialize_ocpi(&tariff),
+        );
+    }
+
+    // Emit fleet-specific tariffs for active fleet contracts
+    for contract in &fleet_mgr.active {
+        if contract.terminated {
+            continue;
+        }
+
+        let fleet_tariff_id = make_fleet_tariff_id(&contract.def.id);
+        let price_cents =
+            vec![(contract.def.contracted_price_per_kwh as f64 * 100.0).round() as i32];
+        let fingerprint = LastEmittedTariff {
+            tariff_id: fleet_tariff_id.clone(),
+            price_cents,
+        };
+
+        let dummy_site_id = SiteId(9000 + contract.day_accepted);
+        if queue.last_emitted_tariff.get(&dummy_site_id) == Some(&fingerprint) {
+            continue;
+        }
+        queue.last_emitted_tariff.insert(dummy_site_id, fingerprint);
+
+        let ts_iso = queue
+            .game_time_to_utc(game_clock.total_game_time)
+            .to_rfc3339();
+
+        let fleet_tariff = Tariff {
+            country_code: CPO_COUNTRY_CODE.to_string(),
+            party_id: CPO_PARTY_ID.to_string(),
+            id: fleet_tariff_id,
+            currency: CURRENCY.to_string(),
+            elements: vec![TariffElement {
+                price_components: vec![PriceComponent {
+                    component_type: TariffDimensionType::Energy,
+                    price: contract.def.contracted_price_per_kwh as f64,
+                    step_size: 1,
+                }],
+                restrictions: None,
+            }],
+            tariff_alt_text: Some(vec![DisplayText {
+                language: "en".to_string(),
+                text: format!(
+                    "Fleet contract: {} @ ${:.2}/kWh",
+                    contract.def.company_name, contract.def.contracted_price_per_kwh
+                ),
+            }]),
+            last_updated: ts_iso.clone(),
+        };
+
+        queue.push_log(
+            CPO_PARTY_ID.to_string(),
+            ts_iso,
+            "Tariff",
+            "Tariff PUT (Fleet)",
+            serialize_ocpi(&fleet_tariff),
         );
     }
 }

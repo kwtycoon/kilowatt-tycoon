@@ -44,6 +44,7 @@ pub struct DayEndReport {
     pub dispatches_delta: i32,
     pub reputation_delta: i32,
     pub reputation: i32,
+    pub reputation_breakdown: crate::resources::ReputationBreakdown,
 
     // Charger / transformer stats
     pub chargers_total: i32,
@@ -68,6 +69,7 @@ pub struct DayEndReport {
     pub operating_profit: f32,
     pub profit_color: Color,
     pub rep_color: Color,
+    pub rep_delta_color: Color,
 
     // Per-kWh pricing
     pub avg_sell_price_kwh: f32,
@@ -86,6 +88,17 @@ pub struct DayEndReport {
     // Unit economy
     pub revenue_per_session: f32,
     pub cost_per_session: f32,
+
+    // Fleet contracts
+    pub fleet_active: bool,
+    pub fleet_company_name: String,
+    pub fleet_vehicles_charged: u32,
+    pub fleet_vehicles_expected: u32,
+    pub fleet_vehicles_missed: u32,
+    pub fleet_retainer: f32,
+    pub fleet_penalties: f32,
+    pub fleet_breaches_remaining: u32,
+    pub fleet_terminated: bool,
 }
 
 /// Flush the ledger, build the DailyRecord, and compute every value the
@@ -102,6 +115,7 @@ pub(crate) fn prepare_day_end_report(
     achievement_snapshot: Option<Res<crate::resources::achievements::AchievementSnapshot>>,
     chargers: Query<&crate::components::charger::Charger>,
     transformers: Query<&crate::components::power::Transformer>,
+    fleet_mgr: Res<crate::resources::FleetContractManager>,
 ) {
     info!("Day {} complete!", game_clock.day);
 
@@ -271,7 +285,8 @@ pub(crate) fn prepare_day_end_report(
     } else {
         Color::srgb(0.9, 0.4, 0.4)
     };
-    let rep_color = if reputation_delta >= 0 {
+    let rep_color = crate::resources::reputation_color(game_state.reputation);
+    let rep_delta_color = if reputation_delta >= 0 {
         Color::srgb(0.4, 0.9, 0.4)
     } else {
         Color::srgb(0.9, 0.4, 0.4)
@@ -405,6 +420,34 @@ pub(crate) fn prepare_day_end_report(
             (*badge, icon)
         });
 
+    // Credit fleet contract retainers for active (non-terminated) contracts
+    let mut fleet_active = false;
+    let mut fleet_company_name = String::new();
+    let mut fleet_vehicles_charged = 0u32;
+    let mut fleet_vehicles_expected = 0u32;
+    let mut fleet_vehicles_missed = 0u32;
+    let mut fleet_retainer = 0.0f32;
+    let mut fleet_penalties_total = 0.0f32;
+    let mut fleet_breaches_remaining = 0u32;
+    let mut fleet_terminated = false;
+
+    for contract in &fleet_mgr.active {
+        fleet_active = true;
+        fleet_company_name = contract.def.company_name.clone();
+        fleet_vehicles_charged += contract.vehicles_charged_today;
+        fleet_vehicles_expected += contract.def.vehicles_per_day;
+        fleet_vehicles_missed += contract.vehicles_missed_today;
+        fleet_penalties_total += contract.penalties_today();
+        fleet_breaches_remaining = contract.breaches_remaining();
+        fleet_terminated = contract.terminated;
+
+        let retainer = contract.retainer_earned();
+        if retainer > 0.0 {
+            game_state.add_fleet_contract_revenue(retainer, &contract.def.company_name);
+            fleet_retainer += retainer;
+        }
+    }
+
     commands.insert_resource(DayEndReport {
         day: game_clock.day,
         title_text: title_text.to_string(),
@@ -435,6 +478,11 @@ pub(crate) fn prepare_day_end_report(
         dispatches_delta,
         reputation_delta,
         reputation: game_state.reputation,
+        reputation_breakdown: game_state
+            .daily_history
+            .current_day
+            .reputation_breakdown
+            .clone(),
         chargers_total,
         chargers_online,
         pending_cable_thefts,
@@ -451,6 +499,7 @@ pub(crate) fn prepare_day_end_report(
         operating_profit,
         profit_color,
         rep_color,
+        rep_delta_color,
         avg_sell_price_kwh,
         avg_buy_price_kwh,
         has_solar,
@@ -461,5 +510,14 @@ pub(crate) fn prepare_day_end_report(
         expense_hint,
         revenue_per_session,
         cost_per_session,
+        fleet_active,
+        fleet_company_name,
+        fleet_vehicles_charged,
+        fleet_vehicles_expected,
+        fleet_vehicles_missed,
+        fleet_retainer,
+        fleet_penalties: fleet_penalties_total,
+        fleet_breaches_remaining,
+        fleet_terminated,
     });
 }
