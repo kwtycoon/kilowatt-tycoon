@@ -32,9 +32,17 @@ pub struct RealTimeToast {
 #[derive(Component)]
 struct ToastText;
 
-/// Marker on fault toasts carrying the charger ID for per-charger deduplication.
+/// Consolidated fault toast that groups multiple charger faults into a single
+/// card with an incrementing counter instead of spawning one toast per fault.
 #[derive(Component)]
-pub struct FaultToast(pub String);
+pub struct FaultToast {
+    pub count: u32,
+    pub latest_charger_id: String,
+    pub latest_fault_name: String,
+}
+
+#[derive(Component)]
+pub struct FaultToastText;
 
 /// Marker on the "SELL NOW" button inside a grid event toast.
 #[derive(Component)]
@@ -81,17 +89,19 @@ pub fn setup_toast_container(
 
 // ============ Spawning Systems ============
 
-/// Spawn toast notifications for charger faults.
+/// Spawn or update a consolidated fault toast for charger faults.
 ///
-/// Skips auto-remediated faults (O&M cleared instantly) and deduplicates
-/// per charger so only the most recent fault toast per charger is visible.
+/// Skips auto-remediated faults. Instead of one toast per charger, all faults
+/// share a single card whose counter increments and whose timer resets on each
+/// new fault so the player sees the running tally without toast spam.
 pub fn spawn_fault_toasts(
     mut commands: Commands,
     mut fault_events: MessageReader<ChargerFaultEvent>,
     game_clock: Res<GameClock>,
     time: Res<Time>,
     image_assets: Res<ImageAssets>,
-    existing_fault_toasts: Query<(Entity, &FaultToast)>,
+    mut existing_fault_toasts: Query<(Entity, &mut FaultToast, &mut RealTimeToast, &Children)>,
+    mut fault_text_query: Query<&mut Text, With<FaultToastText>>,
     container: Single<Entity, With<ToastContainer>>,
 ) {
     let container = *container;
@@ -100,30 +110,108 @@ pub fn spawn_fault_toasts(
             continue;
         }
 
-        for (entity, ft) in &existing_fault_toasts {
-            if ft.0 == event.charger_id {
-                commands.entity(entity).try_despawn();
+        let fault_name = event.fault_type.display_name().to_string();
+
+        if let Some((_, mut ft, mut rt, children)) = existing_fault_toasts.iter_mut().next() {
+            ft.count += 1;
+            ft.latest_charger_id = event.charger_id.clone();
+            ft.latest_fault_name = fault_name;
+            rt.created_at_real = time.elapsed_secs();
+
+            let message = fault_toast_message(&ft);
+            for child in children.iter() {
+                if let Ok(mut text) = fault_text_query.get_mut(child) {
+                    **text = message.clone();
+                }
             }
+        } else {
+            let ft = FaultToast {
+                count: 1,
+                latest_charger_id: event.charger_id.clone(),
+                latest_fault_name: fault_name,
+            };
+            let message = fault_toast_message(&ft);
+
+            let toast_entity = spawn_fault_toast_entity(
+                &mut commands,
+                message,
+                game_clock.game_time,
+                time.elapsed_secs(),
+                image_assets.icon_fault.clone(),
+                ft,
+            );
+            commands.entity(container).add_child(toast_entity);
         }
-
-        let message = format!(
-            "Charger {} fault: {}",
-            event.charger_id,
-            event.fault_type.display_name()
-        );
-
-        let toast_entity = spawn_toast(
-            &mut commands,
-            message,
-            game_clock.game_time,
-            time.elapsed_secs(),
-            image_assets.icon_fault.clone(),
-        );
-        commands
-            .entity(toast_entity)
-            .insert(FaultToast(event.charger_id.clone()));
-        commands.entity(container).add_child(toast_entity);
     }
+}
+
+fn fault_toast_message(ft: &FaultToast) -> String {
+    if ft.count == 1 {
+        format!(
+            "Charger {} fault: {}",
+            ft.latest_charger_id, ft.latest_fault_name
+        )
+    } else {
+        format!(
+            "{} charger faults (latest: {})",
+            ft.count, ft.latest_charger_id
+        )
+    }
+}
+
+fn spawn_fault_toast_entity(
+    commands: &mut Commands,
+    message: String,
+    game_time: f32,
+    real_time: f32,
+    icon: Handle<Image>,
+    fault_toast: FaultToast,
+) -> Entity {
+    let bg_color = Color::srgba(0.9, 0.4, 0.2, 0.95);
+    commands
+        .spawn((
+            Node {
+                width: Val::Px(300.0),
+                padding: UiRect::all(Val::Px(15.0)),
+                flex_direction: FlexDirection::Row,
+                column_gap: Val::Px(10.0),
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(bg_color),
+            BorderRadius::all(Val::Px(8.0)),
+            ToastNotification {
+                created_at: game_time,
+                duration: TOAST_DURATION_REAL * 10.0,
+            },
+            RealTimeToast {
+                created_at_real: real_time,
+                duration_real: TOAST_DURATION_REAL,
+            },
+            fault_toast,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                ImageNode::new(icon),
+                Node {
+                    width: Val::Px(24.0),
+                    height: Val::Px(24.0),
+                    ..default()
+                },
+            ));
+
+            parent.spawn((
+                Text::new(message),
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 1.0, 1.0)),
+                ToastText,
+                FaultToastText,
+            ));
+        })
+        .id()
 }
 
 /// Spawn toast notifications for repair failures
@@ -363,23 +451,6 @@ pub fn spawn_grid_event_end_toast(
         Color::srgba(0.15, 0.55, 0.35, 0.95),
     );
     commands.entity(container).add_child(entity);
-}
-
-fn spawn_toast(
-    commands: &mut Commands,
-    message: String,
-    game_time: f32,
-    real_time: f32,
-    icon: Handle<Image>,
-) -> Entity {
-    spawn_toast_custom(
-        commands,
-        message,
-        game_time,
-        real_time,
-        icon,
-        Color::srgba(0.9, 0.4, 0.2, 0.95),
-    )
 }
 
 fn spawn_toast_custom(
