@@ -218,6 +218,8 @@ pub fn driver_spawn_system(
     if charger_bays.is_empty() {
         return;
     }
+    let charger_bay_positions: Vec<(i32, i32)> =
+        charger_bays.iter().map(|&(x, y, _)| (x, y)).collect();
 
     // Count current drivers at this site - cap to site's max_vehicles limit
     let current_driver_count = existing_drivers
@@ -327,9 +329,11 @@ pub fn driver_spawn_system(
 
             // No free bays -- try to find a waiting tile near the charger area
             if available_compatible.is_empty() {
-                let wait_tile = site_state
-                    .grid
-                    .find_waiting_tile(&occupied_waiting, &occupied_bays);
+                let wait_tile = site_state.grid.find_waiting_tile(
+                    &occupied_waiting,
+                    &occupied_bays,
+                    &charger_bay_positions,
+                );
 
                 if let Some((wx, wy)) = wait_tile {
                     let speed = 100.0 + (driver_data.id.len() as f32 * 5.0);
@@ -686,9 +690,11 @@ pub fn driver_spawn_system(
 
             // No free bays -- try to find a waiting tile near the charger area
             if available_compatible.is_empty() {
-                let wait_tile = site_state
-                    .grid
-                    .find_waiting_tile(&occupied_waiting, &occupied_bays);
+                let wait_tile = site_state.grid.find_waiting_tile(
+                    &occupied_waiting,
+                    &occupied_bays,
+                    &charger_bay_positions,
+                );
 
                 if let Some((wx, wy)) = wait_tile {
                     let speed = 100.0 + (driver_data.id.len() as f32 * 5.0);

@@ -113,6 +113,8 @@ pub enum EmotionReason {
     SwitchedCharger,
     /// Driver is plugged in but receiving 0 kW (Rule 2: direct experience)
     NoPower,
+    /// Driver is heading to a waiting tile (all bays occupied, queuing)
+    HeadingToWait,
     // Frustration reasons (short texts for speech bubbles)
     /// Station/chargers busy - driver must wait or leave
     FrustrationBusy,
@@ -308,6 +310,17 @@ impl EmotionReason {
                 "Musical chargers!",
                 "Backup plan: engaged.",
             ],
+            EmotionReason::HeadingToWait => &[
+                "Getting in line.",
+                "Waiting for a spot.",
+                "I'll queue up.",
+                "All full, I'll wait.",
+                "No rush... kinda.",
+                "Joining the queue.",
+                "Guess I'm waiting.",
+                "Next in line!",
+                "In the queue.",
+            ],
             EmotionReason::NoPower => &[
                 "Zero kilowatts?!",
                 "Nothing's flowing...",
@@ -389,6 +402,7 @@ impl EmotionReason {
             EmotionReason::ChargerBroken => 8.0, // Critical issue
             EmotionReason::LeavingAngry => 7.0,  // Important feedback
             EmotionReason::SwitchedCharger => 6.0,
+            EmotionReason::HeadingToWait => 6.0,
             EmotionReason::NoPower => 8.0, // Important — player needs to see this
             // Frustration reasons - show longer for feedback
             EmotionReason::FrustrationBusy => 7.0,

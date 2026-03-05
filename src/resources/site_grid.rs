@@ -1261,13 +1261,15 @@ impl SiteGrid {
 
     /// Find a driveable tile near the charging area for a vehicle to wait on.
     ///
-    /// BFS outward from all parking-bay positions (charger-agnostic). Returns
-    /// the best candidate by priority: `Lot` > other driveable > `Road`.
+    /// BFS outward from the supplied `charger_bay_positions` (only bays with
+    /// linked chargers). Returns the best candidate by priority:
+    /// `Lot` > other driveable > `Road`.
     /// Tiles in `occupied_waiting` or `occupied_bays` are excluded.
     pub fn find_waiting_tile(
         &self,
         occupied_waiting: &[(i32, i32)],
         occupied_bays: &[(i32, i32)],
+        charger_bay_positions: &[(i32, i32)],
     ) -> Option<(i32, i32)> {
         use std::collections::{HashSet, VecDeque};
 
@@ -1283,12 +1285,10 @@ impl SiteGrid {
         let mut visited: HashSet<(i32, i32)> = HashSet::new();
         let mut queue: VecDeque<((i32, i32), u32)> = VecDeque::new();
 
-        // Seed BFS from every parking bay tile
-        for ((x, y), tile) in &self.tiles {
-            if tile.content.is_parking() {
-                visited.insert((*x, *y));
-                queue.push_back(((*x, *y), 0));
-            }
+        // Seed BFS only from parking bays that have linked chargers
+        for &(x, y) in charger_bay_positions {
+            visited.insert((x, y));
+            queue.push_back(((x, y), 0));
         }
 
         // Sort seeds for deterministic BFS order across runs
@@ -1511,7 +1511,8 @@ mod tests {
             tile.linked_charger_pad = Some((3, 3));
         }
 
-        let result = grid.find_waiting_tile(&[], &[]);
+        let bays = vec![(3, 2)];
+        let result = grid.find_waiting_tile(&[], &[], &bays);
         assert!(result.is_some(), "Should find a waiting tile");
         let (rx, ry) = result.unwrap();
         let content = grid.get_content(rx, ry);
@@ -1525,9 +1526,10 @@ mod tests {
         grid.set_tile_content(4, 3, TileContent::Lot);
         grid.set_tile_content(3, 2, TileContent::ParkingBaySouth);
 
+        let bays = vec![(3, 2)];
         // Occupy the closest lot tile
         let occupied_waiting = vec![(3, 3)];
-        let result = grid.find_waiting_tile(&occupied_waiting, &[]);
+        let result = grid.find_waiting_tile(&occupied_waiting, &[], &bays);
         // Should return the other lot tile
         assert_eq!(result, Some((4, 3)));
     }
@@ -1535,6 +1537,37 @@ mod tests {
     #[test]
     fn find_waiting_tile_returns_none_on_empty_grid() {
         let grid = SiteGrid::default();
-        assert_eq!(grid.find_waiting_tile(&[], &[]), None);
+        assert_eq!(grid.find_waiting_tile(&[], &[], &[]), None);
+    }
+
+    #[test]
+    fn find_waiting_tile_ignores_bays_without_chargers() {
+        let mut grid = SiteGrid::default();
+
+        // Upper row: parking bay at (4,8) with a charger (equipped)
+        grid.set_tile_content(3, 8, TileContent::Lot);
+        grid.set_tile_content(4, 8, TileContent::ParkingBaySouth);
+        grid.set_tile_content(5, 8, TileContent::Lot);
+
+        // Lower row: parking bay at (4,4) with NO charger linked
+        grid.set_tile_content(3, 4, TileContent::Lot);
+        grid.set_tile_content(4, 4, TileContent::ParkingBaySouth);
+        grid.set_tile_content(5, 4, TileContent::Lot);
+
+        // Lot filler between rows so BFS could reach both if seeded from all bays
+        for y in 5..8 {
+            grid.set_tile_content(4, y, TileContent::Lot);
+        }
+
+        // Only the upper bay has a charger
+        let equipped_bays = vec![(4, 8)];
+        let result = grid.find_waiting_tile(&[], &[], &equipped_bays);
+
+        assert!(result.is_some(), "Should find a waiting tile");
+        let (_, ry) = result.unwrap();
+        assert!(
+            ry >= 7,
+            "Waiting tile should be near the equipped upper row (y >= 7), got y={ry}"
+        );
     }
 }

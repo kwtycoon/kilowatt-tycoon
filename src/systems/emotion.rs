@@ -106,8 +106,10 @@ fn evaluate_emotion_for_state(
 
     match driver.state {
         DriverState::Arriving => {
-            // Check if they're assigned vs waiting
-            if driver.assigned_charger.is_some() {
+            if driver.waiting_tile.is_some() && driver.assigned_charger.is_none() {
+                // Heading to a waiting tile -- patient/neutral tone
+                (EmotionMood::Neutral, EmotionReason::HeadingToWait)
+            } else if driver.assigned_charger.is_some() {
                 let price = effective_price;
 
                 // Adjust thresholds based on weather
@@ -129,7 +131,7 @@ fn evaluate_emotion_for_state(
                     )
                 }
             } else {
-                // No charger available - use short frustration text
+                // No charger and no waiting tile -- truly frustrated
                 (EmotionMood::Frustrated, EmotionReason::FrustrationBusy)
             }
         }

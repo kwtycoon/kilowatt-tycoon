@@ -85,6 +85,8 @@ pub struct GameClock {
     pub total_real_time: f32,
     /// Current speed setting
     pub speed: GameSpeed,
+    /// Speed to restore when unpausing (set by `pause()` / `toggle_pause()`).
+    previous_speed: GameSpeed,
     /// Current day number (1-indexed, resets at 31)
     pub day: u32,
     /// Current month number (1-indexed, resets at 13)
@@ -109,6 +111,7 @@ impl Default for GameClock {
             real_time: 0.0,
             total_real_time: 0.0,
             speed: GameSpeed::Normal,
+            previous_speed: GameSpeed::Fast,
             day: 1,
             month: 1,
             year: 1,

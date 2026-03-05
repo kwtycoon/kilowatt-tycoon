@@ -115,6 +115,8 @@ pub fn fleet_spawn_system(
     if charger_bays.is_empty() {
         return;
     }
+    let charger_bay_positions: Vec<(i32, i32)> =
+        charger_bays.iter().map(|&(x, y, _)| (x, y)).collect();
     let current_driver_count = existing_drivers
         .iter()
         .filter(|(_, b, _)| b.site_id == viewed_id)
@@ -193,10 +195,11 @@ pub fn fleet_spawn_system(
             .filter_map(|(d, _, _)| d.waiting_tile)
             .collect();
 
-        if let Some((wx, wy)) = site_state
-            .grid
-            .find_waiting_tile(&occupied_waiting, &occupied_bays)
-        {
+        if let Some((wx, wy)) = site_state.grid.find_waiting_tile(
+            &occupied_waiting,
+            &occupied_bays,
+            &charger_bay_positions,
+        ) {
             let driver = Driver {
                 id: driver_id.clone(),
                 evcc_id,
