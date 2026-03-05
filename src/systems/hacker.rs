@@ -203,6 +203,10 @@ pub fn hacker_spawn_system(
         return;
     }
 
+    if game_clock.day <= 1 {
+        return;
+    }
+
     let delta_hours = (time.delta_secs() * game_clock.speed.multiplier()) / 3600.0;
     if delta_hours <= 0.0 {
         return;
