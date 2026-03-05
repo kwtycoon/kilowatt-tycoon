@@ -145,8 +145,15 @@ fn evaluate_tips(
 
     let tips: Vec<(TipKind, bool, String)> = vec![
         (
+            TipKind::Reliability,
+            faulted_count >= 2 && maintenance_investment <= 10.0,
+            format!(
+                "Chargers keep breaking down? Increase maintenance spending in {opex_path} to reduce failure rates."
+            ),
+        ),
+        (
             TipKind::OmDetect,
-            faulted_count >= 2 && oem_tier == OemTier::None,
+            faulted_count >= 3 && oem_tier == OemTier::None,
             format!(
                 "Struggling with faults? Buy {om_detect_name} in {upgrades_path} for instant detection and remote remediation."
             ),
@@ -163,13 +170,6 @@ fn evaluate_tips(
             repair_total > 2000.0 && warranty_tier == WarrantyTier::None,
             format!(
                 "Repair bills adding up? An extended warranty covers parts costs \u{2014} check {opex_path}."
-            ),
-        ),
-        (
-            TipKind::Reliability,
-            faulted_count >= 3 && maintenance_investment <= 10.0,
-            format!(
-                "Chargers keep breaking down? Increase maintenance spending in {opex_path} to reduce failure rates."
             ),
         ),
         (
@@ -205,10 +205,11 @@ mod tests {
 
     #[test]
     fn om_detect_fires_when_faults_without_oem() {
-        let state = empty_state();
+        let mut state = empty_state();
+        state.shown.insert(TipKind::Reliability);
         let tip = evaluate_tips(
             &state,
-            2,
+            3,
             OemTier::None,
             0,
             0.0,
@@ -229,12 +230,12 @@ mod tests {
         let state = empty_state();
         let tip = evaluate_tips(
             &state,
-            2,
+            3,
             OemTier::Detect,
             0,
             0.0,
             WarrantyTier::None,
-            10.0,
+            20.0,
             0.0,
             0.0,
             0,
@@ -334,7 +335,7 @@ mod tests {
         let state = empty_state();
         let tip = evaluate_tips(
             &state,
-            3,
+            2,
             OemTier::Detect,
             0,
             0.0,
@@ -355,7 +356,7 @@ mod tests {
         let state = empty_state();
         let tip = evaluate_tips(
             &state,
-            3,
+            2,
             OemTier::Detect,
             0,
             0.0,
@@ -437,6 +438,7 @@ mod tests {
     #[test]
     fn shown_tips_not_repeated() {
         let mut state = empty_state();
+        state.shown.insert(TipKind::Reliability);
         state.shown.insert(TipKind::OmDetect);
         let tip = evaluate_tips(
             &state,
@@ -454,6 +456,32 @@ mod tests {
             50,
         );
         assert_ne!(tip.as_ref().map(|t| t.kind), Some(TipKind::OmDetect));
+        assert_ne!(tip.as_ref().map(|t| t.kind), Some(TipKind::Reliability));
+    }
+
+    #[test]
+    fn reliability_fires_before_om_detect() {
+        let state = empty_state();
+        let tip = evaluate_tips(
+            &state,
+            3,
+            OemTier::None,
+            0,
+            0.0,
+            WarrantyTier::None,
+            10.0,
+            0.0,
+            0.0,
+            0,
+            8,
+            false,
+            50,
+        );
+        assert_eq!(
+            tip.as_ref().map(|t| t.kind),
+            Some(TipKind::Reliability),
+            "Reliability (increase maintenance) should fire before OmDetect"
+        );
     }
 
     #[test]
@@ -479,10 +507,11 @@ mod tests {
 
     #[test]
     fn messages_use_nav_paths() {
-        let state = empty_state();
+        let mut state = empty_state();
+        state.shown.insert(TipKind::Reliability);
         let tip = evaluate_tips(
             &state,
-            2,
+            3,
             OemTier::None,
             0,
             0.0,
@@ -504,10 +533,11 @@ mod tests {
 
     #[test]
     fn messages_use_upgrade_names() {
-        let state = empty_state();
+        let mut state = empty_state();
+        state.shown.insert(TipKind::Reliability);
         let tip = evaluate_tips(
             &state,
-            2,
+            3,
             OemTier::None,
             0,
             0.0,
