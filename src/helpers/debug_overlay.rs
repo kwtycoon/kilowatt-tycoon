@@ -864,18 +864,19 @@ fn print_traffic_debug(
 
     let _ = writeln!(out, "========== END TRAFFIC DEBUG ==========\n");
 
-    // Print to stdout
-    print!("{out}");
+    info!("{out}");
 
-    // Write to file with timestamp
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let log_path = format!("/tmp/kwtycoon-{timestamp}.log");
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let log_path = format!("/tmp/kwtycoon-{timestamp}.log");
 
-    match std::fs::write(&log_path, &out) {
-        Ok(()) => info!("Traffic debug written to {log_path}"),
-        Err(e) => warn!("Failed to write traffic debug to {log_path}: {e}"),
+        match std::fs::write(&log_path, &out) {
+            Ok(()) => info!("Traffic debug written to {log_path}"),
+            Err(e) => warn!("Failed to write traffic debug to {log_path}: {e}"),
+        }
     }
 }
