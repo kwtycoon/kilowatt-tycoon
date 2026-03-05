@@ -18,6 +18,19 @@ pub struct SiteId(pub u32);
 /// Spacing between sites in world coordinates (pixels)
 pub const SITE_SPACING: f32 = 2000.0;
 
+/// Per-site geographic metadata for OCPI location fields.
+pub struct SiteGeo {
+    pub address: &'static str,
+    pub city: &'static str,
+    pub postal_code: &'static str,
+    /// ISO 3166-1 alpha-3 (e.g. "USA", "VNM")
+    pub country: &'static str,
+    /// ISO 3166-1 alpha-2 (e.g. "US", "VN") used in EVSE ID prefixes
+    pub country_code: &'static str,
+    pub latitude: &'static str,
+    pub longitude: &'static str,
+}
+
 /// Site archetype definition
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SiteArchetype {
@@ -122,6 +135,48 @@ impl SiteArchetype {
             Some("Hot & Humid Climate - Elevated thermal stress on equipment".to_string())
         } else {
             None
+        }
+    }
+
+    /// Geographic metadata for OCPI location, CDR, and EVSE ID fields.
+    pub fn geo(&self) -> SiteGeo {
+        match self {
+            SiteArchetype::ParkingLot => SiteGeo {
+                address: "100 First Street",
+                city: "Santa Clarita",
+                postal_code: "91350",
+                country: "USA",
+                country_code: "US",
+                latitude: "34.3917",
+                longitude: "-118.5426",
+            },
+            SiteArchetype::GasStation => SiteGeo {
+                address: "47 Route 1 South",
+                city: "Edison",
+                postal_code: "08817",
+                country: "USA",
+                country_code: "US",
+                latitude: "40.5187",
+                longitude: "-74.4121",
+            },
+            SiteArchetype::FleetDepot => SiteGeo {
+                address: "8500 Industrial Blvd",
+                city: "Phoenix",
+                postal_code: "85043",
+                country: "USA",
+                country_code: "US",
+                latitude: "33.4152",
+                longitude: "-112.0071",
+            },
+            SiteArchetype::ScooterHub => SiteGeo {
+                address: "267 Dien Bien Phu",
+                city: "Ho Chi Minh City",
+                postal_code: "700000",
+                country: "VNM",
+                country_code: "VN",
+                latitude: "10.7899",
+                longitude: "106.6822",
+            },
         }
     }
 }

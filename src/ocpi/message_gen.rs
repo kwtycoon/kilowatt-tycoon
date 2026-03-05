@@ -11,19 +11,11 @@ use crate::components::driver::Driver;
 use crate::components::hacker::HackerAttackType;
 use crate::components::site::BelongsToSite;
 use crate::events::{HackerAttackEvent, HackerDetectedEvent};
-use crate::resources::multi_site::SiteId;
+use crate::resources::multi_site::{SiteArchetype, SiteId};
 use crate::resources::{GameClock, MultiSiteManager};
 
 use super::queue::{LastEmittedTariff, OcpiMessageQueue, SESSION_UPDATE_INTERVAL_GAME_SECS};
 use super::types::*;
-
-// Simulated address constants (game doesn't model real-world addresses)
-const SIM_ADDRESS: &str = "123 Charging Lane";
-const SIM_CITY: &str = "Voltsville";
-const SIM_POSTAL: &str = "90210";
-const SIM_COUNTRY_ISO3: &str = "USA";
-const SIM_LAT: &str = "34.0522";
-const SIM_LON: &str = "-118.2437";
 
 // ─────────────────────────────────────────────────────
 //  Helpers
@@ -61,11 +53,18 @@ fn max_voltage_for(ct: ChargerType) -> i32 {
     }
 }
 
-fn make_evse_id(charger_id: &str) -> String {
+fn make_evse_id(country_code: &str, charger_id: &str) -> String {
     let hash: u32 = charger_id
         .bytes()
         .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
-    format!("US*KWT*E{:03}", hash % 1000)
+    format!("{country_code}*KWT*E{:03}", hash % 1000)
+}
+
+fn site_archetype(multi_site: &MultiSiteManager, site_id: SiteId) -> SiteArchetype {
+    multi_site
+        .get_site(site_id)
+        .map(|s| s.archetype)
+        .unwrap_or(SiteArchetype::ParkingLot)
 }
 
 fn make_location_id(site_id: SiteId) -> String {
@@ -152,6 +151,7 @@ pub fn ocpi_location_system(
             .get_site(site_id)
             .map(|s| s.name.as_str())
             .unwrap_or("Unknown Site");
+        let geo = site_archetype(&multi_site, site_id).geo();
         let location_id = make_location_id(site_id);
 
         let max_v = max_voltage_for(charger.charger_type);
@@ -163,17 +163,17 @@ pub fn ocpi_location_system(
             party_id: CPO_PARTY_ID.to_string(),
             id: location_id.clone(),
             name: site_name.to_string(),
-            address: SIM_ADDRESS.to_string(),
-            city: SIM_CITY.to_string(),
-            postal_code: SIM_POSTAL.to_string(),
-            country: SIM_COUNTRY_ISO3.to_string(),
+            address: geo.address.to_string(),
+            city: geo.city.to_string(),
+            postal_code: geo.postal_code.to_string(),
+            country: geo.country.to_string(),
             coordinates: GeoLocation {
-                latitude: SIM_LAT.to_string(),
-                longitude: SIM_LON.to_string(),
+                latitude: geo.latitude.to_string(),
+                longitude: geo.longitude.to_string(),
             },
             evses: vec![Evse {
                 uid: charger.id.clone(),
-                evse_id: make_evse_id(&charger.id),
+                evse_id: make_evse_id(geo.country_code, &charger.id),
                 status: charger_state_to_evse_status(charger.state()),
                 connectors: vec![Connector {
                     id: "1".to_string(),
@@ -206,6 +206,7 @@ pub fn ocpi_location_system(
 
 pub fn ocpi_status_system(
     chargers: Query<(Entity, &Charger, Option<&BelongsToSite>)>,
+    multi_site: Res<MultiSiteManager>,
     mut queue: ResMut<OcpiMessageQueue>,
     game_clock: Res<GameClock>,
 ) {
@@ -230,11 +231,12 @@ pub fn ocpi_status_system(
             .game_time_to_utc(game_clock.total_game_time)
             .to_rfc3339();
         let site_id = site_tag.map(|s| s.site_id).unwrap_or(SiteId(0));
+        let geo = site_archetype(&multi_site, site_id).geo();
 
         let update = EvseStatusUpdate {
             location_id: make_location_id(site_id),
             evse_uid: charger.id.clone(),
-            evse_id: make_evse_id(&charger.id),
+            evse_id: make_evse_id(geo.country_code, &charger.id),
             status: charger_state_to_evse_status(current),
             last_updated: ts_iso.clone(),
         };
@@ -528,6 +530,7 @@ pub fn ocpi_cdr_system(
         entity: Entity,
         site_name: String,
         loc_id: String,
+        archetype: SiteArchetype,
         session_num: i32,
         kwh: f32,
         price: f32,
@@ -563,11 +566,13 @@ pub fn ocpi_cdr_system(
                 })
                 .unwrap_or_else(|| ("Unknown Site".to_string(), 0.0, String::new()));
             let loc_id = make_location_id(site_id);
+            let archetype = site_archetype(&multi_site, site_id);
 
             Some(CdrCandidate {
                 entity,
                 site_name,
                 loc_id,
+                archetype,
                 session_num,
                 kwh: cs.session_kwh,
                 price,
@@ -611,6 +616,7 @@ pub fn ocpi_cdr_system(
         state.is_roaming = false;
 
         let total_cost_val = (c.kwh * c.price) as f64;
+        let geo = c.archetype.geo();
 
         let cdr = Cdr {
             country_code: CPO_COUNTRY_CODE.to_string(),
@@ -625,16 +631,16 @@ pub fn ocpi_cdr_system(
             cdr_location: CdrLocation {
                 id: c.loc_id,
                 name: Some(c.site_name),
-                address: SIM_ADDRESS.to_string(),
-                city: SIM_CITY.to_string(),
-                postal_code: Some(SIM_POSTAL.to_string()),
-                country: SIM_COUNTRY_ISO3.to_string(),
+                address: geo.address.to_string(),
+                city: geo.city.to_string(),
+                postal_code: Some(geo.postal_code.to_string()),
+                country: geo.country.to_string(),
                 coordinates: GeoLocation {
-                    latitude: SIM_LAT.to_string(),
-                    longitude: SIM_LON.to_string(),
+                    latitude: geo.latitude.to_string(),
+                    longitude: geo.longitude.to_string(),
                 },
                 evse_uid: c.charger_id,
-                evse_id: make_evse_id(&state.charger_id),
+                evse_id: make_evse_id(geo.country_code, &state.charger_id),
                 connector_id: "1".to_string(),
                 connector_standard: connector_type_for(c.charger_type),
                 connector_format: ConnectorFormat::Cable,
