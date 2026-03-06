@@ -48,10 +48,10 @@ pub fn time_system(time: Res<Time>, mut game_clock: ResMut<GameClock>, game_stat
     }
 }
 
-/// Maximum real-time seconds the wind-down phase can last before force-transitioning
-/// to DayEnd. Sized to accommodate transformer fire sequences (firetruck travel +
-/// 10 s spray + return) on top of normal driver departure.
-const MAX_WIND_DOWN_SECS: f32 = 60.0;
+/// Maximum real-time seconds the 11:59 PM wind-down can last before we give up
+/// waiting on departures/fire cleanup and force-transition to the DayEnd report.
+/// This keeps the game moving even if a driver or emergency sequence gets stuck.
+const MAX_WIND_DOWN_SECS: f32 = 5.0;
 
 /// Manages the end-of-day wind-down phase.
 ///
@@ -59,7 +59,7 @@ const MAX_WIND_DOWN_SECS: f32 = 60.0;
 /// 1. Ends all active charging sessions immediately, crediting partial revenue.
 /// 2. Kicks non-charging drivers (queued, waiting, frustrated, arrived) so they depart.
 /// 3. Monitors remaining drivers — once all have exited (or none remain), transitions to `DayEnd`.
-/// 4. Force-transitions after [`MAX_WIND_DOWN_SECS`] real seconds even if drivers remain.
+/// 4. Force-transitions after [`MAX_WIND_DOWN_SECS`] real seconds if anything is still stuck.
 pub fn day_ending_system(
     mut commands: Commands,
     game_clock: Res<GameClock>,
@@ -205,7 +205,7 @@ pub fn day_ending_system(
         );
         next_state.set(AppState::DayEnd);
     } else if force_end {
-        // Force-resolve any active fires so the day doesn't stall indefinitely
+        // Force-resolve any remaining blockers so the game cannot sit at 11:59 PM indefinitely.
         for mut transformer in &mut transformers {
             if transformer.on_fire {
                 transformer.on_fire = false;
@@ -224,7 +224,7 @@ pub fn day_ending_system(
         }
 
         warn!(
-            "Day {} wind-down force-ended after {:.0}s — transitioning to DayEnd",
+            "Day {} wind-down force-ended after {:.0}s at 11:59 PM — transitioning to DayEnd",
             game_clock.day, wind_down_elapsed
         );
         next_state.set(AppState::DayEnd);

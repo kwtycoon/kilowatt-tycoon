@@ -219,21 +219,24 @@ pub fn northstar_trigger_departure(
     multi_site: Res<MultiSiteManager>,
 ) {
     for (entity, driver, _agent_pos, mut movement, belongs) in query.iter_mut() {
-        // Check if driver should be departing from a parked state
-        let should_depart = matches!(
+        let is_departing_driver = matches!(
             driver.state,
             DriverState::Leaving | DriverState::LeftAngry | DriverState::Complete
-        ) && movement.phase == MovementPhase::Parked;
-
-        // Drive-through cars (and any stuck departing car) are spawned/transitioned into
-        // DepartingHappy/DepartingAngry with a Pathfind, but if that Pathfind is stripped
-        // by the reroute-failure timeout they end up with no path and no way to trigger
-        // `should_depart` (which requires Parked phase). Detect that case and re-insert a
-        // Pathfind so they can eventually reach the exit instead of blocking the entry forever.
-        let needs_repath = matches!(
+        );
+        let is_already_departing = matches!(
             movement.phase,
             MovementPhase::DepartingHappy | MovementPhase::DepartingAngry
         );
+        let should_depart = is_departing_driver
+            && !matches!(movement.phase, MovementPhase::Exited)
+            && !is_already_departing;
+
+        // Drive-through cars (and any stuck departing car) are spawned/transitioned into
+        // DepartingHappy/DepartingAngry with a Pathfind, but if that Pathfind is stripped
+        // by the reroute-failure timeout they end up with no path. Detect that case and
+        // re-insert a Pathfind so they can eventually reach the exit instead of blocking
+        // the entry or a charger bay forever.
+        let needs_repath = is_already_departing;
 
         if !should_depart && !needs_repath {
             continue;
@@ -517,5 +520,69 @@ pub fn northstar_cleanup_ambient(
             // Reached destination, despawn
             commands.entity(entity).try_despawn();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::resources::{MultiSiteManager, SiteArchetype, SiteId, SiteState};
+
+    #[test]
+    fn left_angry_arriving_driver_gets_exit_path() {
+        let site_id = SiteId(2);
+        let exit_pos = (7, 5);
+        let mut multi_site = MultiSiteManager::default();
+        let mut site_state = SiteState::new(
+            site_id,
+            SiteArchetype::ParkingLot,
+            "Test Site".to_string(),
+            500.0,
+            1.0,
+            1,
+            (16, 12),
+        );
+        site_state.grid.exit_pos = exit_pos;
+        multi_site.owned_sites.insert(site_id, site_state);
+
+        let mut app = App::new();
+        app.insert_resource(multi_site);
+        app.add_systems(Update, northstar_trigger_departure);
+
+        let entity = app
+            .world_mut()
+            .spawn((
+                Driver {
+                    id: "stuck_driver".to_string(),
+                    state: DriverState::LeftAngry,
+                    ..default()
+                },
+                AgentPos(UVec3::new(2, 2, 0)),
+                VehicleMovement {
+                    phase: MovementPhase::Arriving,
+                    speed: 60.0,
+                    ..default()
+                },
+                BelongsToSite::new(site_id),
+                Blocking,
+            ))
+            .id();
+
+        app.update();
+
+        let world = app.world();
+        let movement = world
+            .get::<VehicleMovement>(entity)
+            .expect("driver should keep movement component");
+        assert_eq!(movement.phase, MovementPhase::DepartingAngry);
+        assert!((movement.speed - 280.0).abs() < f32::EPSILON);
+        assert!(
+            world.get::<Pathfind>(entity).is_some(),
+            "driver should get a new exit path"
+        );
+        assert!(
+            world.get::<Blocking>(entity).is_none(),
+            "departing driver should stop blocking the lane"
+        );
     }
 }

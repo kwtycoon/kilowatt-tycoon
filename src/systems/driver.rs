@@ -1621,6 +1621,7 @@ pub fn patience_system(
     mut drivers: Query<(
         Entity,
         &mut Driver,
+        &mut VehicleMovement,
         Option<&ChargingSession>,
         &crate::components::BelongsToSite,
     )>,
@@ -1643,7 +1644,7 @@ pub fn patience_system(
 
     let delta_game_minutes = time.delta_secs() * game_clock.speed.multiplier() / 60.0;
 
-    for (entity, mut driver, session, belongs) in &mut drivers {
+    for (entity, mut driver, mut movement, session, belongs) in &mut drivers {
         // Get site-specific resources
         let Some(site_state) = multi_site.get_site_mut(belongs.site_id) else {
             continue;
@@ -1715,6 +1716,8 @@ pub fn patience_system(
             )
         {
             driver.state = DriverState::LeftAngry;
+            movement.phase = MovementPhase::DepartingAngry;
+            movement.speed = 280.0;
             driver.waiting_tile = None;
 
             // Clear charger state if driver was assigned to one
@@ -1904,6 +1907,8 @@ pub fn frustrated_driver_system(
         // 3) No alternatives — if patience depleted, leave angry
         if driver.patience <= 0.0 {
             driver.state = DriverState::LeftAngry;
+            movement.phase = MovementPhase::DepartingAngry;
+            movement.speed = 280.0;
             driver.waiting_tile = None;
 
             if let Some(charger_entity) = driver.assigned_charger
