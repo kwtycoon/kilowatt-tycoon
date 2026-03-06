@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<tileset version="1.10" tiledversion="1.11.0" name="kilowatt_tiles" tilewidth="64" tileheight="64" tilecount="146" columns="0">
+<tileset version="1.10" tiledversion="1.11.0" name="kilowatt_tiles" tilewidth="64" tileheight="64" tilecount="165" columns="0">
  <grid orientation="orthogonal" width="1" height="1"/>
 
  <tile id="0" type="Grass">
@@ -757,6 +757,170 @@
    <property name="driveable" type="bool" value="true"/>
   </properties>
   <image width="64" height="64" source="../world/tiles/tile_road_lane_top.png"/>
+ </tile>
+
+ <tile id="150" type="ApacGrass1">
+  <properties>
+   <property name="content_type" value="ApacGrass1"/>
+   <property name="buildable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_grass_1.png"/>
+ </tile>
+
+ <tile id="151" type="ApacGrass2">
+  <properties>
+   <property name="content_type" value="ApacGrass2"/>
+   <property name="buildable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_grass_2.png"/>
+ </tile>
+
+ <tile id="152" type="ApacGrass3">
+  <properties>
+   <property name="content_type" value="ApacGrass3"/>
+   <property name="buildable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_grass_3.png"/>
+ </tile>
+
+ <tile id="153" type="ApacGrass4">
+  <properties>
+   <property name="content_type" value="ApacGrass4"/>
+   <property name="buildable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_grass_4.png"/>
+ </tile>
+
+ <tile id="154" type="ApacGreen1">
+  <properties>
+   <property name="content_type" value="ApacGreen1"/>
+   <property name="locked" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_green_1.png"/>
+ </tile>
+
+ <tile id="158" type="ApacLemon1">
+  <properties>
+   <property name="content_type" value="ApacLemon1"/>
+   <property name="locked" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_lemon_1.png"/>
+ </tile>
+
+ <tile id="162" type="ApacTom1">
+  <properties>
+   <property name="content_type" value="ApacTom1"/>
+   <property name="locked" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_tom_1.png"/>
+ </tile>
+
+ <tile id="166" type="ApacDriveA1">
+  <properties>
+   <property name="content_type" value="ApacDriveA1"/>
+   <property name="locked" type="bool" value="true"/>
+   <property name="driveable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_drive_a_1.png"/>
+ </tile>
+
+ <tile id="167" type="ApacDriveA2">
+  <properties>
+   <property name="content_type" value="ApacDriveA2"/>
+   <property name="locked" type="bool" value="true"/>
+   <property name="driveable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_drive_a_2.png"/>
+ </tile>
+
+ <tile id="168" type="ApacDriveA3">
+  <properties>
+   <property name="content_type" value="ApacDriveA3"/>
+   <property name="locked" type="bool" value="true"/>
+   <property name="driveable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_drive_a_3.png"/>
+ </tile>
+
+ <tile id="169" type="ApacDriveA4">
+  <properties>
+   <property name="content_type" value="ApacDriveA4"/>
+   <property name="locked" type="bool" value="true"/>
+   <property name="driveable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_drive_a_4.png"/>
+ </tile>
+
+ <tile id="170" type="ApacDriveB1">
+  <properties>
+   <property name="content_type" value="ApacDriveB1"/>
+   <property name="locked" type="bool" value="true"/>
+   <property name="driveable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_drive_b_1.png"/>
+ </tile>
+
+ <tile id="171" type="ApacDriveB2">
+  <properties>
+   <property name="content_type" value="ApacDriveB2"/>
+   <property name="locked" type="bool" value="true"/>
+   <property name="driveable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_drive_b_2.png"/>
+ </tile>
+
+ <tile id="172" type="ApacDriveB3">
+  <properties>
+   <property name="content_type" value="ApacDriveB3"/>
+   <property name="locked" type="bool" value="true"/>
+   <property name="driveable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_drive_b_3.png"/>
+ </tile>
+
+ <tile id="173" type="ApacDriveB4">
+  <properties>
+   <property name="content_type" value="ApacDriveB4"/>
+   <property name="locked" type="bool" value="true"/>
+   <property name="driveable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_drive_b_4.png"/>
+ </tile>
+
+ <tile id="174" type="ApacDriveC">
+  <properties>
+   <property name="content_type" value="ApacDriveC"/>
+   <property name="locked" type="bool" value="true"/>
+   <property name="driveable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_drive_c.png"/>
+ </tile>
+
+ <tile id="175" type="ApacDriveD">
+  <properties>
+   <property name="content_type" value="ApacDriveD"/>
+   <property name="locked" type="bool" value="true"/>
+   <property name="driveable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_drive_d.png"/>
+ </tile>
+
+ <tile id="176" type="ApacDriveE">
+  <properties>
+   <property name="content_type" value="ApacDriveE"/>
+   <property name="locked" type="bool" value="true"/>
+   <property name="driveable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_drive_e.png"/>
+ </tile>
+
+ <tile id="177" type="ApacDriveF">
+  <properties>
+   <property name="content_type" value="ApacDriveF"/>
+   <property name="locked" type="bool" value="true"/>
+   <property name="driveable" type="bool" value="true"/>
+  </properties>
+  <image width="64" height="64" source="../world/tiles/tile_apac_drive_f.png"/>
  </tile>
 
  <tile id="92">

@@ -83,6 +83,14 @@ pub fn parse_tile_content(content_type: &str) -> TileContent {
         "LoadingZone" => TileContent::LoadingZone,
         // Planter
         "Planter" => TileContent::Planter,
+        // APAC grass variants
+        "ApacGrass1" | "ApacGrass2" | "ApacGrass3" | "ApacGrass4" => TileContent::Grass,
+        // APAC blocked decorative 2x2 sets
+        "ApacGreen1" | "ApacLemon1" | "ApacTom1" => TileContent::Planter,
+        // APAC driveable paving variants
+        "ApacDriveA1" | "ApacDriveA2" | "ApacDriveA3" | "ApacDriveA4" | "ApacDriveB1"
+        | "ApacDriveB2" | "ApacDriveB3" | "ApacDriveB4" | "ApacDriveC" | "ApacDriveD"
+        | "ApacDriveE" | "ApacDriveF" => TileContent::Concrete,
         // Amenities
         "AmenityWifiRestrooms" => TileContent::AmenityWifiRestrooms,
         "AmenityLoungeSnacks" => TileContent::AmenityLoungeSnacks,
@@ -171,6 +179,9 @@ pub fn tile_id_to_content(tile_id: u32) -> TileContent {
         92 => TileContent::Grass,     // fuel_cover fixed sprite
         93 | 94 => TileContent::Road, // RoadLaneTop / RoadLaneBottom - 2-lane road tiles
         95..=149 => TileContent::Grass,
+        150..=153 => TileContent::Grass, // APAC grass variants
+        154 | 158 | 162 => TileContent::Planter, // APAC blocked decorative tiles
+        166..=177 => TileContent::Concrete, // APAC driveable paving variants
         _ => {
             warn!("Unknown tile ID {}, defaulting to Grass", tile_id);
             TileContent::Grass
@@ -328,8 +339,9 @@ fn extract_locked_tiles_from_layer(
 
 /// Determine if a tile should be locked based on its ID and content
 fn should_tile_be_locked(tile_id: u32, content: &TileContent) -> bool {
-    // Decoration / scenery tiles (58-91 typed props, 92-149 fixed sprites) are always locked
-    if tile_id >= 58 {
+    // Legacy decoration / scenery tiles (58-91 typed props, 92-149 fixed sprites)
+    // are always locked. Newer IDs should follow their mapped gameplay content.
+    if (58..=149).contains(&tile_id) {
         return true;
     }
 
@@ -560,6 +572,11 @@ mod tests {
         assert_eq!(tile_id_to_content(3), TileContent::Exit);
         assert_eq!(tile_id_to_content(4), TileContent::Lot);
         assert_eq!(tile_id_to_content(8), TileContent::GarageFloor);
+        assert_eq!(tile_id_to_content(150), TileContent::Grass);
+        assert_eq!(tile_id_to_content(154), TileContent::Planter);
+        assert_eq!(tile_id_to_content(158), TileContent::Planter);
+        assert_eq!(tile_id_to_content(162), TileContent::Planter);
+        assert_eq!(tile_id_to_content(166), TileContent::Concrete);
     }
 
     #[test]
@@ -578,5 +595,22 @@ mod tests {
             let parsed = parse_tile_content(&s);
             assert_eq!(parsed, content);
         }
+    }
+
+    #[test]
+    fn test_apac_content_type_mappings() {
+        assert_eq!(parse_tile_content("ApacGrass1"), TileContent::Grass);
+        assert_eq!(parse_tile_content("ApacGreen1"), TileContent::Planter);
+        assert_eq!(parse_tile_content("ApacLemon1"), TileContent::Planter);
+        assert_eq!(parse_tile_content("ApacTom1"), TileContent::Planter);
+        assert_eq!(parse_tile_content("ApacDriveA1"), TileContent::Concrete);
+        assert_eq!(parse_tile_content("ApacDriveF"), TileContent::Concrete);
+    }
+
+    #[test]
+    fn test_apac_locking_rules() {
+        assert!(!should_tile_be_locked(150, &TileContent::Grass));
+        assert!(should_tile_be_locked(154, &TileContent::Planter));
+        assert!(should_tile_be_locked(166, &TileContent::Concrete));
     }
 }

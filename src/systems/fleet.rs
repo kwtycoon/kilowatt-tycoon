@@ -13,7 +13,8 @@ use crate::components::driver::{
 use crate::events::DriverArrivedEvent;
 use crate::helpers::ui_builders::colors;
 use crate::resources::fleet::{
-    FleetBadge, FleetContractTerminatedEvent, FleetDebugLabel, FleetDebugMode, FleetVehicle,
+    FleetContractTerminatedEvent, FleetDebugMode, FleetDebugOverlay, FleetHaloLayer,
+    FleetHaloTexture, FleetOverlay, FleetVehicle,
 };
 use crate::resources::{BuildState, FleetContractManager, GameClock, GameState, SiteGrid};
 
@@ -444,39 +445,65 @@ pub fn fleet_sla_system(
     }
 }
 
-/// Apply fleet visual distinction (company color tint + badge) to newly spawned fleet vehicles.
+/// Apply fleet visual distinction (company color tint + premium halo) to newly spawned fleet vehicles.
 ///
 /// Triggers on `Added<VehicleSprite>` so the child sprite entity already exists
 /// when we apply the tint. The previous `Added<Driver>` approach raced with
-/// `spawn_vehicle_sprites` in the same system set, causing the tint and badge
+/// `spawn_vehicle_sprites` in the same system set, causing the tint and overlay
 /// to be silently skipped.
+const HALO_BASE_Z: f32 = 1.0;
+const HALO_LABEL_SHADOW_Z: f32 = 17.5;
+const HALO_LABEL_Z: f32 = 17.7;
+const HALO_TEXTURE_W: u32 = 256;
+const HALO_TEXTURE_H: u32 = 128;
+
+#[derive(Clone, Copy)]
+struct VehicleHaloMetrics {
+    halo_size: Vec2,
+    font_size: f32,
+}
+
+pub fn ensure_fleet_halo_texture(
+    mut halo_texture: ResMut<FleetHaloTexture>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    if halo_texture.image.is_some() {
+        return;
+    }
+
+    halo_texture.image = Some(images.add(build_fleet_halo_texture()));
+}
+
 pub fn fleet_visual_system(
     mut commands: Commands,
     mut new_sprites: Query<
         (&crate::systems::sprite::VehicleSprite, &mut Sprite),
         Added<crate::systems::sprite::VehicleSprite>,
     >,
+    drivers: Query<&Driver>,
     fleet_vehicles: Query<&FleetVehicle>,
     fleet_mgr: Res<FleetContractManager>,
     children_query: Query<&Children>,
-    existing_badges: Query<&FleetBadge>,
+    existing_overlays: Query<&FleetOverlay>,
+    halo_texture: Res<FleetHaloTexture>,
 ) {
-    let rotation = Quat::from_rotation_z(std::f32::consts::FRAC_PI_2);
-
     for (vehicle_sprite, mut sprite) in &mut new_sprites {
         let driver_entity = vehicle_sprite.driver_entity;
+        let Ok(driver) = drivers.get(driver_entity) else {
+            continue;
+        };
         let Ok(fleet_vehicle) = fleet_vehicles.get(driver_entity) else {
             continue;
         };
 
         sprite.color = fleet_vehicle.company_color;
 
-        let has_badge = children_query
+        let has_overlay = children_query
             .get(driver_entity)
-            .map(|children| children.iter().any(|c| existing_badges.get(c).is_ok()))
+            .map(|children| children.iter().any(|c| existing_overlays.get(c).is_ok()))
             .unwrap_or(false);
 
-        if !has_badge {
+        if !has_overlay {
             let name = fleet_mgr
                 .active
                 .iter()
@@ -484,45 +511,32 @@ pub fn fleet_visual_system(
                 .map(|c| c.def.company_name.chars().take(8).collect::<String>())
                 .unwrap_or_else(|| fleet_vehicle.contract_id.chars().take(8).collect());
 
-            commands.entity(driver_entity).with_children(|parent| {
-                parent.spawn((
-                    Sprite {
-                        color: Color::srgba(0.0, 0.0, 0.0, 0.8),
-                        custom_size: Some(Vec2::new(100.0, 22.0)),
-                        ..default()
-                    },
-                    Transform::from_xyz(0.0, 0.0, 19.0).with_rotation(rotation),
-                    FleetBadge,
-                ));
-
-                parent.spawn((
-                    Text2d::new(&name),
-                    TextFont {
-                        font_size: 18.0,
-                        ..default()
-                    },
-                    TextColor(fleet_vehicle.company_color),
-                    Transform::from_xyz(0.0, 0.0, 20.0).with_rotation(rotation),
-                    FleetBadge,
-                ));
-            });
+            spawn_vehicle_overlay::<FleetOverlay>(
+                &mut commands,
+                driver_entity,
+                driver.vehicle_type,
+                &name,
+                fleet_vehicle.company_color,
+                fleet_vehicle.company_color,
+                &halo_texture,
+            );
         }
     }
 }
 
 /// Toggle the fleet debug overlay with F5.
 ///
-/// Adds "DRIVER" labels to non-fleet vehicles so you can compare them against
-/// the always-on fleet labels. Fleet vehicles already have their company name
-/// overlay from `fleet_visual_system`.
+/// Adds a blue premium halo + label for non-fleet vehicles so you can compare
+/// them against the always-on fleet overlays.
 pub fn toggle_fleet_debug(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut commands: Commands,
     mut debug_mode: ResMut<FleetDebugMode>,
-    non_fleet_drivers: Query<Entity, (With<Driver>, Without<FleetVehicle>)>,
+    non_fleet_drivers: Query<(Entity, &Driver), Without<FleetVehicle>>,
     fleet_vehicles: Query<Entity, With<FleetVehicle>>,
     children_query: Query<&Children>,
-    existing_labels: Query<Entity, With<FleetDebugLabel>>,
+    existing_labels: Query<Entity, With<FleetDebugOverlay>>,
+    halo_texture: Res<FleetHaloTexture>,
 ) {
     if !keyboard.just_pressed(KeyCode::F5) {
         return;
@@ -540,14 +554,19 @@ pub fn toggle_fleet_debug(
     );
 
     if debug_mode.active {
-        for driver_entity in &non_fleet_drivers {
+        for (driver_entity, driver) in &non_fleet_drivers {
             let already_has = children_query
                 .get(driver_entity)
                 .map(|children| children.iter().any(|c| existing_labels.get(c).is_ok()))
                 .unwrap_or(false);
 
             if !already_has {
-                spawn_customer_debug_label(&mut commands, driver_entity);
+                spawn_customer_debug_overlay(
+                    &mut commands,
+                    driver_entity,
+                    driver.vehicle_type,
+                    &halo_texture,
+                );
             }
         }
     } else {
@@ -557,46 +576,231 @@ pub fn toggle_fleet_debug(
     }
 }
 
-/// Ensure newly-spawned non-fleet drivers get a "DRIVER" label when the debug mode is active.
+/// Ensure newly-spawned non-fleet drivers get the F5 overlay when the debug mode is active.
 pub fn fleet_debug_label_sync(
     mut commands: Commands,
     debug_mode: Res<FleetDebugMode>,
-    new_drivers: Query<Entity, (Added<Driver>, Without<FleetVehicle>)>,
+    new_drivers: Query<(Entity, &Driver), (Added<Driver>, Without<FleetVehicle>)>,
+    children_query: Query<&Children>,
+    existing_labels: Query<Entity, With<FleetDebugOverlay>>,
+    halo_texture: Res<FleetHaloTexture>,
 ) {
     if !debug_mode.active {
         return;
     }
 
-    for driver_entity in &new_drivers {
-        spawn_customer_debug_label(&mut commands, driver_entity);
+    for (driver_entity, driver) in &new_drivers {
+        let already_has = children_query
+            .get(driver_entity)
+            .map(|children| children.iter().any(|c| existing_labels.get(c).is_ok()))
+            .unwrap_or(false);
+        if already_has {
+            continue;
+        }
+
+        spawn_customer_debug_overlay(
+            &mut commands,
+            driver_entity,
+            driver.vehicle_type,
+            &halo_texture,
+        );
     }
 }
 
-fn spawn_customer_debug_label(commands: &mut Commands, driver_entity: Entity) {
-    let rotation = Quat::from_rotation_z(std::f32::consts::FRAC_PI_2);
+fn spawn_customer_debug_overlay(
+    commands: &mut Commands,
+    driver_entity: Entity,
+    vehicle_type: crate::components::driver::VehicleType,
+    halo_texture: &FleetHaloTexture,
+) {
+    spawn_vehicle_overlay::<FleetDebugOverlay>(
+        commands,
+        driver_entity,
+        vehicle_type,
+        "DRIVER",
+        crate::systems::sprite::colors::SELECTION_HIGHLIGHT,
+        crate::systems::sprite::colors::SELECTION_HIGHLIGHT,
+        halo_texture,
+    );
+}
+
+fn spawn_vehicle_overlay<T: Component + Default>(
+    commands: &mut Commands,
+    driver_entity: Entity,
+    vehicle_type: crate::components::driver::VehicleType,
+    label: &str,
+    glow_color: Color,
+    text_color: Color,
+    halo_texture: &FleetHaloTexture,
+) {
+    let metrics = halo_metrics(vehicle_type);
+    let Some(glow_image) = halo_texture.image.clone() else {
+        return;
+    };
+    let halo_scale = scale_generated_halo(metrics.halo_size);
+    let shadow_color = Color::srgba(0.02, 0.04, 0.06, 0.55);
+    let label_rotation = Quat::from_rotation_z(std::f32::consts::FRAC_PI_2);
 
     commands.entity(driver_entity).with_children(|parent| {
+        let mut halo = Sprite::from_image(glow_image);
+        halo.color = glow_color.with_alpha(0.62);
         parent.spawn((
-            Sprite {
-                color: Color::srgba(0.0, 0.0, 0.0, 0.8),
-                custom_size: Some(Vec2::new(100.0, 22.0)),
-                ..default()
+            halo,
+            Transform::from_xyz(0.0, 0.0, HALO_BASE_Z).with_scale(halo_scale),
+            FleetHaloLayer {
+                base_scale: halo_scale,
+                base_alpha: 0.62,
+                pulse_scale: 0.018,
+                pulse_alpha: 0.07,
+                rotation_speed: 0.0,
+                phase_offset: halo_phase(vehicle_type),
             },
-            Transform::from_xyz(0.0, 0.0, 19.0).with_rotation(rotation),
-            FleetDebugLabel,
+            T::default(),
         ));
 
         parent.spawn((
-            Text2d::new("DRIVER"),
+            Text2d::new(label),
             TextFont {
-                font_size: 18.0,
+                font_size: metrics.font_size,
                 ..default()
             },
-            TextColor(Color::srgba(0.5, 0.8, 1.0, 0.6)),
-            Transform::from_xyz(0.0, 0.0, 20.0).with_rotation(rotation),
-            FleetDebugLabel,
+            TextColor(shadow_color),
+            Transform::from_xyz(1.5, -1.5, HALO_LABEL_SHADOW_Z).with_rotation(label_rotation),
+            T::default(),
+        ));
+
+        parent.spawn((
+            Text2d::new(label),
+            TextFont {
+                font_size: metrics.font_size,
+                ..default()
+            },
+            TextColor(text_color),
+            Transform::from_xyz(0.0, 0.0, HALO_LABEL_Z).with_rotation(label_rotation),
+            T::default(),
         ));
     });
+}
+
+pub fn animate_vehicle_halos(
+    time: Res<Time>,
+    mut halo_layers: Query<(&FleetHaloLayer, &mut Transform, &mut Sprite)>,
+) {
+    let elapsed = time.elapsed_secs();
+
+    for (layer, mut transform, mut sprite) in &mut halo_layers {
+        let pulse = (elapsed * 1.8 + layer.phase_offset).sin();
+        let scale = 1.0 + pulse * layer.pulse_scale;
+        transform.scale = layer.base_scale * scale;
+        transform.rotation = if layer.rotation_speed.abs() > f32::EPSILON {
+            Quat::from_rotation_z(elapsed * layer.rotation_speed)
+        } else {
+            Quat::IDENTITY
+        };
+        sprite.color = sprite
+            .color
+            .with_alpha((layer.base_alpha + pulse * layer.pulse_alpha).clamp(0.0, 1.0));
+    }
+}
+
+fn halo_metrics(vehicle_type: crate::components::driver::VehicleType) -> VehicleHaloMetrics {
+    let vehicle_width = crate::resources::sprite_metadata::vehicle_world_size(vehicle_type).width;
+    let halo_width = (vehicle_width * 1.55).clamp(42.0, 96.0);
+    let halo_height = (vehicle_width * 0.78).clamp(24.0, 52.0);
+    let font_size = (vehicle_width * 0.28).clamp(10.0, 16.0);
+
+    VehicleHaloMetrics {
+        halo_size: Vec2::new(halo_width, halo_height),
+        font_size,
+    }
+}
+
+fn scale_generated_halo(target_size: Vec2) -> Vec3 {
+    Vec3::new(
+        target_size.x / HALO_TEXTURE_W as f32,
+        target_size.y / HALO_TEXTURE_H as f32,
+        1.0,
+    )
+}
+
+fn build_fleet_halo_texture() -> Image {
+    let width = HALO_TEXTURE_W as usize;
+    let height = HALO_TEXTURE_H as usize;
+    let mut rgba = vec![0u8; width * height * 4];
+
+    for y in 0..height {
+        for x in 0..width {
+            let nx = ((x as f32 + 0.5) / width as f32) * 2.0 - 1.0;
+            let ny = ((y as f32 + 0.5) / height as f32) * 2.0 - 1.0;
+            let elliptical_y = ny * 1.65;
+            let radius = (nx * nx + elliptical_y * elliptical_y).sqrt();
+            let inner_glow = (1.0 - smoothstep(0.18, 0.92, radius)) * 0.22;
+            let rim_glow = ring_band(radius, 0.68, 0.24, 0.12) * 0.95;
+            let alpha = (inner_glow + rim_glow).clamp(0.0, 1.0);
+
+            let offset = (y * width + x) * 4;
+            rgba[offset] = 255;
+            rgba[offset + 1] = 255;
+            rgba[offset + 2] = 255;
+            rgba[offset + 3] = (alpha * 255.0).round() as u8;
+        }
+    }
+
+    let mut image = Image::new(
+        bevy::render::render_resource::Extent3d {
+            width: HALO_TEXTURE_W,
+            height: HALO_TEXTURE_H,
+            depth_or_array_layers: 1,
+        },
+        bevy::render::render_resource::TextureDimension::D2,
+        rgba,
+        bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+        bevy::asset::RenderAssetUsages::RENDER_WORLD | bevy::asset::RenderAssetUsages::MAIN_WORLD,
+    );
+    image.sampler = bevy::image::ImageSampler::Descriptor(bevy::image::ImageSamplerDescriptor {
+        mag_filter: bevy::image::ImageFilterMode::Linear,
+        min_filter: bevy::image::ImageFilterMode::Linear,
+        ..default()
+    });
+    image
+}
+
+fn ring_band(radius: f32, center: f32, half_width: f32, feather: f32) -> f32 {
+    let inner = smoothstep(
+        center - half_width - feather,
+        center - half_width + feather,
+        radius,
+    );
+    let outer = 1.0
+        - smoothstep(
+            center + half_width - feather,
+            center + half_width + feather,
+            radius,
+        );
+    (inner * outer).clamp(0.0, 1.0)
+}
+
+fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
+    let t = ((value - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn halo_phase(vehicle_type: crate::components::driver::VehicleType) -> f32 {
+    use crate::components::driver::VehicleType;
+
+    match vehicle_type {
+        VehicleType::Compact => 0.15,
+        VehicleType::Sedan => 0.55,
+        VehicleType::Suv => 0.95,
+        VehicleType::Crossover => 1.35,
+        VehicleType::Pickup => 1.75,
+        VehicleType::Bus => 2.15,
+        VehicleType::Semi => 2.55,
+        VehicleType::Tractor => 2.95,
+        VehicleType::Firetruck => 3.35,
+        VehicleType::Scooter => 3.75,
+        VehicleType::Motorcycle => 4.15,
+    }
 }
 
 /// Handle fleet contract offer banner interactions (accept/decline).

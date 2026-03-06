@@ -1570,4 +1570,11 @@ mod tests {
             "Waiting tile should be near the equipped upper row (y >= 7), got y={ry}"
         );
     }
+
+    #[test]
+    fn apac_surface_driveability_matches_intended_semantics() {
+        assert!(!TileContent::Grass.is_driveable());
+        assert!(!TileContent::Planter.is_driveable());
+        assert!(TileContent::Concrete.is_driveable());
+    }
 }

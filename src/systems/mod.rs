@@ -469,6 +469,7 @@ impl Plugin for SystemsPlugin {
                     update_hacking_glitch_vfx,
                     update_hacker_loot_bubble,
                     fleet::fleet_visual_system,
+                    fleet::animate_vehicle_halos,
                     fleet::toggle_fleet_debug,
                     fleet::fleet_debug_label_sync,
                 ),
@@ -479,6 +480,14 @@ impl Plugin for SystemsPlugin {
                 update_battery_soc_bar,
             )
                 .in_set(GameSystemSet::SpriteUpdate),
+        );
+        app.add_systems(
+            Update,
+            fleet::ensure_fleet_halo_texture
+                .in_set(GameSystemSet::SpriteUpdate)
+                .before(fleet::fleet_visual_system)
+                .before(fleet::toggle_fleet_debug)
+                .before(fleet::fleet_debug_label_sync),
         );
 
         // Site root spawning - runs when game is visible to create root entities for new sites

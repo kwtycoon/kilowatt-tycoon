@@ -190,19 +190,36 @@ pub struct FleetVehicle {
     pub company_color: Color,
 }
 
-/// Marker for the floating fleet badge sprite.
-#[derive(Component, Debug)]
-pub struct FleetBadge;
+/// Marker for the fleet glow overlay children attached to a vehicle.
+#[derive(Component, Debug, Default)]
+pub struct FleetOverlay;
 
-/// Toggles the bright debug "FLEET" labels above all fleet vehicles (F5).
+/// Animation metadata for a single fleet/debug halo sprite layer.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct FleetHaloLayer {
+    pub base_scale: Vec3,
+    pub base_alpha: f32,
+    pub pulse_scale: f32,
+    pub pulse_alpha: f32,
+    pub rotation_speed: f32,
+    pub phase_offset: f32,
+}
+
+/// Cached runtime-generated halo texture used by fleet and F5 overlays.
+#[derive(Resource, Default)]
+pub struct FleetHaloTexture {
+    pub image: Option<Handle<Image>>,
+}
+
+/// Toggles the F5 debug overlays for non-fleet vehicles.
 #[derive(Resource, Debug, Default)]
 pub struct FleetDebugMode {
     pub active: bool,
 }
 
-/// Marker for the debug text label spawned above fleet vehicles.
-#[derive(Component, Debug)]
-pub struct FleetDebugLabel;
+/// Marker for the F5 debug glow overlay children attached to non-fleet vehicles.
+#[derive(Component, Debug, Default)]
+pub struct FleetDebugOverlay;
 
 /// Event fired when a fleet contract is terminated.
 #[derive(Event, Message, Debug, Clone)]

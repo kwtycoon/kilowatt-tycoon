@@ -93,6 +93,7 @@ impl Plugin for ResourcesPlugin {
             .init_resource::<LeaderboardData>()
             .init_resource::<UnitSystem>()
             .init_resource::<FleetContractManager>()
+            .init_resource::<crate::resources::fleet::FleetHaloTexture>()
             .init_resource::<crate::resources::fleet::FleetDebugMode>()
             .init_resource::<crate::systems::robber::DailyRobberyTracker>()
             .init_resource::<crate::systems::hacker::DailyHackerTracker>()

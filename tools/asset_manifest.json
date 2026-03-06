@@ -1510,6 +1510,288 @@
           "asphalt_dark"
         ],
         "ai_prompt": "top half of a two-lane road with lane markings, asphalt surface #3A3F4B"
+      },
+      {
+        "id": 150,
+        "name": "ApacGrass1",
+        "rust_variant": "ApacGrass1",
+        "filename": "tile_apac_grass_1.png",
+        "category": "base",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": true
+        },
+        "colors": [
+          "grass",
+          "grass_light",
+          "grass_dark"
+        ],
+        "ai_prompt": "APAC grass variant tile 1 with natural green ground cover"
+      },
+      {
+        "id": 151,
+        "name": "ApacGrass2",
+        "rust_variant": "ApacGrass2",
+        "filename": "tile_apac_grass_2.png",
+        "category": "base",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": true
+        },
+        "colors": [
+          "grass",
+          "grass_light",
+          "grass_dark"
+        ],
+        "ai_prompt": "APAC grass variant tile 2 with natural green ground cover"
+      },
+      {
+        "id": 152,
+        "name": "ApacGrass3",
+        "rust_variant": "ApacGrass3",
+        "filename": "tile_apac_grass_3.png",
+        "category": "base",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": true
+        },
+        "colors": [
+          "grass",
+          "grass_light",
+          "grass_dark"
+        ],
+        "ai_prompt": "APAC grass variant tile 3 with natural green ground cover"
+      },
+      {
+        "id": 153,
+        "name": "ApacGrass4",
+        "rust_variant": "ApacGrass4",
+        "filename": "tile_apac_grass_4.png",
+        "category": "base",
+        "properties": {
+          "locked": false,
+          "driveable": false,
+          "buildable": true
+        },
+        "colors": [
+          "grass",
+          "grass_light",
+          "grass_dark"
+        ],
+        "ai_prompt": "APAC grass variant tile 4 with natural green ground cover"
+      },
+      {
+        "id": 154,
+        "name": "ApacGreen1",
+        "rust_variant": "ApacGreen1",
+        "filename": "tile_apac_green_1.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "APAC decorative foliage quadrant 1 of a 2x2 blocked cluster"
+      },
+      {
+        "id": 158,
+        "name": "ApacLemon1",
+        "rust_variant": "ApacLemon1",
+        "filename": "tile_apac_lemon_1.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "APAC lemon-tree decorative quadrant 1 of a 2x2 blocked cluster"
+      },
+      {
+        "id": 162,
+        "name": "ApacTom1",
+        "rust_variant": "ApacTom1",
+        "filename": "tile_apac_tom_1.png",
+        "category": "decorative",
+        "properties": {
+          "locked": true,
+          "driveable": false,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "APAC decorative blocker quadrant 1 of a 2x2 cluster"
+      },
+      {
+        "id": 166,
+        "name": "ApacDriveA1",
+        "rust_variant": "ApacDriveA1",
+        "filename": "tile_apac_drive_a_1.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "APAC driveable paving tile A1"
+      },
+      {
+        "id": 167,
+        "name": "ApacDriveA2",
+        "rust_variant": "ApacDriveA2",
+        "filename": "tile_apac_drive_a_2.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "APAC driveable paving tile A2"
+      },
+      {
+        "id": 168,
+        "name": "ApacDriveA3",
+        "rust_variant": "ApacDriveA3",
+        "filename": "tile_apac_drive_a_3.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "APAC driveable paving tile A3"
+      },
+      {
+        "id": 169,
+        "name": "ApacDriveA4",
+        "rust_variant": "ApacDriveA4",
+        "filename": "tile_apac_drive_a_4.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "APAC driveable paving tile A4"
+      },
+      {
+        "id": 170,
+        "name": "ApacDriveB1",
+        "rust_variant": "ApacDriveB1",
+        "filename": "tile_apac_drive_b_1.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "APAC driveable paving tile B1"
+      },
+      {
+        "id": 171,
+        "name": "ApacDriveB2",
+        "rust_variant": "ApacDriveB2",
+        "filename": "tile_apac_drive_b_2.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "APAC driveable paving tile B2"
+      },
+      {
+        "id": 172,
+        "name": "ApacDriveB3",
+        "rust_variant": "ApacDriveB3",
+        "filename": "tile_apac_drive_b_3.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "APAC driveable paving tile B3"
+      },
+      {
+        "id": 173,
+        "name": "ApacDriveB4",
+        "rust_variant": "ApacDriveB4",
+        "filename": "tile_apac_drive_b_4.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "APAC driveable paving tile B4"
+      },
+      {
+        "id": 174,
+        "name": "ApacDriveC",
+        "rust_variant": "ApacDriveC",
+        "filename": "tile_apac_drive_c.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "APAC driveable paving tile C"
+      },
+      {
+        "id": 175,
+        "name": "ApacDriveD",
+        "rust_variant": "ApacDriveD",
+        "filename": "tile_apac_drive_d.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "APAC driveable paving tile D"
+      },
+      {
+        "id": 176,
+        "name": "ApacDriveE",
+        "rust_variant": "ApacDriveE",
+        "filename": "tile_apac_drive_e.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "APAC driveable paving tile E"
+      },
+      {
+        "id": 177,
+        "name": "ApacDriveF",
+        "rust_variant": "ApacDriveF",
+        "filename": "tile_apac_drive_f.png",
+        "category": "road",
+        "properties": {
+          "locked": true,
+          "driveable": true,
+          "buildable": false
+        },
+        "colors": [],
+        "ai_prompt": "APAC driveable paving tile F"
       }
     ],
     "fixed_tiles": [
