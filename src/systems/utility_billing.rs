@@ -32,6 +32,7 @@ pub fn grid_event_system(
     image_assets: Res<ImageAssets>,
     environment: Res<EnvironmentState>,
     toast_container: Single<Entity, With<crate::ui::toast::ToastContainer>>,
+    existing_grid_event_toasts: Query<Entity, With<crate::ui::toast::GridEventToast>>,
 ) {
     if game_clock.is_paused() {
         return;
@@ -67,6 +68,7 @@ pub fn grid_event_system(
             crate::ui::toast::spawn_grid_event_toast(
                 &mut commands,
                 *toast_container,
+                &existing_grid_event_toasts,
                 event,
                 weather,
                 game_clock.game_time,
@@ -86,6 +88,7 @@ pub fn grid_event_system(
             } else {
                 format!("{event_name} ended.")
             };
+            crate::ui::toast::dismiss_grid_event_toasts(&mut commands, &existing_grid_event_toasts);
             crate::ui::toast::spawn_grid_event_end_toast(
                 &mut commands,
                 *toast_container,

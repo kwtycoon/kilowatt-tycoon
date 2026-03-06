@@ -102,8 +102,13 @@ impl Plugin for UiPlugin {
                 update_overlay,
                 handle_speed_buttons,
                 sync_speed_button_colors,
-                update_effective_price_badge,
-                update_grid_event_badge,
+                (
+                    update_effective_price_badge,
+                    update_grid_event_badge,
+                    sync_grid_event_badge_marquee,
+                    animate_grid_event_badge_marquee,
+                )
+                    .chain(),
                 handle_overlay_buttons,
                 // Tutorial systems
                 update_tutorial_visibility,

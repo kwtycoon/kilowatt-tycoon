@@ -49,6 +49,12 @@ pub struct PowerTotalLabel;
 pub struct GridEventBadge;
 
 #[derive(Component)]
+pub struct GridEventBadgeMarquee {
+    elapsed_secs: f32,
+    last_message: String,
+}
+
+#[derive(Component)]
 pub struct ReputationLabel;
 
 #[derive(Component)]
@@ -74,6 +80,12 @@ pub struct MiddleAreaRoot;
 
 #[derive(Component)]
 pub struct BottomBarRoot;
+
+const TOP_BAR_COLUMN_GAP: f32 = 12.0;
+const POWER_TOTAL_GROUP_WIDTH: f32 = 104.0;
+const GRID_EVENT_BADGE_VIEWPORT_WIDTH: f32 = 190.0;
+const GRID_EVENT_BADGE_SCROLL_SPEED: f32 = 36.0;
+const GRID_EVENT_BADGE_HOLD_SECS: f32 = 1.2;
 
 // ============ Setup ============
 
@@ -123,7 +135,7 @@ pub fn setup_hud(
                     width: Val::Percent(100.0),
                     height: Val::Px(64.0),
                     padding: UiRect::horizontal(Val::Px(12.0)),
-                    column_gap: Val::Px(20.0),
+                    column_gap: Val::Px(TOP_BAR_COLUMN_GAP),
                     align_items: AlignItems::Center,
                     flex_shrink: 0.0,
                     border: UiRect::vertical(Val::Px(2.0)),
@@ -227,7 +239,7 @@ pub fn setup_hud(
 
                 // Spacer between player identity and stats
                 bar.spawn(Node {
-                    width: Val::Px(20.0),
+                    width: Val::Px(12.0),
                     ..default()
                 });
                 // 1. Cash
@@ -259,9 +271,12 @@ pub fn setup_hud(
 
                 // 2. Power Total
                 bar.spawn(Node {
+                    width: Val::Px(POWER_TOTAL_GROUP_WIDTH),
+                    min_width: Val::Px(POWER_TOTAL_GROUP_WIDTH),
                     flex_direction: FlexDirection::Row,
                     column_gap: Val::Px(6.0),
                     align_items: AlignItems::Center,
+                    flex_shrink: 0.0,
                     ..default()
                 })
                 .with_children(|group| {
@@ -306,14 +321,27 @@ pub fn setup_hud(
                 });
 
                 // 2c. Spot Price Badge (visible only for level 2+ sites)
-                bar.spawn(Node {
-                    flex_direction: FlexDirection::Row,
-                    column_gap: Val::Px(4.0),
-                    align_items: AlignItems::Center,
-                    padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
-                    display: Display::None,
-                    ..default()
-                })
+                bar.spawn((
+                    Node {
+                        width: Val::Px(GRID_EVENT_BADGE_VIEWPORT_WIDTH),
+                        min_width: Val::Px(GRID_EVENT_BADGE_VIEWPORT_WIDTH),
+                        flex_direction: FlexDirection::Row,
+                        align_items: AlignItems::Center,
+                        padding: UiRect::axes(Val::Px(6.0), Val::Px(2.0)),
+                        overflow: Overflow {
+                            x: OverflowAxis::Scroll,
+                            y: OverflowAxis::Clip,
+                        },
+                        display: Display::None,
+                        flex_shrink: 0.0,
+                        ..default()
+                    },
+                    ScrollPosition::default(),
+                    GridEventBadgeMarquee {
+                        elapsed_secs: 0.0,
+                        last_message: String::new(),
+                    },
+                ))
                 .with_children(|group| {
                     group.spawn((
                         Text::new("SPOT $0.06"),
@@ -321,6 +349,7 @@ pub fn setup_hud(
                             font_size: 14.0,
                             ..default()
                         },
+                        TextLayout::new_with_linebreak(bevy::text::LineBreak::NoWrap),
                         TextColor(Color::srgb(0.4, 0.8, 1.0)),
                         GridEventBadge,
                     ));
@@ -782,6 +811,73 @@ pub fn update_grid_event_badge(
         } else {
             **text = "GRID OK".to_string();
             *text_color = TextColor(Color::srgb(0.4, 0.8, 1.0));
+        };
+    }
+}
+
+pub fn sync_grid_event_badge_marquee(
+    badge_q: Query<(&ChildOf, &Text), With<GridEventBadge>>,
+    mut marquee_q: Query<(&mut ScrollPosition, &mut GridEventBadgeMarquee, &Node)>,
+) {
+    for (parent, text) in &badge_q {
+        let Ok((mut scroll_pos, mut marquee, node)) = marquee_q.get_mut(parent.parent()) else {
+            continue;
+        };
+
+        if node.display == Display::None {
+            marquee.elapsed_secs = 0.0;
+            scroll_pos.x = 0.0;
+            continue;
+        }
+
+        let message = text.as_str();
+        if marquee.last_message != message {
+            marquee.last_message.clear();
+            marquee.last_message.push_str(message);
+            marquee.elapsed_secs = 0.0;
+            scroll_pos.x = 0.0;
+        }
+    }
+}
+
+pub fn animate_grid_event_badge_marquee(
+    time: Res<Time>,
+    mut marquee_q: Query<(
+        &mut ScrollPosition,
+        &ComputedNode,
+        &Node,
+        &mut GridEventBadgeMarquee,
+    )>,
+) {
+    for (mut scroll_pos, computed, node, mut marquee) in &mut marquee_q {
+        if node.display == Display::None {
+            marquee.elapsed_secs = 0.0;
+            scroll_pos.x = 0.0;
+            continue;
+        }
+
+        let visible_width = computed.size().x;
+        let content_width = computed.content_size().x;
+        let scale = computed.inverse_scale_factor();
+        let max_scroll = ((content_width - visible_width) * scale).max(0.0);
+
+        if max_scroll <= 1.0 {
+            marquee.elapsed_secs = 0.0;
+            scroll_pos.x = 0.0;
+            continue;
+        }
+
+        marquee.elapsed_secs += time.delta_secs();
+        let travel_secs = max_scroll / GRID_EVENT_BADGE_SCROLL_SPEED;
+        let cycle_secs = GRID_EVENT_BADGE_HOLD_SECS + travel_secs + GRID_EVENT_BADGE_HOLD_SECS;
+        let cycle_pos = marquee.elapsed_secs % cycle_secs;
+
+        scroll_pos.x = if cycle_pos <= GRID_EVENT_BADGE_HOLD_SECS {
+            0.0
+        } else if cycle_pos < GRID_EVENT_BADGE_HOLD_SECS + travel_secs {
+            (cycle_pos - GRID_EVENT_BADGE_HOLD_SECS) * GRID_EVENT_BADGE_SCROLL_SPEED
+        } else {
+            max_scroll
         };
     }
 }

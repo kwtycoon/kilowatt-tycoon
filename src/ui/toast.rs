@@ -49,6 +49,11 @@ pub struct FaultToastText;
 #[derive(Component)]
 pub struct SellNowButton;
 
+/// Marker on the active grid-event start toast so it can be replaced or
+/// dismissed immediately when the event lifecycle changes.
+#[derive(Component)]
+pub struct GridEventToast;
+
 /// Marker on gameplay tip toasts (max one visible at a time).
 #[derive(Component)]
 pub struct TipToast;
@@ -361,12 +366,23 @@ fn spawn_achievement_toast(
 
 const GRID_EVENT_TOAST_DURATION_REAL: f32 = 8.0;
 
+/// Despawn any visible grid-event start toast.
+pub fn dismiss_grid_event_toasts(
+    commands: &mut Commands,
+    existing_grid_event_toasts: &Query<Entity, With<GridEventToast>>,
+) {
+    for entity in existing_grid_event_toasts.iter() {
+        commands.entity(entity).try_despawn();
+    }
+}
+
 /// Spawn a prominent toast when a grid event starts.
 /// Shows a fun headline plus import/export multipliers so the player sees opportunity and cost.
 /// When `has_power_management` is true, includes a "SELL NOW" action button.
 pub fn spawn_grid_event_toast(
     commands: &mut Commands,
     container: Entity,
+    existing_grid_event_toasts: &Query<Entity, With<GridEventToast>>,
     event: crate::resources::GridEventType,
     weather: crate::resources::WeatherType,
     game_time: f32,
@@ -374,6 +390,8 @@ pub fn spawn_grid_event_toast(
     icon: Handle<Image>,
     has_power_management: bool,
 ) {
+    dismiss_grid_event_toasts(commands, existing_grid_event_toasts);
+
     let name = event.name();
     let headline = event.headline(weather);
     let export_mult = event.export_multiplier();
@@ -394,6 +412,7 @@ pub fn spawn_grid_event_toast(
             },
             BackgroundColor(bg_color),
             BorderRadius::all(Val::Px(8.0)),
+            GridEventToast,
             ToastNotification {
                 created_at: game_time,
                 duration: GRID_EVENT_TOAST_DURATION_REAL * 100.0,
