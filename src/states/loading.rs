@@ -312,6 +312,7 @@ pub fn start_asset_loading(
         "props/prop_transformer_critical.png",
         "props/prop_transformer_destroyed.png",
         "props/prop_solar_array_ground.png",
+        "props/prop_photovoltaic_canopy.png",
         "props/prop_battery_container.png",
         // Mood Icons (displayed on vehicles)
         "ui/icons/icon_mood_neutral.png",

@@ -3,13 +3,14 @@
 //! Uses PNG assets for the placement cursor (generated from SVG source files).
 
 use crate::components::power::Transformer;
-use crate::helpers::GamePointer;
+use crate::helpers::{GamePointer, canopy_layout, canopy_scale};
 use crate::resources::{
     AmenityType, BuildState, BuildTool, ChargerPadType, GameState, ImageAssets, MultiSiteManager,
     SellResult, SiteGrid, TileContent,
 };
 use crate::systems::WorldCamera;
 use bevy::prelude::*;
+use bevy::sprite::Anchor;
 
 /// Marker for the placement cursor preview
 #[derive(Component)]
@@ -33,6 +34,7 @@ fn get_tool_image(tool: BuildTool, assets: &ImageAssets) -> Option<Handle<Image>
         | BuildTool::Transformer1000kVA
         | BuildTool::Transformer2500kVA => Some(assets.prop_transformer.clone()),
         BuildTool::SolarCanopy => Some(assets.prop_solar_array_ground.clone()),
+        BuildTool::PhotovoltaicCanopy => Some(assets.prop_photovoltaic_canopy.clone()),
         BuildTool::BatteryStorage => Some(assets.prop_battery_container.clone()),
         BuildTool::SecuritySystem => Some(assets.prop_security_system.clone()),
         BuildTool::RfBooster => Some(assets.prop_rf_booster.clone()),
@@ -71,6 +73,7 @@ fn get_tool_visual_scale(tool: BuildTool, image: &Image) -> f32 {
         | BuildTool::Transformer1000kVA
         | BuildTool::Transformer2500kVA => sprite_metadata::prop_world_size(2.0, 2.0),
         BuildTool::SolarCanopy => sprite_metadata::prop_world_size(3.0, 2.0),
+        BuildTool::PhotovoltaicCanopy => sprite_metadata::photovoltaic_canopy_world_size(),
         BuildTool::BatteryStorage => sprite_metadata::prop_world_size(2.0, 2.0),
         BuildTool::SecuritySystem => sprite_metadata::prop_world_size(2.0, 2.0),
         BuildTool::RfBooster => sprite_metadata::prop_world_size(1.0, 1.0),
@@ -81,6 +84,31 @@ fn get_tool_visual_scale(tool: BuildTool, image: &Image) -> f32 {
     };
 
     intended_size.scale_for_image(image)
+}
+
+fn canopy_preview_placement(
+    grid: &SiteGrid,
+    x: i32,
+    y: i32,
+) -> Option<crate::resources::PhotovoltaicCanopyPlacement> {
+    grid.preview_photovoltaic_canopy_at(x, y).ok()
+}
+
+fn canopy_preview_center(canopy: &crate::resources::PhotovoltaicCanopyPlacement) -> Vec2 {
+    canopy_layout(canopy).sprite_bottom_center_world
+}
+
+fn canopy_preview_scale(
+    canopy: &crate::resources::PhotovoltaicCanopyPlacement,
+    image: Option<&Image>,
+) -> Vec3 {
+    let layout = canopy_layout(canopy);
+    canopy_scale(image, &layout)
+}
+
+fn canopy_placement_cost(grid: &SiteGrid, x: i32, y: i32) -> Option<i32> {
+    canopy_preview_placement(grid, x, y)
+        .map(|preview| BuildTool::canopy_cost_for_span(preview.span_chargers))
 }
 
 /// System to handle mouse clicks for tile placement
@@ -195,7 +223,6 @@ fn try_place_tile(
     y: i32,
 ) {
     let tool = build_state.selected_tool;
-    let cost = tool.cost();
 
     match tool {
         BuildTool::Select | BuildTool::Road | BuildTool::ParkingBay => {
@@ -225,10 +252,10 @@ fn try_place_tile(
                     _ => unreachable!(),
                 };
 
-                if game_state.can_afford_build(cost)
+                if game_state.can_afford_build(tool.cost())
                     && grid.place_charger(bay_x, bay_y, charger_type).is_ok()
                 {
-                    game_state.try_spend_build(cost);
+                    game_state.try_spend_build(tool.cost());
                     build_state.last_placed_tile = Some((x, y));
 
                     // DC 100kW has built-in video ads - auto-enable
@@ -252,75 +279,93 @@ fn try_place_tile(
         | BuildTool::Transformer1000kVA
         | BuildTool::Transformer2500kVA => {
             let kva = tool.transformer_kva().unwrap_or(500.0);
-            if game_state.can_afford_build(cost) && grid.place_transformer(x, y, kva).is_ok() {
-                game_state.try_spend_build(cost);
+            if game_state.can_afford_build(tool.cost()) && grid.place_transformer(x, y, kva).is_ok()
+            {
+                game_state.try_spend_build(tool.cost());
                 build_state.last_placed_tile = Some((x, y));
                 info!("Placed {} kVA transformer at ({}, {})", kva as i32, x, y);
             }
         }
         BuildTool::SolarCanopy => {
-            if game_state.can_afford_build(cost) && grid.place_solar(x, y).is_ok() {
-                game_state.try_spend_build(cost);
+            if game_state.can_afford_build(tool.cost()) && grid.place_solar(x, y).is_ok() {
+                game_state.try_spend_build(tool.cost());
                 build_state.last_placed_tile = Some((x, y));
                 info!("Placed solar array at ({}, {})", x, y);
             }
         }
+        BuildTool::PhotovoltaicCanopy => {
+            if let Ok(preview) = grid.preview_photovoltaic_canopy_at(x, y) {
+                let cost = BuildTool::canopy_cost_for_span(preview.span_chargers);
+                if game_state.can_afford_build(cost) && grid.place_photovoltaic_canopy(x, y).is_ok()
+                {
+                    game_state.try_spend_build(cost);
+                    build_state.last_placed_tile = Some(preview.anchor_bay_pos);
+                    info!(
+                        "Placed photovoltaic canopy covering {} chargers at bay ({}, {})",
+                        preview.span_chargers, preview.anchor_bay_pos.0, preview.anchor_bay_pos.1
+                    );
+                }
+            }
+        }
         BuildTool::BatteryStorage => {
-            if game_state.can_afford_build(cost) && grid.place_battery(x, y).is_ok() {
-                game_state.try_spend_build(cost);
+            if game_state.can_afford_build(tool.cost()) && grid.place_battery(x, y).is_ok() {
+                game_state.try_spend_build(tool.cost());
                 build_state.last_placed_tile = Some((x, y));
                 info!("Placed battery storage (2x2) at ({}, {})", x, y);
             }
         }
         BuildTool::SecuritySystem => {
-            if game_state.can_afford_build(cost) && grid.place_security_system(x, y).is_ok() {
-                game_state.try_spend_build(cost);
+            if game_state.can_afford_build(tool.cost()) && grid.place_security_system(x, y).is_ok()
+            {
+                game_state.try_spend_build(tool.cost());
                 build_state.last_placed_tile = Some((x, y));
                 info!("Placed security system (2x2) at ({}, {})", x, y);
             }
         }
         BuildTool::RfBooster => {
-            if game_state.can_afford_build(cost) && grid.get_content(x, y) == TileContent::Lot {
+            if game_state.can_afford_build(tool.cost())
+                && grid.get_content(x, y) == TileContent::Lot
+            {
                 grid.set_tile_content(x, y, TileContent::BoosterPad);
-                game_state.try_spend_build(cost);
+                game_state.try_spend_build(tool.cost());
                 build_state.last_placed_tile = Some((x, y));
                 info!("Placed RF booster at ({}, {})", x, y);
             }
         }
         BuildTool::AmenityWifiRestrooms => {
-            if game_state.can_afford_build(cost)
+            if game_state.can_afford_build(tool.cost())
                 && grid.place_amenity(x, y, AmenityType::WifiRestrooms).is_ok()
             {
-                game_state.try_spend_build(cost);
+                game_state.try_spend_build(tool.cost());
                 build_state.last_placed_tile = Some((x, y));
                 info!("Placed WiFi+Restrooms (3x3) at ({}, {})", x, y);
             }
         }
         BuildTool::AmenityLoungeSnacks => {
-            if game_state.can_afford_build(cost)
+            if game_state.can_afford_build(tool.cost())
                 && grid.place_amenity(x, y, AmenityType::LoungeSnacks).is_ok()
             {
-                game_state.try_spend_build(cost);
+                game_state.try_spend_build(tool.cost());
                 build_state.last_placed_tile = Some((x, y));
                 info!("Placed Lounge+Snacks (4x4) at ({}, {})", x, y);
             }
         }
         BuildTool::AmenityRestaurant => {
-            if game_state.can_afford_build(cost)
+            if game_state.can_afford_build(tool.cost())
                 && grid.place_amenity(x, y, AmenityType::Restaurant).is_ok()
             {
-                game_state.try_spend_build(cost);
+                game_state.try_spend_build(tool.cost());
                 build_state.last_placed_tile = Some((x, y));
                 info!("Placed Restaurant (5x4) at ({}, {})", x, y);
             }
         }
         BuildTool::AmenityDriverRestLounge => {
-            if game_state.can_afford_build(cost)
+            if game_state.can_afford_build(tool.cost())
                 && grid
                     .place_amenity(x, y, AmenityType::DriverRestLounge)
                     .is_ok()
             {
-                game_state.try_spend_build(cost);
+                game_state.try_spend_build(tool.cost());
                 build_state.last_placed_tile = Some((x, y));
                 info!("Placed Driver Rest Lounge (3x3) at ({}, {})", x, y);
             }
@@ -353,6 +398,9 @@ fn try_place_tile(
             if let Ok(sold) = grid.sell(x, y) {
                 // Refund based on what was sold
                 let refund = match sold {
+                    SellResult::SoldPhotovoltaicCanopy(span) => {
+                        BuildTool::canopy_cost_for_span(span)
+                    }
                     SellResult::SoldCharger(charger_type) => {
                         // Refund charger costs (50% via refund function)
                         match charger_type {
@@ -455,33 +503,56 @@ pub fn update_placement_cursor(
     };
 
     // Determine position based on structure size (in grid space)
-    let grid_preview_pos = if let Some(size) = tool.structure_size() {
-        // Multi-tile structure: center on the footprint
-        SiteGrid::multi_tile_center(grid_x, grid_y, size)
+    let (grid_preview_pos, preview_scale) = if tool == BuildTool::PhotovoltaicCanopy {
+        let preview = canopy_preview_placement(grid, grid_x, grid_y);
+        let preview_pos = preview
+            .as_ref()
+            .map(canopy_preview_center)
+            .unwrap_or_else(|| SiteGrid::grid_to_world(grid_x, grid_y));
+        let preview_scale = if let Some(canopy) = preview.as_ref() {
+            canopy_preview_scale(canopy, images.get(&tool_image))
+        } else if let Some(image) = images.get(&tool_image) {
+            Vec3::splat(get_tool_visual_scale(tool, image))
+        } else {
+            Vec3::splat(0.25)
+        };
+        (preview_pos, preview_scale)
+    } else if let Some(size) = tool.structure_size() {
+        let scale = if let Some(image) = images.get(&tool_image) {
+            get_tool_visual_scale(tool, image)
+        } else {
+            0.125
+        };
+        (
+            SiteGrid::multi_tile_center(grid_x, grid_y, size),
+            Vec3::splat(scale),
+        )
     } else {
-        // Single tile (including chargers): center on clicked tile
-        // Chargers are now placed by clicking on the ChargerPad location directly
-        SiteGrid::grid_to_world(grid_x, grid_y)
+        let scale = if let Some(image) = images.get(&tool_image) {
+            get_tool_visual_scale(tool, image)
+        } else {
+            0.125
+        };
+        (SiteGrid::grid_to_world(grid_x, grid_y), Vec3::splat(scale))
     };
 
     // Add world offset to position cursor in world space
     let world_preview_pos = grid_preview_pos + world_offset;
     let (preview_x, preview_y) = (world_preview_pos.x, world_preview_pos.y);
 
-    // Calculate scale from actual PNG dimensions
-    let scale = if let Some(image) = images.get(&tool_image) {
-        get_tool_visual_scale(tool, image)
+    // Update or spawn cursor
+    let desired_anchor = if tool == BuildTool::PhotovoltaicCanopy {
+        Anchor::BOTTOM_CENTER
     } else {
-        // Fallback if image not loaded yet
-        0.125
+        Anchor::CENTER
     };
 
-    // Update or spawn cursor
-    if let Some((_, mut transform, mut sprite)) = cursor_query.iter_mut().next() {
+    if let Some((entity, mut transform, mut sprite)) = cursor_query.iter_mut().next() {
         transform.translation = Vec3::new(preview_x, preview_y, 100.0);
-        transform.scale = Vec3::splat(scale);
+        transform.scale = preview_scale;
         sprite.image = tool_image;
         sprite.color = color;
+        commands.entity(entity).insert(desired_anchor);
     } else {
         // Spawn sprite cursor with the actual tool image
         commands.spawn((
@@ -490,7 +561,8 @@ pub fn update_placement_cursor(
                 color,
                 ..default()
             },
-            Transform::from_xyz(preview_x, preview_y, 100.0).with_scale(Vec3::splat(scale)),
+            Transform::from_xyz(preview_x, preview_y, 100.0).with_scale(preview_scale),
+            desired_anchor,
             PlacementCursor,
         ));
     }
@@ -504,13 +576,18 @@ fn validate_placement(
     x: i32,
     y: i32,
 ) -> bool {
-    // Check if we can afford it
-    if !game_state.can_afford_build(tool.cost()) {
+    // Check valid grid coordinates
+    if !grid.is_valid(x, y) {
         return false;
     }
 
-    // Check valid grid coordinates
-    if !grid.is_valid(x, y) {
+    let placement_cost = match tool {
+        BuildTool::PhotovoltaicCanopy => canopy_placement_cost(grid, x, y).unwrap_or(tool.cost()),
+        _ => tool.cost(),
+    };
+
+    // Check if we can afford it
+    if !game_state.can_afford_build(placement_cost) {
         return false;
     }
 
@@ -575,6 +652,7 @@ fn validate_placement(
         BuildTool::SolarCanopy => grid
             .can_place_footprint(x, y, crate::resources::StructureSize::ThreeByTwo)
             .is_ok(),
+        BuildTool::PhotovoltaicCanopy => canopy_preview_placement(grid, x, y).is_some(),
         BuildTool::BatteryStorage => grid
             .can_place_footprint(x, y, crate::resources::StructureSize::TwoByTwo)
             .is_ok(),
@@ -723,6 +801,13 @@ fn determine_sell_target(
     content: TileContent,
 ) -> (Option<bool>, (i32, i32), (f32, f32)) {
     use crate::resources::StructureSize;
+
+    if let Some(canopy) = grid.canopy_covering_tile(x, y) {
+        let (anchor_x, anchor_y) = canopy.footprint_anchor();
+        let (width, height) = canopy.footprint_dimensions();
+        let center = SiteGrid::footprint_center(anchor_x, anchor_y, width, height);
+        return (Some(true), (width, height), (center.x, center.y));
+    }
 
     // Check if there's a charger on this tile
     if let Some(tile) = grid.get_tile(x, y) {
@@ -881,7 +966,7 @@ pub fn build_keyboard_shortcuts(
     // Number keys for tool selection
     // 1 = L2, 2 = DCFC 50kW, 3 = DCFC 150kW, 4 = DCFC 350kW
     // 5 = Xfmr 500kVA, 6 = Xfmr 1000kVA, 7 = Xfmr 2500kVA
-    // 8 = Solar, 9 = Battery, 0 = Sell
+    // 8 = Ground Solar, 9 = PV Canopy, 0 = Battery, - = Sell
     if keyboard.just_pressed(KeyCode::Digit1) {
         build_state.selected_tool = BuildTool::ChargerL2;
     }
@@ -907,9 +992,12 @@ pub fn build_keyboard_shortcuts(
         build_state.selected_tool = BuildTool::SolarCanopy;
     }
     if keyboard.just_pressed(KeyCode::Digit9) {
-        build_state.selected_tool = BuildTool::BatteryStorage;
+        build_state.selected_tool = BuildTool::PhotovoltaicCanopy;
     }
     if keyboard.just_pressed(KeyCode::Digit0) {
+        build_state.selected_tool = BuildTool::BatteryStorage;
+    }
+    if keyboard.just_pressed(KeyCode::Minus) {
         build_state.selected_tool = BuildTool::Sell;
     }
     if keyboard.just_pressed(KeyCode::KeyX) || keyboard.just_pressed(KeyCode::Backspace) {

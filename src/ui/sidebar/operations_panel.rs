@@ -6,8 +6,8 @@ use bevy::prelude::*;
 use crate::components::BelongsToSite;
 use crate::components::charger::{Charger, ChargerState};
 use crate::resources::{
-    GameClock, GameState, ImageAssets, MultiSiteManager, SelectedChargerEntity, TechStatus,
-    TechnicianState, WarrantyTier,
+    GameClock, GameState, ImageAssets, MultiSiteManager, PHOTOVOLTAIC_CANOPY_FAULT_MULTIPLIER,
+    SelectedChargerEntity, TechStatus, TechnicianState, WarrantyTier,
 };
 use crate::ui::sidebar::{ActivePanel, PanelContent, colors};
 
@@ -248,16 +248,18 @@ fn spawn_om_stats_section(
     image_assets: &ImageAssets,
 ) {
     // Get site-specific data
-    let (uptime_pct, maintenance_cost, oem_tier) =
+    let (uptime_pct, maintenance_cost, oem_tier, protected_charger_count) =
         if let Some(site_state) = multi_site.active_site() {
             (
                 site_state.site_upgrades.estimated_uptime_percent(),
                 site_state.service_strategy.hourly_maintenance_cost(),
                 site_state.site_upgrades.oem_tier,
+                site_state.grid.protected_charger_count(),
             )
         } else {
-            (85.0, 10.0, crate::resources::OemTier::None)
+            (85.0, 10.0, crate::resources::OemTier::None, 0)
         };
+    let canopy_fault_reduction_pct = (1.0 - PHOTOVOLTAIC_CANOPY_FAULT_MULTIPLIER) * 100.0;
 
     parent
         .spawn((
@@ -334,6 +336,29 @@ fn spawn_om_stats_section(
                 "Active Faults:",
                 &format!("{fault_count}"),
                 fault_color,
+            );
+
+            let canopy_color = if protected_charger_count > 0 {
+                Color::srgb(0.3, 0.8, 0.3)
+            } else {
+                Color::srgb(0.5, 0.5, 0.5)
+            };
+            spawn_stat_row(
+                section,
+                "Canopy Protected:",
+                &format!("{protected_charger_count} chargers"),
+                canopy_color,
+            );
+            let canopy_fault_text = if protected_charger_count > 0 {
+                format!("-{canopy_fault_reduction_pct:.0}% covered")
+            } else {
+                "None".to_string()
+            };
+            spawn_stat_row(
+                section,
+                "Fault Reduction:",
+                &canopy_fault_text,
+                canopy_color,
             );
 
             // Warranty tier and premium

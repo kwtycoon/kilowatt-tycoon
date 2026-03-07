@@ -76,6 +76,12 @@ pub fn prop_world_size(tile_width: f32, tile_height: f32) -> SpriteSize {
     SpriteSize::size(tile_width * tile_size, tile_height * tile_size)
 }
 
+/// Get the intended footprint for a single photovoltaic canopy overlay.
+pub fn photovoltaic_canopy_world_size() -> SpriteSize {
+    let tile_size = crate::resources::TILE_SIZE;
+    SpriteSize::size(tile_size * 2.0, tile_size * 2.0)
+}
+
 /// Get intended world size for vehicle sprites
 ///
 /// These sizes define how large vehicles should appear in-game.

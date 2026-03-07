@@ -1,6 +1,6 @@
 //! Build mode state and resources
 
-use super::site_grid::StructureSize;
+use super::site_grid::{PHOTOVOLTAIC_CANOPY_KW_PER_CHARGER, StructureSize};
 use bevy::prelude::*;
 
 /// Tool types available in build mode
@@ -20,6 +20,7 @@ pub enum BuildTool {
     Transformer1000kVA, // 1000 kVA transformer
     Transformer2500kVA, // 2500 kVA transformer
     SolarCanopy,
+    PhotovoltaicCanopy,
     BatteryStorage,
     SecuritySystem,          // Lot-wide security system (2x2)
     RfBooster,               // RF signal booster (1x1)
@@ -46,6 +47,7 @@ impl BuildTool {
             BuildTool::Transformer1000kVA => "Transformer 1000kVA",
             BuildTool::Transformer2500kVA => "Transformer 2500kVA",
             BuildTool::SolarCanopy => "Solar 25kW",
+            BuildTool::PhotovoltaicCanopy => "PV Canopy 6kW",
             BuildTool::BatteryStorage => "Battery 200kWh",
             BuildTool::SecuritySystem => "Security System",
             BuildTool::RfBooster => "RF Booster",
@@ -73,6 +75,7 @@ impl BuildTool {
             BuildTool::Transformer1000kVA => 80000, // $80k for 1000 kVA
             BuildTool::Transformer2500kVA => 175000, // $175k for 2500 kVA
             BuildTool::SolarCanopy => 24000,    // $24k for 3x2 (25kW) solar array
+            BuildTool::PhotovoltaicCanopy => 18000, // $18k base cost per covered charger
             BuildTool::BatteryStorage => 50000, // $50k for 2x2 (200kWh) battery
             BuildTool::SecuritySystem => 80000, // $80k for 2x2 lot-wide security system
             BuildTool::RfBooster => 25000,      // $25k for 1x1 RF signal booster
@@ -96,6 +99,7 @@ impl BuildTool {
             BuildTool::Transformer1000kVA => Some((1000.0, "kVA")),
             BuildTool::Transformer2500kVA => Some((2500.0, "kVA")),
             BuildTool::SolarCanopy => Some((25.0, "kW")), // 3x2 solar = 25kW
+            BuildTool::PhotovoltaicCanopy => Some((PHOTOVOLTAIC_CANOPY_KW_PER_CHARGER, "kW")),
             BuildTool::BatteryStorage => Some((200.0, "kWh")), // 2x2 battery = 200kWh
             BuildTool::SecuritySystem => None, // Security system doesn't have a capacity metric
             _ => None,
@@ -157,6 +161,7 @@ impl BuildTool {
             BuildTool::Transformer1000kVA,
             BuildTool::Transformer2500kVA,
             BuildTool::SolarCanopy,
+            BuildTool::PhotovoltaicCanopy,
             BuildTool::BatteryStorage,
             BuildTool::SecuritySystem,
             BuildTool::RfBooster,
@@ -222,6 +227,16 @@ impl BuildTool {
                 | BuildTool::ChargerDCFC150
                 | BuildTool::ChargerDCFC350
         )
+    }
+
+    /// Cost for a photovoltaic canopy spanning the given number of chargers.
+    pub fn canopy_cost_for_span(span_chargers: usize) -> i32 {
+        Self::PhotovoltaicCanopy.cost() * span_chargers.max(1) as i32
+    }
+
+    /// Peak capacity for a photovoltaic canopy spanning the given number of chargers.
+    pub fn canopy_capacity_for_span(span_chargers: usize) -> f32 {
+        span_chargers.max(1) as f32 * PHOTOVOLTAIC_CANOPY_KW_PER_CHARGER
     }
 }
 

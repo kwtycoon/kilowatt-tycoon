@@ -24,6 +24,10 @@ pub const GRID_HEIGHT: i32 = 12;
 /// Grid offset from world origin (to center the grid in the view)
 pub const GRID_OFFSET_X: f32 = 50.0;
 pub const GRID_OFFSET_Y: f32 = 50.0;
+/// Peak solar capacity added per covered charger bay for photovoltaic canopies.
+pub const PHOTOVOLTAIC_CANOPY_KW_PER_CHARGER: f32 = 6.0;
+/// Fault probability multiplier for chargers protected by a photovoltaic canopy.
+pub const PHOTOVOLTAIC_CANOPY_FAULT_MULTIPLIER: f32 = 0.85;
 
 /// Structure sizes (width x height in tiles)
 /// All structures use bottom-left as anchor point
@@ -351,6 +355,8 @@ impl Default for Tile {
 /// Result of a sell operation
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SellResult {
+    /// Sold a photovoltaic canopy overlay.
+    SoldPhotovoltaicCanopy(usize),
     /// Sold a charger from a parking bay (bay remains)
     SoldCharger(ChargerPadType),
     /// Sold equipment entirely
@@ -405,6 +411,132 @@ impl ChargerPadType {
     }
 }
 
+/// Orientation of a charger row covered by a photovoltaic canopy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CanopyOrientation {
+    /// Charger pads are above the parking bays (`ParkingBaySouth`).
+    ChargersNorthOfBay,
+    /// Charger pads are below the parking bays (`ParkingBayNorth`).
+    ChargersSouthOfBay,
+}
+
+impl CanopyOrientation {
+    pub fn from_bay_content(content: TileContent) -> Option<Self> {
+        match content {
+            TileContent::ParkingBaySouth => Some(Self::ChargersNorthOfBay),
+            TileContent::ParkingBayNorth => Some(Self::ChargersSouthOfBay),
+            _ => None,
+        }
+    }
+}
+
+/// Overlay placement for a charger-mounted photovoltaic canopy.
+#[derive(Debug, Clone)]
+pub struct PhotovoltaicCanopyPlacement {
+    /// Parking bay covered by the canopy.
+    pub anchor_bay_pos: (i32, i32),
+    /// Parking bays under the canopy.
+    pub covered_bay_positions: Vec<(i32, i32)>,
+    /// Charger pads paired with the covered bays.
+    pub covered_charger_positions: Vec<(i32, i32)>,
+    /// Charger row orientation used for placement and rendering.
+    pub orientation: CanopyOrientation,
+    /// Number of covered chargers/bays.
+    pub span_chargers: usize,
+    /// Installed peak capacity contributed to the site's solar total.
+    pub installed_kw_peak: f32,
+}
+
+impl PhotovoltaicCanopyPlacement {
+    pub fn matches_interaction_tile(&self, pos: (i32, i32)) -> bool {
+        self.covered_bay_positions.contains(&pos)
+            || self.covered_charger_positions.contains(&pos)
+            || self.covers_tile(pos)
+    }
+
+    pub fn covers_tile(&self, pos: (i32, i32)) -> bool {
+        let tile_center = SiteGrid::grid_to_world(pos.0, pos.1);
+        let tile_half_extent = Vec2::splat(TILE_SIZE * 0.5);
+        let tile_bounds = Rect {
+            min: tile_center - tile_half_extent,
+            max: tile_center + tile_half_extent,
+        };
+        rects_overlap(self.sprite_world_bounds(), tile_bounds)
+    }
+
+    pub fn footprint_anchor(&self) -> (i32, i32) {
+        match self.orientation {
+            CanopyOrientation::ChargersNorthOfBay => self.anchor_bay_pos,
+            CanopyOrientation::ChargersSouthOfBay => {
+                (self.anchor_bay_pos.0, self.anchor_bay_pos.1 - 1)
+            }
+        }
+    }
+
+    pub fn footprint_dimensions(&self) -> (i32, i32) {
+        (self.span_chargers as i32, 2)
+    }
+
+    pub fn sprite_bottom_center_world(&self) -> Vec2 {
+        self.covered_charger_positions
+            .first()
+            .map(|&(x, y)| SiteGrid::grid_to_world(x, y))
+            .unwrap_or_else(|| {
+                let (anchor_x, anchor_y) = self.footprint_anchor();
+                let (width_tiles, height_tiles) = self.footprint_dimensions();
+                SiteGrid::footprint_center(anchor_x, anchor_y, width_tiles, height_tiles)
+            })
+            + Vec2::new(0.0, canopy_vertical_offset(self.orientation))
+    }
+
+    pub fn sprite_world_size(&self) -> Vec2 {
+        let size = crate::resources::sprite_metadata::photovoltaic_canopy_world_size();
+        Vec2::new(size.width, size.height.unwrap_or(size.width))
+    }
+
+    pub fn sprite_scale_sign(&self) -> Vec2 {
+        Vec2::new(1.0, canopy_y_scale_sign(self.orientation))
+    }
+
+    pub fn sprite_world_bounds(&self) -> Rect {
+        let size = self.sprite_world_size();
+        let bottom_center = self.sprite_bottom_center_world();
+        if self.sprite_scale_sign().y >= 0.0 {
+            Rect {
+                min: Vec2::new(bottom_center.x - size.x * 0.5, bottom_center.y),
+                max: Vec2::new(bottom_center.x + size.x * 0.5, bottom_center.y + size.y),
+            }
+        } else {
+            Rect {
+                min: Vec2::new(bottom_center.x - size.x * 0.5, bottom_center.y - size.y),
+                max: Vec2::new(bottom_center.x + size.x * 0.5, bottom_center.y),
+            }
+        }
+    }
+
+    pub fn overlaps_canopy(&self, other: &PhotovoltaicCanopyPlacement) -> bool {
+        rects_overlap(self.sprite_world_bounds(), other.sprite_world_bounds())
+    }
+}
+
+fn canopy_y_scale_sign(orientation: CanopyOrientation) -> f32 {
+    match orientation {
+        CanopyOrientation::ChargersNorthOfBay => 1.0,
+        CanopyOrientation::ChargersSouthOfBay => -1.0,
+    }
+}
+
+fn canopy_vertical_offset(orientation: CanopyOrientation) -> f32 {
+    match orientation {
+        CanopyOrientation::ChargersNorthOfBay => -TILE_SIZE * 0.5,
+        CanopyOrientation::ChargersSouthOfBay => TILE_SIZE * 0.5,
+    }
+}
+
+fn rects_overlap(a: Rect, b: Rect) -> bool {
+    a.min.x < b.max.x && a.max.x > b.min.x && a.min.y < b.max.y && a.max.y > b.min.y
+}
+
 /// The site grid resource
 #[derive(Resource, Debug, Clone)]
 pub struct SiteGrid {
@@ -433,6 +565,8 @@ pub struct SiteGrid {
     pub security_system_positions: Vec<(i32, i32)>,
     /// Amenity building positions and types (unlimited per site, effects stack)
     pub amenities: Vec<(i32, i32, AmenityType)>,
+    /// Charger-mounted photovoltaic canopy overlays.
+    pub photovoltaic_canopies: Vec<PhotovoltaicCanopyPlacement>,
     /// Total installed solar capacity (kW)
     pub total_solar_kw: f32,
     /// Total installed battery capacity (kWh)
@@ -467,6 +601,7 @@ impl SiteGrid {
             battery_positions: Vec::new(),
             security_system_positions: Vec::new(),
             amenities: Vec::new(),
+            photovoltaic_canopies: Vec::new(),
             total_solar_kw: 0.0,
             total_battery_kwh: 0.0,
             total_battery_kw: 0.0,
@@ -513,6 +648,11 @@ impl SiteGrid {
     /// Convert anchor grid coordinates to world position (center of multi-tile structure)
     pub fn multi_tile_center(anchor_x: i32, anchor_y: i32, size: StructureSize) -> Vec2 {
         let (width, height) = size.dimensions();
+        Self::footprint_center(anchor_x, anchor_y, width, height)
+    }
+
+    /// Convert an arbitrary rectangular footprint to its world-space center.
+    pub fn footprint_center(anchor_x: i32, anchor_y: i32, width: i32, height: i32) -> Vec2 {
         Vec2::new(
             GRID_OFFSET_X + (anchor_x as f32 + width as f32 / 2.0) * TILE_SIZE,
             GRID_OFFSET_Y + (anchor_y as f32 + height as f32 / 2.0) * TILE_SIZE,
@@ -1003,20 +1143,164 @@ impl SiteGrid {
         Ok(())
     }
 
+    /// Check whether a parking bay is already covered by a photovoltaic canopy.
+    pub fn canopy_at_bay(&self, bay_x: i32, bay_y: i32) -> Option<&PhotovoltaicCanopyPlacement> {
+        self.photovoltaic_canopies
+            .iter()
+            .find(|canopy| canopy.covered_bay_positions.contains(&(bay_x, bay_y)))
+    }
+
+    /// Check whether any photovoltaic canopy covers the given tile.
+    pub fn canopy_covering_tile(&self, x: i32, y: i32) -> Option<&PhotovoltaicCanopyPlacement> {
+        self.photovoltaic_canopies
+            .iter()
+            .find(|canopy| canopy.matches_interaction_tile((x, y)))
+    }
+
+    /// Check whether a charger pad is protected by a photovoltaic canopy.
+    pub fn canopy_at_charger_pad(
+        &self,
+        pad_x: i32,
+        pad_y: i32,
+    ) -> Option<&PhotovoltaicCanopyPlacement> {
+        self.photovoltaic_canopies
+            .iter()
+            .find(|canopy| canopy.covered_charger_positions.contains(&(pad_x, pad_y)))
+    }
+
+    /// Check whether the given bay or charger pad has photovoltaic canopy protection.
+    pub fn is_charger_or_bay_protected_by_canopy(&self, x: i32, y: i32) -> bool {
+        match self.get_tile(x, y) {
+            Some(tile) if tile.content == TileContent::ChargerPad => {
+                self.canopy_at_charger_pad(x, y).is_some()
+            }
+            Some(tile) if tile.content.is_parking() => tile
+                .linked_charger_pad
+                .is_some_and(|(pad_x, pad_y)| self.canopy_at_charger_pad(pad_x, pad_y).is_some()),
+            _ => false,
+        }
+    }
+
+    /// Count how many installed chargers are protected by photovoltaic canopies.
+    pub fn protected_charger_count(&self) -> usize {
+        self.photovoltaic_canopies
+            .iter()
+            .map(|canopy| canopy.covered_charger_positions.len())
+            .sum()
+    }
+
+    /// Compute a single-charger photovoltaic canopy placement for the clicked charger or bay.
+    pub fn preview_photovoltaic_canopy_at(
+        &self,
+        x: i32,
+        y: i32,
+    ) -> Result<PhotovoltaicCanopyPlacement, String> {
+        let (bay_x, bay_y) = match self.get_content(x, y) {
+            TileContent::ParkingBayNorth | TileContent::ParkingBaySouth => {
+                let tile = self
+                    .get_tile(x, y)
+                    .ok_or_else(|| "Parking bay is missing tile data".to_string())?;
+                if tile.linked_charger_pad.is_none() {
+                    return Err("Photovoltaic canopy must cover an installed charger".to_string());
+                }
+                (x, y)
+            }
+            TileContent::ChargerPad => {
+                let tile = self
+                    .get_tile(x, y)
+                    .ok_or_else(|| "Charger pad is missing tile data".to_string())?;
+                tile.linked_parking_bay.ok_or_else(|| {
+                    "Photovoltaic canopy must cover an installed charger".to_string()
+                })?
+            }
+            _ => return Err("Photovoltaic canopy must be placed on a charger row".to_string()),
+        };
+
+        let bay_tile = self
+            .get_tile(bay_x, bay_y)
+            .ok_or_else(|| "Parking bay is missing tile data".to_string())?;
+        let orientation =
+            CanopyOrientation::from_bay_content(bay_tile.content).ok_or_else(|| {
+                "Photovoltaic canopy must cover a parking bay with a charger".to_string()
+            })?;
+
+        let charger_pos = bay_tile
+            .linked_charger_pad
+            .ok_or_else(|| "Photovoltaic canopy must cover installed chargers".to_string())?;
+
+        let candidate = PhotovoltaicCanopyPlacement {
+            anchor_bay_pos: (bay_x, bay_y),
+            covered_bay_positions: vec![(bay_x, bay_y)],
+            covered_charger_positions: vec![charger_pos],
+            orientation,
+            span_chargers: 1,
+            installed_kw_peak: PHOTOVOLTAIC_CANOPY_KW_PER_CHARGER,
+        };
+
+        if self.canopy_at_bay(bay_x, bay_y).is_some() {
+            return Err("This charger is already covered by a photovoltaic canopy".to_string());
+        }
+
+        if self
+            .photovoltaic_canopies
+            .iter()
+            .any(|existing| candidate.overlaps_canopy(existing))
+        {
+            return Err("This canopy would overlap an existing photovoltaic canopy".to_string());
+        }
+
+        Ok(candidate)
+    }
+
+    /// Place a photovoltaic canopy above the clicked charger/bay pair.
+    pub fn place_photovoltaic_canopy(
+        &mut self,
+        x: i32,
+        y: i32,
+    ) -> Result<PhotovoltaicCanopyPlacement, String> {
+        let canopy = self.preview_photovoltaic_canopy_at(x, y)?;
+        self.total_solar_kw += canopy.installed_kw_peak;
+        self.photovoltaic_canopies.push(canopy.clone());
+        self.mark_changed();
+        Ok(canopy)
+    }
+
+    fn remove_photovoltaic_canopy_at(
+        &mut self,
+        x: i32,
+        y: i32,
+    ) -> Option<PhotovoltaicCanopyPlacement> {
+        let idx = self
+            .photovoltaic_canopies
+            .iter()
+            .position(|canopy| canopy.matches_interaction_tile((x, y)))?;
+        let canopy = self.photovoltaic_canopies.remove(idx);
+        self.total_solar_kw = (self.total_solar_kw - canopy.installed_kw_peak).max(0.0);
+        self.mark_changed();
+        Some(canopy)
+    }
+
     /// Sell/remove equipment placed by the player
     ///
     /// Priority order:
-    /// 1. If the tile has a charger, remove just the charger (keep the parking bay)
-    /// 2. If the tile is a road or parking bay, cannot be sold (protected infrastructure)
-    /// 3. If the tile is locked (from template), cannot be removed
-    /// 4. If the tile is part of a multi-tile structure, remove the entire structure
-    /// 5. Otherwise, remove the single tile (revert to grass)
+    /// 1. If the tile is covered by a photovoltaic canopy, remove just the canopy
+    /// 2. If the tile has a charger, remove just the charger (keep the parking bay)
+    /// 3. If the tile is a road or parking bay, cannot be sold (protected infrastructure)
+    /// 4. If the tile is locked (from template), cannot be removed
+    /// 5. If the tile is part of a multi-tile structure, remove the entire structure
+    /// 6. Otherwise, remove the single tile (revert to grass)
     pub fn sell(&mut self, x: i32, y: i32) -> Result<SellResult, String> {
         let content = self.get_content(x, y);
 
         // Can't sell entry/exit
         if matches!(content, TileContent::Entry | TileContent::Exit) {
             return Err("Can't sell entry/exit".to_string());
+        }
+
+        // Canopy overlays sit on top of protected parking/charger infrastructure, so they
+        // must be removable before we reject the underlying tile as unsellable.
+        if let Some(canopy) = self.remove_photovoltaic_canopy_at(x, y) {
+            return Ok(SellResult::SoldPhotovoltaicCanopy(canopy.span_chargers));
         }
 
         // Can't sell roads, parking bays, or lot surfaces
@@ -1402,6 +1686,18 @@ mod tests {
         grid
     }
 
+    fn create_test_grid_with_charger_row() -> SiteGrid {
+        let mut grid = SiteGrid::default();
+        for x in 4..=6 {
+            grid.set_tile_content(x, 5, TileContent::ParkingBaySouth);
+            grid.set_tile_content(x, 6, TileContent::Lot);
+            grid.place_charger(x, 5, ChargerPadType::DCFC150)
+                .expect("row charger should place");
+        }
+        grid.revision = 1;
+        grid
+    }
+
     #[test]
     fn place_charger_creates_charger_pad() {
         let mut grid = create_test_grid_with_parking_bay();
@@ -1569,6 +1865,112 @@ mod tests {
             ry >= 7,
             "Waiting tile should be near the equipped upper row (y >= 7), got y={ry}"
         );
+    }
+
+    #[test]
+    fn preview_photovoltaic_canopy_targets_single_charger() {
+        let grid = create_test_grid_with_charger_row();
+
+        let preview = grid
+            .preview_photovoltaic_canopy_at(5, 6)
+            .expect("canopy preview should succeed");
+
+        assert_eq!(preview.anchor_bay_pos, (5, 5));
+        assert_eq!(preview.span_chargers, 1);
+        assert_eq!(preview.covered_bay_positions, vec![(5, 5)]);
+        assert_eq!(preview.covered_charger_positions, vec![(5, 6)]);
+        assert_eq!(
+            preview.installed_kw_peak,
+            PHOTOVOLTAIC_CANOPY_KW_PER_CHARGER
+        );
+    }
+
+    #[test]
+    fn preview_photovoltaic_canopy_rejects_tiles_without_chargers() {
+        let mut grid = SiteGrid::default();
+        grid.set_tile_content(5, 5, TileContent::ParkingBaySouth);
+        grid.set_tile_content(5, 6, TileContent::Lot);
+
+        let result = grid.preview_photovoltaic_canopy_at(5, 5);
+        assert!(
+            result.is_err(),
+            "Preview should fail without an installed charger"
+        );
+    }
+
+    #[test]
+    fn preview_photovoltaic_canopy_rejects_overlap() {
+        let mut grid = create_test_grid_with_charger_row();
+        grid.place_photovoltaic_canopy(5, 6)
+            .expect("first canopy placement should succeed");
+
+        let result = grid.preview_photovoltaic_canopy_at(5, 6);
+        assert!(
+            result.is_err(),
+            "Preview should fail on an already covered charger"
+        );
+    }
+
+    #[test]
+    fn preview_photovoltaic_canopy_rejects_overlapping_opposite_orientation_canopies() {
+        let mut grid = SiteGrid::default();
+        grid.set_tile_content(5, 5, TileContent::ParkingBaySouth);
+        grid.set_tile_content(5, 6, TileContent::Lot);
+        grid.place_charger(5, 5, ChargerPadType::DCFC150)
+            .expect("south-facing charger should place");
+
+        grid.set_tile_content(5, 8, TileContent::ParkingBayNorth);
+        grid.set_tile_content(5, 7, TileContent::Lot);
+        grid.place_charger(5, 8, ChargerPadType::DCFC150)
+            .expect("north-facing charger should place");
+
+        grid.place_photovoltaic_canopy(5, 6)
+            .expect("first canopy placement should succeed");
+
+        let result = grid.preview_photovoltaic_canopy_at(5, 7);
+        assert!(
+            result.is_err(),
+            "Canopy preview should fail when the visual canopy areas overlap"
+        );
+    }
+
+    #[test]
+    fn photovoltaic_canopy_updates_solar_capacity_on_place_and_sell() {
+        let mut grid = create_test_grid_with_charger_row();
+
+        let canopy = grid
+            .place_photovoltaic_canopy(5, 6)
+            .expect("canopy placement should succeed");
+        assert_eq!(grid.total_solar_kw, canopy.installed_kw_peak);
+
+        let sold = grid.sell(5, 5).expect("selling canopy should succeed");
+        assert_eq!(sold, SellResult::SoldPhotovoltaicCanopy(1));
+        assert_eq!(grid.total_solar_kw, 0.0);
+    }
+
+    #[test]
+    fn photovoltaic_canopy_marks_linked_bay_and_pad_as_protected() {
+        let mut grid = create_test_grid_with_charger_row();
+        grid.place_photovoltaic_canopy(5, 6)
+            .expect("canopy placement should succeed");
+
+        assert!(grid.is_charger_or_bay_protected_by_canopy(5, 5));
+        assert!(grid.is_charger_or_bay_protected_by_canopy(5, 6));
+        assert!(!grid.is_charger_or_bay_protected_by_canopy(4, 5));
+        assert!(!grid.is_charger_or_bay_protected_by_canopy(4, 6));
+    }
+
+    #[test]
+    fn protected_charger_count_matches_placed_canopies() {
+        let mut grid = create_test_grid_with_charger_row();
+        assert_eq!(grid.protected_charger_count(), 0);
+
+        grid.place_photovoltaic_canopy(4, 6)
+            .expect("first canopy placement should succeed");
+        grid.place_photovoltaic_canopy(6, 6)
+            .expect("second canopy placement should succeed");
+
+        assert_eq!(grid.protected_charger_count(), 2);
     }
 
     #[test]

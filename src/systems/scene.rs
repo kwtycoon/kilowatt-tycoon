@@ -10,6 +10,7 @@ use bevy::sprite::Anchor;
 
 use crate::components::charger::{Charger, ChargerSprite, ChargerState, ChargerTier, ChargerType};
 use crate::components::power::{Transformer, TransformerVisualTier};
+use crate::helpers::{canopy_layout, canopy_scale};
 use crate::resources::{
     AmenityType, ChargerPadType, GRID_HEIGHT, GRID_OFFSET_X, GRID_OFFSET_Y, GRID_WIDTH,
     ImageAssets, SiteGrid, SiteId, StructureSize, TILE_SIZE, TileContent,
@@ -64,6 +65,18 @@ pub struct SolarGenerationBar;
 #[derive(Component)]
 pub struct SolarGenerationLabel;
 
+/// Installed solar capacity carried by an in-world solar overlay.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct SolarInstalledCapacityKw(pub f32);
+
+/// Dimensions of an individual solar fill bar.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct SolarBarSize(pub Vec2);
+
+/// Marker for canopy-specific solar text styling.
+#[derive(Component)]
+pub struct CanopySolarOverlayLabel;
+
 /// Marker for battery SOC bar fill (world sprite)
 #[derive(Component)]
 pub struct BatterySOCBar;
@@ -75,6 +88,10 @@ pub struct BatterySOCLabel;
 /// Marker for solar array visual
 #[derive(Component)]
 pub struct SolarArrayVisual;
+
+/// Marker for charger-mounted photovoltaic canopy visuals.
+#[derive(Component)]
+pub struct PhotovoltaicCanopyVisual;
 
 /// Marker for battery storage visual
 #[derive(Component)]
@@ -184,8 +201,10 @@ pub fn update_grid_visuals(
     mut commands: Commands,
     multi_site: Res<crate::resources::MultiSiteManager>,
     image_assets: Res<ImageAssets>,
+    images: Res<Assets<Image>>,
     existing_transformer: Query<Entity, With<TransformerVisual>>,
     existing_solar: Query<Entity, With<SolarArrayVisual>>,
+    existing_canopy: Query<Entity, With<PhotovoltaicCanopyVisual>>,
     existing_battery: Query<Entity, With<BatteryStorageVisual>>,
     existing_security: Query<Entity, With<SecuritySystemVisual>>,
     existing_booster: Query<Entity, With<RfBoosterVisual>>,
@@ -220,6 +239,9 @@ pub fn update_grid_visuals(
         commands.entity(entity).try_despawn();
     }
     for entity in &existing_solar {
+        commands.entity(entity).try_despawn();
+    }
+    for entity in &existing_canopy {
         commands.entity(entity).try_despawn();
     }
     for entity in &existing_battery {
@@ -327,6 +349,17 @@ pub fn update_grid_visuals(
             // All other tile types are rendered by Tiled - no entity spawning needed
             _ => {}
         }
+    }
+
+    for canopy in &grid.photovoltaic_canopies {
+        spawn_photovoltaic_canopy(
+            &mut commands,
+            root_entity,
+            &image_assets,
+            &images,
+            canopy,
+            site.id,
+        );
     }
 
     // Update last processed revision
@@ -454,10 +487,22 @@ const TRANSFORMER_GAUGE_BAR_WIDTH: f32 = 60.0;
 const TRANSFORMER_GAUGE_BAR_HEIGHT: f32 = 8.0;
 
 /// Solar array overlay layout constants
+const GROUND_SOLAR_ARRAY_KW_PEAK: f32 = 25.0;
 const SOLAR_LABEL_TEXT_Y: f32 = 18.0; // Above center
 const SOLAR_BAR_Y: f32 = -25.0; // Below center
 const SOLAR_BAR_WIDTH: f32 = 70.0;
 const SOLAR_BAR_HEIGHT: f32 = 8.0;
+const CANOPY_TEXT_FONT_SIZE: f32 = 13.0;
+const CANOPY_ROOF_CENTER_Y: f32 = TILE_SIZE * 1.12;
+const CANOPY_LABEL_OFFSET_X: f32 = 16.0;
+const CANOPY_TEXT_OFFSET_Y: f32 = -2.0;
+const CANOPY_LABEL_BACKDROP_WIDTH: f32 = 34.0;
+const CANOPY_LABEL_BACKDROP_HEIGHT: f32 = 14.0;
+const CANOPY_BAR_OFFSET_X: f32 = -18.0;
+const CANOPY_BAR_OFFSET_Y: f32 = -10.0;
+const CANOPY_BAR_WIDTH: f32 = 34.0;
+const CANOPY_BAR_HEIGHT: f32 = 6.0;
+const CANOPY_ROOF_ROTATION_RAD: f32 = -0.23;
 
 /// Battery storage overlay layout constants
 const BATTERY_LABEL_TEXT_Y: f32 = 18.0; // Above center
@@ -540,8 +585,19 @@ pub fn update_transformer_gauges(
 /// Update solar generation bar and label based on current site state
 pub fn update_solar_generation_bar(
     multi_site: Res<crate::resources::MultiSiteManager>,
-    mut bars: Query<&mut Sprite, (With<SolarGenerationBar>, Without<SolarGenerationLabel>)>,
-    mut labels: Query<(&mut Text2d, &mut TextColor), With<SolarGenerationLabel>>,
+    mut bars: Query<
+        (&mut Sprite, &SolarInstalledCapacityKw, &SolarBarSize),
+        With<SolarGenerationBar>,
+    >,
+    mut labels: Query<
+        (
+            &mut Text2d,
+            &mut TextColor,
+            &SolarInstalledCapacityKw,
+            Option<&CanopySolarOverlayLabel>,
+        ),
+        With<SolarGenerationLabel>,
+    >,
 ) {
     let Some(site_state) = multi_site.active_site() else {
         return;
@@ -549,19 +605,13 @@ pub fn update_solar_generation_bar(
 
     // Get solar state
     let peak_kw = site_state.grid.total_solar_kw;
-    if peak_kw <= 0.0 {
-        // No solar installed - hide bar
-        for mut sprite in &mut bars {
-            sprite.custom_size = Some(Vec2::new(0.0, SOLAR_BAR_HEIGHT));
-        }
-        return;
-    }
-
     let current_kw = site_state.solar_state.current_generation_kw;
-    let generation_pct = (current_kw / peak_kw).clamp(0.0, 1.0);
+    let generation_pct = if peak_kw > 0.0 {
+        (current_kw / peak_kw).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
 
-    // Update bar fill
-    let fill_width = SOLAR_BAR_WIDTH * generation_pct;
     let color = if generation_pct > 0.5 {
         Color::srgb(1.0, 0.85, 0.1) // Bright yellow
     } else if generation_pct > 0.1 {
@@ -570,14 +620,26 @@ pub fn update_solar_generation_bar(
         Color::srgb(0.5, 0.4, 0.2) // Dim (night/low light)
     };
 
-    for mut sprite in &mut bars {
-        sprite.custom_size = Some(Vec2::new(fill_width, SOLAR_BAR_HEIGHT));
+    for (mut sprite, installed_kw_peak, bar_size) in &mut bars {
+        let installed_kw_peak = installed_kw_peak.0.max(0.0);
+        let installation_kw = installed_kw_peak * generation_pct;
+        let fill_pct = if installed_kw_peak > 0.0 {
+            (installation_kw / installed_kw_peak).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+
+        sprite.custom_size = Some(Vec2::new(bar_size.0.x * fill_pct, bar_size.0.y));
         sprite.color = color;
     }
 
-    // Update label text
-    for (mut text, mut text_color) in &mut labels {
-        **text = format!("{current_kw:.0} kW");
+    for (mut text, mut text_color, installed_kw_peak, canopy_label) in &mut labels {
+        let installation_kw = installed_kw_peak.0.max(0.0) * generation_pct;
+        **text = if canopy_label.is_some() {
+            format!("{installation_kw:.0} kW")
+        } else {
+            format!("{installation_kw:.0} kW")
+        };
         *text_color = TextColor(color);
     }
 }
@@ -694,6 +756,7 @@ fn spawn_solar_array(
                     Transform::from_xyz(0.0, SOLAR_LABEL_TEXT_Y, 0.1)
                         .with_scale(Vec3::splat(inverse_scale)),
                     SolarGenerationLabel,
+                    SolarInstalledCapacityKw(GROUND_SOLAR_ARRAY_KW_PEAK),
                 ));
 
                 // Generation bar
@@ -732,6 +795,130 @@ fn spawn_solar_array(
                         .with_scale(Vec3::splat(inverse_scale)),
                     Anchor::CENTER_LEFT,
                     SolarGenerationBar,
+                    SolarInstalledCapacityKw(GROUND_SOLAR_ARRAY_KW_PEAK),
+                    SolarBarSize(Vec2::new(SOLAR_BAR_WIDTH, SOLAR_BAR_HEIGHT)),
+                ));
+            });
+    });
+}
+
+fn spawn_photovoltaic_canopy(
+    commands: &mut Commands,
+    root_entity: Entity,
+    assets: &ImageAssets,
+    images: &Assets<Image>,
+    canopy: &crate::resources::PhotovoltaicCanopyPlacement,
+    site_id: crate::resources::SiteId,
+) {
+    let layout = canopy_layout(canopy);
+    let canopy_scale = canopy_scale(images.get(&assets.prop_photovoltaic_canopy), &layout);
+    let inverse_scale = Vec3::new(canopy_scale.x.recip(), canopy_scale.y.recip(), 1.0);
+    let scale_y_abs = canopy_scale.y.abs();
+    let roof_rotation = CANOPY_ROOF_ROTATION_RAD * layout.sprite_scale_sign.y.signum();
+    let label_x = CANOPY_LABEL_OFFSET_X * inverse_scale.x;
+    let roof_center_y = CANOPY_ROOF_CENTER_Y / scale_y_abs;
+    let label_y = roof_center_y + (CANOPY_TEXT_OFFSET_Y / scale_y_abs);
+    let bar_x = CANOPY_BAR_OFFSET_X * inverse_scale.x;
+    let bar_y = roof_center_y + (CANOPY_BAR_OFFSET_Y / scale_y_abs);
+
+    commands.entity(root_entity).with_children(|parent| {
+        parent
+            .spawn((
+                Sprite::from_image(assets.prop_photovoltaic_canopy.clone()),
+                Transform::from_xyz(
+                    layout.sprite_bottom_center_world.x,
+                    layout.sprite_bottom_center_world.y,
+                    9.0,
+                )
+                .with_scale(canopy_scale),
+                Anchor::BOTTOM_CENTER,
+                PhotovoltaicCanopyVisual,
+                crate::components::BelongsToSite::new(site_id),
+            ))
+            .with_children(|sprite_parent| {
+                sprite_parent.spawn((
+                    Sprite {
+                        color: Color::srgba(0.05, 0.05, 0.07, 0.88),
+                        custom_size: Some(Vec2::new(
+                            CANOPY_LABEL_BACKDROP_WIDTH,
+                            CANOPY_LABEL_BACKDROP_HEIGHT,
+                        )),
+                        ..default()
+                    },
+                    Transform::from_xyz(label_x, label_y, 0.085)
+                        .with_rotation(Quat::from_rotation_z(roof_rotation))
+                        .with_scale(inverse_scale),
+                ));
+
+                sprite_parent.spawn((
+                    Text2d::new("0"),
+                    TextFont {
+                        font_size: CANOPY_TEXT_FONT_SIZE,
+                        ..default()
+                    },
+                    TextColor(Color::srgba(0.0, 0.0, 0.0, 0.95)),
+                    Transform::from_xyz(
+                        label_x + inverse_scale.x * 0.8,
+                        label_y - inverse_scale.y.abs() * 1.2,
+                        0.09,
+                    )
+                    .with_rotation(Quat::from_rotation_z(roof_rotation))
+                    .with_scale(inverse_scale),
+                ));
+
+                sprite_parent.spawn((
+                    Text2d::new("0"),
+                    TextFont {
+                        font_size: CANOPY_TEXT_FONT_SIZE,
+                        ..default()
+                    },
+                    TextColor(Color::srgb(1.0, 1.0, 0.92)),
+                    Transform::from_xyz(label_x, label_y, 0.1)
+                        .with_rotation(Quat::from_rotation_z(roof_rotation))
+                        .with_scale(inverse_scale),
+                    SolarGenerationLabel,
+                    SolarInstalledCapacityKw(canopy.installed_kw_peak),
+                    CanopySolarOverlayLabel,
+                ));
+
+                let bar_width = CANOPY_BAR_WIDTH;
+                let bar_height = CANOPY_BAR_HEIGHT;
+
+                sprite_parent.spawn((
+                    Sprite {
+                        color: Color::srgba(0.2, 0.2, 0.2, 0.8),
+                        custom_size: Some(Vec2::new(bar_width + 4.0, bar_height + 4.0)),
+                        ..default()
+                    },
+                    Transform::from_xyz(bar_x, bar_y, 0.105)
+                        .with_rotation(Quat::from_rotation_z(roof_rotation))
+                        .with_scale(inverse_scale),
+                ));
+
+                sprite_parent.spawn((
+                    Sprite {
+                        color: Color::srgba(0.12, 0.12, 0.16, 0.95),
+                        custom_size: Some(Vec2::new(bar_width, bar_height)),
+                        ..default()
+                    },
+                    Transform::from_xyz(bar_x, bar_y, 0.11)
+                        .with_rotation(Quat::from_rotation_z(roof_rotation))
+                        .with_scale(inverse_scale),
+                ));
+
+                sprite_parent.spawn((
+                    Sprite {
+                        color: Color::srgb(1.0, 0.8, 0.2),
+                        custom_size: Some(Vec2::new(0.0, bar_height)),
+                        ..default()
+                    },
+                    Transform::from_xyz(bar_x - bar_width / 2.0 * inverse_scale.x, bar_y, 0.12)
+                        .with_rotation(Quat::from_rotation_z(roof_rotation))
+                        .with_scale(inverse_scale),
+                    Anchor::CENTER_LEFT,
+                    SolarGenerationBar,
+                    SolarInstalledCapacityKw(canopy.installed_kw_peak),
+                    SolarBarSize(Vec2::new(CANOPY_BAR_WIDTH, CANOPY_BAR_HEIGHT)),
                 ));
             });
     });

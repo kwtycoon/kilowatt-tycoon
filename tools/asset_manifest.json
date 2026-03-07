@@ -2719,6 +2719,11 @@
         "id": 15,
         "name": "RfBooster",
         "filename": "prop_rf_booster.png"
+      },
+      {
+        "id": 16,
+        "name": "PhotovoltaicCanopy",
+        "filename": "prop_photovoltaic_canopy.png"
       }
     ]
   },

@@ -235,6 +235,7 @@ fn spawn_build_infra_panel(parent: &mut ChildSpawnerCommands, image_assets: &Ima
             spawn_build_tool_button(panel, BuildTool::Transformer1000kVA);
             spawn_build_tool_button(panel, BuildTool::Transformer2500kVA);
             spawn_build_tool_button(panel, BuildTool::SolarCanopy);
+            spawn_build_tool_button(panel, BuildTool::PhotovoltaicCanopy);
             spawn_build_tool_button(panel, BuildTool::BatteryStorage);
             spawn_build_tool_button(panel, BuildTool::SecuritySystem);
             spawn_build_tool_button(panel, BuildTool::RfBooster);

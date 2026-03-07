@@ -33,6 +33,10 @@ pub fn click_to_select_charger(
         return;
     }
 
+    if is_pointer_tap && should_ignore_pointer_charger_selection(build_state.selected_tool) {
+        return;
+    }
+
     // Right-click dismisses build tool selection (chargers/infra/amenities/sell)
     if is_right_click {
         build_state.selected_tool = BuildTool::Select;
@@ -121,6 +125,10 @@ pub fn click_to_select_charger(
     }
 }
 
+fn should_ignore_pointer_charger_selection(tool: BuildTool) -> bool {
+    tool == BuildTool::PhotovoltaicCanopy
+}
+
 /// Handle keyboard shortcuts for speed (keep these working)
 pub fn keyboard_shortcuts(
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -129,5 +137,21 @@ pub fn keyboard_shortcuts(
     if keyboard.just_pressed(KeyCode::Space) {
         game_clock.toggle_pause();
         info!("Pause toggled via spacebar");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn photovoltaic_canopy_tool_blocks_pointer_charger_selection() {
+        assert!(should_ignore_pointer_charger_selection(
+            BuildTool::PhotovoltaicCanopy
+        ));
+        assert!(!should_ignore_pointer_charger_selection(BuildTool::Select));
+        assert!(!should_ignore_pointer_charger_selection(
+            BuildTool::ChargerDCFC150
+        ));
     }
 }

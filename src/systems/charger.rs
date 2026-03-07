@@ -8,8 +8,9 @@ use crate::components::driver::{Driver, DriverState};
 use crate::data::LoadedChargers;
 use crate::events::{ChargerFaultEvent, DriverLeftEvent};
 use crate::resources::{
-    EnvironmentState, GameClock, GameState, MultiSiteManager, OemTier, SiteConfig, TileContent,
-    TutorialState, TutorialStep, WeatherType,
+    EnvironmentState, GameClock, GameState, MultiSiteManager, OemTier,
+    PHOTOVOLTAIC_CANOPY_FAULT_MULTIPLIER, SiteConfig, TileContent, TutorialState, TutorialStep,
+    WeatherType,
 };
 
 // ============ RF Environment Constants ============
@@ -43,6 +44,30 @@ fn weather_noise(weather: WeatherType) -> f32 {
         WeatherType::Heatwave => 0.10,
         WeatherType::Cold => 0.05,
     }
+}
+
+fn charger_canopy_fault_multiplier(
+    charger: &Charger,
+    site_grid: &crate::resources::SiteGrid,
+) -> f32 {
+    charger
+        .grid_position
+        .filter(|&(x, y)| site_grid.canopy_at_charger_pad(x, y).is_some())
+        .map(|_| PHOTOVOLTAIC_CANOPY_FAULT_MULTIPLIER)
+        .unwrap_or(1.0)
+}
+
+fn stochastic_fault_probabilities(
+    base_fault_prob: f32,
+    comm_mult: f32,
+    staff_mult: f32,
+    failure_mult: f32,
+    canopy_fault_mult: f32,
+) -> (f32, f32) {
+    let comm_prob =
+        0.4 * base_fault_prob * comm_mult * staff_mult * failure_mult * canopy_fault_mult;
+    let hw_prob = 0.6 * base_fault_prob * staff_mult * failure_mult * canopy_fault_mult;
+    (comm_prob, hw_prob)
 }
 
 /// Computes per-site RF environment (noise floor, SNR, fault multipliers).
@@ -338,9 +363,8 @@ pub fn stochastic_fault_system(
     let mut rng = rand::rng();
 
     for (_entity, mut charger, belongs_to_site) in &mut chargers {
-        let strategy = multi_site
-            .get_site(belongs_to_site.site_id)
-            .map(|s| &s.service_strategy);
+        let site = multi_site.get_site(belongs_to_site.site_id);
+        let strategy = site.map(|s| &s.service_strategy);
 
         // Maintenance effects: wear reduction and passive reliability recovery
         if let Some(strat) = strategy {
@@ -362,16 +386,23 @@ pub fn stochastic_fault_system(
 
         // RF-driven fault injection: comm faults scale with RF noise, hw faults use MTBF
         let failure_mult = strategy.map(|s| s.failure_rate_multiplier()).unwrap_or(1.0);
-        let rf = multi_site
-            .get_site(belongs_to_site.site_id)
-            .map(|s| &s.rf_environment);
+        let rf = site.map(|s| &s.rf_environment);
+        let canopy_fault_mult = site
+            .map(|s| charger_canopy_fault_multiplier(&charger, &s.grid))
+            .unwrap_or(1.0);
 
         let base_fault_prob = charger.fault_probability(delta_hours);
         let staff_mult = rf.map(|r| r.staff_fault_multiplier).unwrap_or(1.0);
         let comm_mult = rf.map(|r| r.comm_fault_multiplier).unwrap_or(0.5);
 
         // Communication faults: driven by RF environment
-        let comm_prob = 0.4 * base_fault_prob * comm_mult * staff_mult * failure_mult;
+        let (comm_prob, hw_prob) = stochastic_fault_probabilities(
+            base_fault_prob,
+            comm_mult,
+            staff_mult,
+            failure_mult,
+            canopy_fault_mult,
+        );
         if comm_prob > 0.0 && rng.random::<f32>() < comm_prob {
             inject_fault(
                 &mut charger,
@@ -392,7 +423,6 @@ pub fn stochastic_fault_system(
         }
 
         // Hardware faults: MTBF-based, unaffected by RF
-        let hw_prob = 0.6 * base_fault_prob * staff_mult * failure_mult;
         if hw_prob > 0.0 && rng.random::<f32>() < hw_prob {
             let fault_type = match rng.random_range(0..100) {
                 0..=34 => FaultType::PaymentError,   // 35%
@@ -898,5 +928,55 @@ mod tests {
 
         let two_restaurants = bevy::math::ops::powf(STAFF_FAULT_REDUCTION, 2.0);
         assert!((two_restaurants - 0.7225).abs() < 0.01);
+    }
+
+    #[test]
+    fn canopy_fault_multiplier_only_applies_to_covered_chargers() {
+        let mut grid = crate::resources::SiteGrid::default();
+        grid.set_tile_content(5, 5, TileContent::ParkingBaySouth);
+        grid.set_tile_content(5, 6, TileContent::Lot);
+        grid.place_charger(5, 5, crate::resources::ChargerPadType::DCFC150)
+            .expect("charger should place");
+        grid.place_photovoltaic_canopy(5, 6)
+            .expect("canopy should place");
+
+        let covered = Charger {
+            grid_position: Some((5, 6)),
+            ..default()
+        };
+        let uncovered = Charger {
+            grid_position: Some((4, 6)),
+            ..default()
+        };
+        let floating = Charger::default();
+
+        assert!(
+            (charger_canopy_fault_multiplier(&covered, &grid)
+                - PHOTOVOLTAIC_CANOPY_FAULT_MULTIPLIER)
+                .abs()
+                < f32::EPSILON
+        );
+        assert!((charger_canopy_fault_multiplier(&uncovered, &grid) - 1.0).abs() < f32::EPSILON);
+        assert!((charger_canopy_fault_multiplier(&floating, &grid) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn canopy_fault_multiplier_reduces_both_fault_probabilities() {
+        let (comm_uncovered, hw_uncovered) =
+            stochastic_fault_probabilities(0.2, 0.5, 0.8, 0.9, 1.0);
+        let (comm_covered, hw_covered) = stochastic_fault_probabilities(
+            0.2,
+            0.5,
+            0.8,
+            0.9,
+            PHOTOVOLTAIC_CANOPY_FAULT_MULTIPLIER,
+        );
+
+        assert!(comm_covered < comm_uncovered);
+        assert!(hw_covered < hw_uncovered);
+        assert!(
+            (comm_covered - comm_uncovered * PHOTOVOLTAIC_CANOPY_FAULT_MULTIPLIER).abs() < 0.0001
+        );
+        assert!((hw_covered - hw_uncovered * PHOTOVOLTAIC_CANOPY_FAULT_MULTIPLIER).abs() < 0.0001);
     }
 }
