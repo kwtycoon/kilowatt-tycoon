@@ -633,13 +633,9 @@ pub fn update_solar_generation_bar(
         sprite.color = color;
     }
 
-    for (mut text, mut text_color, installed_kw_peak, canopy_label) in &mut labels {
+    for (mut text, mut text_color, installed_kw_peak, _canopy_label) in &mut labels {
         let installation_kw = installed_kw_peak.0.max(0.0) * generation_pct;
-        **text = if canopy_label.is_some() {
-            format!("{installation_kw:.0} kW")
-        } else {
-            format!("{installation_kw:.0} kW")
-        };
+        **text = format!("{installation_kw:.0} kW");
         *text_color = TextColor(color);
     }
 }
