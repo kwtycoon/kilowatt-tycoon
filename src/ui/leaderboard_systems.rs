@@ -116,7 +116,7 @@ pub fn fetch_leaderboard_on_modal_open(
     // Spawn async task to fetch leaderboard (on a real Tokio runtime for native)
     let config_clone = config.clone();
     let task = spawn_network_task(async move {
-        fetch_leaderboard(&config_clone, 100)
+        fetch_leaderboard(&config_clone, 10)
             .await
             .map_err(|e| e.to_string())
     });
