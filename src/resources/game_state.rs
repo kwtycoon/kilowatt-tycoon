@@ -566,6 +566,7 @@ impl GameState {
                 );
                 site.pending_warranty = 0.0;
             }
+            site.utility_meter.reset();
         }
         self.cash = self.ledger.cash_balance_f32();
     }

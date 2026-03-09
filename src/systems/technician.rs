@@ -11,11 +11,12 @@ use crate::components::emotion::{TechnicianEmotion, TechnicianEmotionReason};
 use crate::components::technician::{Technician, TechnicianMovement, TechnicianPhase};
 use crate::events::{
     ChargerFaultEvent, ChargerFaultResolvedEvent, RepairCompleteEvent, RepairFailedEvent,
-    TechnicianDispatchEvent,
+    SiteSoldEvent, TechnicianDispatchEvent,
 };
 use crate::resources::{
-    BASE_TRAVEL_TIME, GameClock, GameState, MultiSiteManager, QueuedDispatch,
-    SelectedChargerEntity, SiteGrid, TECHNICIAN_HOURLY_RATE, TechStatus, TechnicianState,
+    BASE_TRAVEL_TIME, GameClock, GameState, MultiSiteManager, QueuedDispatch, RepairRequestId,
+    RepairRequestRegistry, RepairRequestSource, RepairRequestStatus, RepairResolution,
+    SelectedChargerEntity, SiteGrid, SiteId, TECHNICIAN_HOURLY_RATE, TechStatus, TechnicianState,
     calculate_travel_time,
 };
 use rand::Rng;
@@ -39,6 +40,279 @@ fn resolve_technician_target_bay(grid: &SiteGrid, grid_pos: (i32, i32)) -> (i32,
         .unwrap_or(grid_pos)
 }
 
+fn is_viewed_site_active_job(tech_state: &TechnicianState, multi_site: &MultiSiteManager) -> bool {
+    tech_state.active_site_id().is_some()
+        && tech_state.active_site_id() == multi_site.viewed_site_id
+}
+
+fn despawn_technician_avatar(
+    commands: &mut Commands,
+    technicians: &Query<(Entity, &Technician, &BelongsToSite)>,
+) {
+    for (entity, _, _) in technicians.iter() {
+        commands.entity(entity).try_despawn();
+    }
+}
+
+fn spawn_walking_avatar(
+    commands: &mut Commands,
+    tech_state: &TechnicianState,
+    multi_site: &MultiSiteManager,
+    chargers: &Query<(&Charger, &Transform, &BelongsToSite)>,
+    game_clock: &GameClock,
+    technicians: &Query<(Entity, &Technician, &BelongsToSite)>,
+) {
+    if !matches!(
+        tech_state.status(),
+        TechStatus::WaitingAtSite | TechStatus::WalkingOnSite | TechStatus::Repairing
+    ) || !is_viewed_site_active_job(tech_state, multi_site)
+    {
+        return;
+    }
+
+    if !technicians.is_empty() {
+        return;
+    }
+
+    let Some(charger_entity) = tech_state.active_charger() else {
+        return;
+    };
+    let Some(site_id) = tech_state.destination_site_id() else {
+        return;
+    };
+    let Some(site) = multi_site.get_site(site_id) else {
+        return;
+    };
+    let Some(site_root_entity) = site.root_entity else {
+        return;
+    };
+    let Ok((charger, charger_transform, belongs)) = chargers.get(charger_entity) else {
+        return;
+    };
+
+    let target_bay = if let Some(bay_pos) = charger.grid_position {
+        resolve_technician_target_bay(&site.grid, bay_pos)
+    } else {
+        let charger_world = Vec2::new(
+            charger_transform.translation.x - site.world_offset().x,
+            charger_transform.translation.y - site.world_offset().y,
+        );
+        resolve_technician_target_bay(&site.grid, SiteGrid::world_to_grid(charger_world))
+    };
+    let entry_pos = site.grid.entry_pos;
+    let start_world = SiteGrid::grid_to_world(entry_pos.0, entry_pos.1);
+
+    commands.entity(site_root_entity).with_children(|parent| {
+        parent.spawn((
+            Technician {
+                target_charger: charger_entity,
+                phase: TechnicianPhase::WalkingToCharger,
+                work_timer: 0.0,
+                target_bay: Some(target_bay),
+            },
+            TechnicianMovement {
+                phase: TechnicianPhase::WalkingToCharger,
+                speed: 60.0,
+            },
+            AgentPos(UVec3::new(entry_pos.0 as u32, entry_pos.1 as u32, 0)),
+            Pathfind::new_2d(target_bay.0 as u32, target_bay.1 as u32).mode(PathfindMode::AStar),
+            Transform::from_xyz(start_world.x, start_world.y, 15.0),
+            GlobalTransform::default(),
+            *belongs,
+            TechnicianEmotion::new(
+                TechnicianEmotionReason::ArrivingAtSite,
+                game_clock.total_real_time,
+            ),
+        ));
+    });
+}
+
+fn technician_is_visibly_ready_to_repair(
+    tech_state: &TechnicianState,
+    multi_site: &MultiSiteManager,
+    technicians: &mut Query<(
+        Entity,
+        &mut Technician,
+        &mut TechnicianMovement,
+        &mut TechnicianEmotion,
+        &BelongsToSite,
+        Option<&AgentPos>,
+    )>,
+) -> bool {
+    let Some(site_id) = tech_state.destination_site_id() else {
+        return false;
+    };
+    if multi_site.viewed_site_id != Some(site_id) {
+        return false;
+    }
+    let Some(charger_entity) = tech_state.active_charger() else {
+        return false;
+    };
+
+    technicians.iter_mut().any(
+        |(_entity, technician, movement, _emotion, belongs, agent_pos)| {
+            if belongs.site_id != site_id
+                || technician.target_charger != charger_entity
+                || technician.phase != TechnicianPhase::Working
+                || movement.phase != TechnicianPhase::Working
+            {
+                return false;
+            }
+
+            match (technician.target_bay, agent_pos) {
+                (Some((bay_x, bay_y)), Some(agent_pos)) => {
+                    agent_pos.0.x == bay_x as u32 && agent_pos.0.y == bay_y as u32
+                }
+                _ => true,
+            }
+        },
+    )
+}
+
+enum ActiveJobValidation {
+    Valid {
+        request_id: RepairRequestId,
+        charger_entity: Entity,
+        site_id: SiteId,
+    },
+    Invalid {
+        request_id: Option<RepairRequestId>,
+        resolution: Option<RepairResolution>,
+        reason: &'static str,
+    },
+}
+
+fn validate_active_job(
+    tech_state: &TechnicianState,
+    chargers: &Query<(&Charger, &BelongsToSite)>,
+    repair_requests: &RepairRequestRegistry,
+) -> ActiveJobValidation {
+    let Some(request_id) = tech_state.active_request_id() else {
+        return ActiveJobValidation::Invalid {
+            request_id: None,
+            resolution: None,
+            reason: "active technician job has no repair request",
+        };
+    };
+    let Some(charger_entity) = tech_state.active_charger() else {
+        return ActiveJobValidation::Invalid {
+            request_id: Some(request_id),
+            resolution: None,
+            reason: "active technician job has no charger target",
+        };
+    };
+    let Some(site_id) = tech_state.destination_site_id() else {
+        return ActiveJobValidation::Invalid {
+            request_id: Some(request_id),
+            resolution: None,
+            reason: "active technician job has no destination site",
+        };
+    };
+
+    let Some(request) = repair_requests.get(request_id) else {
+        return ActiveJobValidation::Invalid {
+            request_id: Some(request_id),
+            resolution: None,
+            reason: "active technician job lost its repair request",
+        };
+    };
+
+    if !request.status.is_open() {
+        return ActiveJobValidation::Invalid {
+            request_id: Some(request_id),
+            resolution: None,
+            reason: "active technician job references a terminal request",
+        };
+    }
+
+    if request.charger_entity != charger_entity || request.site_id != site_id {
+        return ActiveJobValidation::Invalid {
+            request_id: Some(request_id),
+            resolution: None,
+            reason: "active technician job no longer matches its repair request",
+        };
+    }
+
+    let Ok((charger, belongs)) = chargers.get(charger_entity) else {
+        return ActiveJobValidation::Invalid {
+            request_id: Some(request_id),
+            resolution: Some(RepairResolution::Cancelled),
+            reason: "active technician charger no longer exists",
+        };
+    };
+
+    if belongs.site_id != site_id {
+        return ActiveJobValidation::Invalid {
+            request_id: Some(request_id),
+            resolution: None,
+            reason: "active technician charger moved to a different site",
+        };
+    }
+
+    match charger.current_fault {
+        None => ActiveJobValidation::Invalid {
+            request_id: Some(request_id),
+            resolution: Some(RepairResolution::Resolved),
+            reason: "active technician charger fault already cleared",
+        },
+        Some(fault_type) if !fault_type.requires_technician() => ActiveJobValidation::Invalid {
+            request_id: Some(request_id),
+            resolution: Some(RepairResolution::Cancelled),
+            reason: "active technician charger fault no longer needs a technician",
+        },
+        Some(_) => ActiveJobValidation::Valid {
+            request_id,
+            charger_entity,
+            site_id,
+        },
+    }
+}
+
+fn resolve_skipped_dispatch(
+    dispatch: &QueuedDispatch,
+    repair_requests: &mut RepairRequestRegistry,
+    game_clock: &GameClock,
+    resolution: RepairResolution,
+) {
+    let _ = repair_requests.resolve(dispatch.request_id, game_clock.total_game_time, resolution);
+}
+
+fn is_recoverable_request_status(
+    status: RepairRequestStatus,
+    last_dispatch_at: Option<f32>,
+) -> bool {
+    matches!(status, RepairRequestStatus::NeedsRetry)
+        || matches!(status, RepairRequestStatus::OpenDiscovered) && last_dispatch_at.is_some()
+}
+
+fn abort_invalid_active_job(
+    tech_state: &mut TechnicianState,
+    chargers: &Query<(&Charger, &BelongsToSite)>,
+    multi_site: &MultiSiteManager,
+    game_state: &mut GameState,
+    profile: &crate::resources::PlayerProfile,
+    repair_requests: &mut RepairRequestRegistry,
+    game_clock: &GameClock,
+    reason: &'static str,
+    request_id: Option<RepairRequestId>,
+    resolution: Option<RepairResolution>,
+) {
+    warn!("Aborting technician job: {reason}");
+    if let (Some(request_id), Some(resolution)) = (request_id, resolution) {
+        let _ = repair_requests.resolve(request_id, game_clock.total_game_time, resolution);
+    }
+    tech_state.set_idle();
+    start_next_queued_job(
+        tech_state,
+        chargers,
+        multi_site,
+        game_state,
+        profile,
+        repair_requests,
+        game_clock,
+    );
+}
+
 /// Computed values returned by `start_job` for use by the caller.
 struct JobResult {
     charger_id: String,
@@ -58,13 +332,13 @@ struct JobResult {
 /// The caller is responsible for setting status (`EnRoute` vs `WalkingOnSite`)
 /// and any travel-related fields.
 fn start_job(
-    tech_state: &mut TechnicianState,
     game_state: &mut GameState,
     profile: &crate::resources::PlayerProfile,
     dispatch: &QueuedDispatch,
     fault_type: crate::components::charger::FaultType,
     cable_replacement_cost: f32,
     warranty_tier: crate::resources::WarrantyTier,
+    bill_dispatch_costs: bool,
 ) -> JobResult {
     let base_repair = fault_type.repair_duration_secs();
     let downtime_mult = match profile.active_perk() {
@@ -84,24 +358,92 @@ fn start_job(
     let dispatch_cost = original_cost * warranty_tier.parts_cost_multiplier(fault_type);
     let covered = original_cost - dispatch_cost;
 
-    if is_cable_theft {
-        game_state.add_cable_theft_cost(original_cost);
-    } else {
-        game_state.add_repair_parts(original_cost);
+    if bill_dispatch_costs {
+        if is_cable_theft {
+            game_state.add_cable_theft_cost(original_cost);
+        } else {
+            game_state.add_repair_parts(original_cost);
+        }
+        if covered > 0.0 {
+            game_state.add_warranty_recovery(covered);
+        }
+        game_state.record_dispatch();
     }
-    if covered > 0.0 {
-        game_state.add_warranty_recovery(covered);
-    }
-    game_state.record_dispatch();
-
-    tech_state.target_charger = Some(dispatch.charger_entity);
-    tech_state.repair_remaining = repair_duration;
-    tech_state.job_time_elapsed = 0.0;
 
     JobResult {
         charger_id: dispatch.charger_id.clone(),
         repair_duration,
         dispatch_cost,
+    }
+}
+
+pub fn reconcile_repair_requests_system(
+    chargers: Query<(Entity, &Charger, &BelongsToSite)>,
+    mut repair_requests: ResMut<RepairRequestRegistry>,
+    game_clock: Res<GameClock>,
+) {
+    let mut live_chargers = std::collections::HashSet::new();
+
+    for (charger_entity, charger, belongs) in &chargers {
+        live_chargers.insert(charger_entity);
+
+        let Some(fault_type) = charger.current_fault else {
+            let _ = repair_requests.resolve_for_charger(
+                charger_entity,
+                game_clock.total_game_time,
+                RepairResolution::Resolved,
+            );
+            continue;
+        };
+
+        if !fault_type.requires_technician() {
+            let _ = repair_requests.resolve_for_charger(
+                charger_entity,
+                game_clock.total_game_time,
+                RepairResolution::Cancelled,
+            );
+            continue;
+        }
+
+        let occurred_at = charger
+            .fault_occurred_at
+            .unwrap_or(game_clock.total_game_time);
+        repair_requests.create_or_update_for_fault(
+            charger_entity,
+            charger.id.clone(),
+            belongs.site_id,
+            fault_type,
+            occurred_at,
+            RepairRequestSource::Reconciliation,
+        );
+
+        if charger.fault_discovered || charger.fault_is_detected {
+            let source = if charger.fault_is_detected {
+                RepairRequestSource::OemDetection
+            } else {
+                RepairRequestSource::DriverDiscovery
+            };
+            let discovered_at = charger
+                .fault_detected_at
+                .unwrap_or(game_clock.total_game_time);
+            let _ = repair_requests.mark_discovered(charger_entity, discovered_at, source);
+        }
+    }
+
+    let stale: Vec<RepairRequestId> = repair_requests
+        .iter()
+        .filter(|request| {
+            request.status.is_open() && !live_chargers.contains(&request.charger_entity)
+        })
+        .map(|request| request.id)
+        .collect();
+
+    for request_id in stale {
+        let _ = repair_requests.resolve(
+            request_id,
+            game_clock.total_game_time,
+            RepairResolution::Cancelled,
+        );
     }
 }
 
@@ -112,12 +454,13 @@ fn start_job(
 pub fn om_auto_dispatch_system(
     mut fault_events: MessageReader<ChargerFaultEvent>,
     mut dispatch_events: MessageWriter<TechnicianDispatchEvent>,
-    chargers: Query<&BelongsToSite>,
+    chargers: Query<(&Charger, &BelongsToSite)>,
     multi_site: Res<MultiSiteManager>,
+    mut repair_requests: ResMut<RepairRequestRegistry>,
 ) {
     for event in fault_events.read() {
         // Check if charger still exists and get its site
-        let Ok(belongs) = chargers.get(event.charger_entity) else {
+        let Ok((charger, belongs)) = chargers.get(event.charger_entity) else {
             continue;
         };
 
@@ -136,6 +479,24 @@ pub fn om_auto_dispatch_system(
             continue;
         }
 
+        let request_id = repair_requests
+            .active_request_id_for_charger(event.charger_entity)
+            .unwrap_or_else(|| {
+                repair_requests.create_or_update_for_fault(
+                    event.charger_entity,
+                    event.charger_id.clone(),
+                    belongs.site_id,
+                    event.fault_type,
+                    charger.fault_occurred_at.unwrap_or_default(),
+                    RepairRequestSource::AutoDispatch,
+                )
+            });
+        let _ = repair_requests.mark_discovered(
+            event.charger_entity,
+            charger.fault_detected_at.unwrap_or_default(),
+            RepairRequestSource::OemDetection,
+        );
+
         // Automatically dispatch technician
         info!(
             "O&M Optimize auto-dispatching technician for {} (fault: {:?})",
@@ -145,6 +506,7 @@ pub fn om_auto_dispatch_system(
         dispatch_events.write(TechnicianDispatchEvent {
             charger_entity: event.charger_entity,
             charger_id: event.charger_id.clone(),
+            request_id,
         });
     }
 }
@@ -161,6 +523,8 @@ pub fn dispatch_technician_system(
     multi_site: Res<MultiSiteManager>,
     mut game_state: ResMut<GameState>,
     profile: Res<crate::resources::PlayerProfile>,
+    mut repair_requests: ResMut<RepairRequestRegistry>,
+    game_clock: Res<GameClock>,
 ) {
     // Step 1: Queue all incoming dispatch events (validates charger still needs repair)
     for event in dispatch_events.read() {
@@ -190,8 +554,30 @@ pub fn dispatch_technician_system(
             continue;
         }
 
+        let _ = repair_requests.mark_discovered(
+            event.charger_entity,
+            charger
+                .fault_detected_at
+                .unwrap_or(game_clock.total_game_time),
+            RepairRequestSource::ManualDispatch,
+        );
+        let request_queued = repair_requests.queue(
+            event.request_id,
+            game_clock.total_game_time,
+            RepairRequestSource::ManualDispatch,
+        );
+
+        if !request_queued {
+            warn!(
+                "Technician dispatch ignored for {} because repair request {:?} is not queueable",
+                event.charger_id, event.request_id
+            );
+            continue;
+        }
+
         // Queue the dispatch (skips duplicates)
         if tech_state.queue_dispatch(
+            event.request_id,
             event.charger_entity,
             event.charger_id.clone(),
             belongs.site_id,
@@ -215,7 +601,61 @@ pub fn dispatch_technician_system(
         &multi_site,
         &mut game_state,
         &profile,
+        &mut repair_requests,
+        &game_clock,
     );
+}
+
+/// Rebuild transient dispatch queue entries from durable repair requests.
+///
+/// This keeps retryable work and day-end interrupted work recoverable even when
+/// the on-screen technician entity or transient queue state has been cleared.
+pub fn recover_dispatchable_requests_system(
+    mut tech_state: ResMut<TechnicianState>,
+    chargers: Query<(&Charger, &BelongsToSite)>,
+    mut repair_requests: ResMut<RepairRequestRegistry>,
+    game_clock: Res<GameClock>,
+) {
+    let candidate_ids: Vec<RepairRequestId> = repair_requests
+        .iter()
+        .filter(|request| is_recoverable_request_status(request.status, request.last_dispatch_at))
+        .map(|request| request.id)
+        .collect();
+
+    for request_id in candidate_ids {
+        let Some(request) = repair_requests.get(request_id).cloned() else {
+            continue;
+        };
+
+        let Ok((charger, belongs)) = chargers.get(request.charger_entity) else {
+            continue;
+        };
+
+        let Some(fault_type) = charger.current_fault else {
+            continue;
+        };
+
+        if !fault_type.requires_technician() || belongs.site_id != request.site_id {
+            continue;
+        }
+
+        let source = if request.status == RepairRequestStatus::NeedsRetry {
+            RepairRequestSource::Retry
+        } else {
+            request.source
+        };
+
+        if !repair_requests.queue(request_id, game_clock.total_game_time, source) {
+            continue;
+        }
+
+        let _ = tech_state.queue_dispatch(
+            request_id,
+            request.charger_entity,
+            request.charger_id.clone(),
+            request.site_id,
+        );
+    }
 }
 
 /// Helper function to start the next queued job if technician is idle.
@@ -226,6 +666,8 @@ pub fn start_next_queued_job(
     multi_site: &MultiSiteManager,
     game_state: &mut GameState,
     profile: &crate::resources::PlayerProfile,
+    repair_requests: &mut RepairRequestRegistry,
+    game_clock: &GameClock,
 ) {
     if !tech_state.is_available() {
         return;
@@ -242,8 +684,22 @@ pub fn start_next_queued_job(
             "Queued charger {} no longer exists, skipping",
             next_dispatch.charger_id
         );
+        resolve_skipped_dispatch(
+            &next_dispatch,
+            repair_requests,
+            game_clock,
+            RepairResolution::Cancelled,
+        );
         // Try the next one in queue recursively
-        start_next_queued_job(tech_state, chargers, multi_site, game_state, profile);
+        start_next_queued_job(
+            tech_state,
+            chargers,
+            multi_site,
+            game_state,
+            profile,
+            repair_requests,
+            game_clock,
+        );
         return;
     };
 
@@ -253,8 +709,22 @@ pub fn start_next_queued_job(
             "Queued charger {} no longer has a fault, skipping",
             next_dispatch.charger_id
         );
+        resolve_skipped_dispatch(
+            &next_dispatch,
+            repair_requests,
+            game_clock,
+            RepairResolution::Resolved,
+        );
         // Try the next one in queue recursively
-        start_next_queued_job(tech_state, chargers, multi_site, game_state, profile);
+        start_next_queued_job(
+            tech_state,
+            chargers,
+            multi_site,
+            game_state,
+            profile,
+            repair_requests,
+            game_clock,
+        );
         return;
     };
 
@@ -263,8 +733,22 @@ pub fn start_next_queued_job(
             "Queued charger {} fault {:?} no longer requires technician, skipping",
             next_dispatch.charger_id, fault_type
         );
+        resolve_skipped_dispatch(
+            &next_dispatch,
+            repair_requests,
+            game_clock,
+            RepairResolution::Cancelled,
+        );
         // Try the next one in queue recursively
-        start_next_queued_job(tech_state, chargers, multi_site, game_state, profile);
+        start_next_queued_job(
+            tech_state,
+            chargers,
+            multi_site,
+            game_state,
+            profile,
+            repair_requests,
+            game_clock,
+        );
         return;
     }
 
@@ -294,21 +778,44 @@ pub fn start_next_queued_job(
         .get_site(destination_site_id)
         .map(|s| s.service_strategy.warranty_tier)
         .unwrap_or_default();
+    let bill_dispatch_costs = !repair_requests.dispatch_costs_recorded(next_dispatch.request_id);
+
+    if !repair_requests.set_status(next_dispatch.request_id, RepairRequestStatus::EnRoute) {
+        warn!(
+            "Queued charger {} no longer has an open repair request, skipping",
+            next_dispatch.charger_id
+        );
+        start_next_queued_job(
+            tech_state,
+            chargers,
+            multi_site,
+            game_state,
+            profile,
+            repair_requests,
+            game_clock,
+        );
+        return;
+    }
 
     let job = start_job(
-        tech_state,
         game_state,
         profile,
         &next_dispatch,
         fault_type,
         charger.cable_replacement_cost(),
         warranty_tier,
+        bill_dispatch_costs,
     );
-
-    tech_state.status = TechStatus::EnRoute;
-    tech_state.destination_site_id = Some(destination_site_id);
-    tech_state.travel_remaining = travel_time;
-    tech_state.travel_total = travel_time;
+    if bill_dispatch_costs {
+        let _ = repair_requests.mark_dispatch_costs_recorded(next_dispatch.request_id);
+    }
+    tech_state.begin_en_route(
+        next_dispatch.request_id,
+        next_dispatch.charger_entity,
+        destination_site_id,
+        travel_time,
+        job.repair_duration,
+    );
 
     if travel_time > 0.0 {
         info!(
@@ -327,6 +834,31 @@ pub fn start_next_queued_job(
     }
 }
 
+fn recover_from_travel_abort(
+    tech_state: &mut TechnicianState,
+    chargers: &Query<(&Charger, &BelongsToSite)>,
+    multi_site: &MultiSiteManager,
+    game_state: &mut GameState,
+    profile: &crate::resources::PlayerProfile,
+    repair_requests: &mut RepairRequestRegistry,
+    game_clock: &GameClock,
+) {
+    if let Some(request_id) = tech_state.active_request_id() {
+        let _ = repair_requests.set_status(request_id, RepairRequestStatus::NeedsRetry);
+    }
+    tech_state.set_idle();
+
+    start_next_queued_job(
+        tech_state,
+        chargers,
+        multi_site,
+        game_state,
+        profile,
+        repair_requests,
+        game_clock,
+    );
+}
+
 /// Update technician travel timer and spawn entity when arriving at site
 pub fn technician_travel_system(
     mut commands: Commands,
@@ -335,29 +867,69 @@ pub fn technician_travel_system(
     time: Res<Time>,
     multi_site: Res<MultiSiteManager>,
     chargers: Query<(&Charger, &Transform, &BelongsToSite)>,
+    dispatch_chargers: Query<(&Charger, &BelongsToSite)>,
+    mut game_state: ResMut<GameState>,
+    profile: Res<crate::resources::PlayerProfile>,
+    mut repair_requests: ResMut<RepairRequestRegistry>,
 ) {
-    if game_clock.is_paused() || tech_state.status != TechStatus::EnRoute {
+    if game_clock.is_paused() || tech_state.status() != TechStatus::EnRoute {
         return;
+    }
+
+    match validate_active_job(&tech_state, &dispatch_chargers, &repair_requests) {
+        ActiveJobValidation::Valid { .. } => {}
+        ActiveJobValidation::Invalid {
+            request_id,
+            resolution,
+            reason,
+        } => {
+            abort_invalid_active_job(
+                &mut tech_state,
+                &dispatch_chargers,
+                &multi_site,
+                &mut game_state,
+                &profile,
+                &mut repair_requests,
+                &game_clock,
+                reason,
+                request_id,
+                resolution,
+            );
+            return;
+        }
     }
 
     let delta = time.delta_secs() * game_clock.speed.multiplier();
     tech_state.job_time_elapsed += delta;
-    tech_state.travel_remaining -= delta;
+    let travel_remaining = tech_state.tick_travel(delta).unwrap_or(0.0);
 
-    if tech_state.travel_remaining <= 0.0 {
+    if travel_remaining <= 0.0 {
         // Arrived at site, spawn technician entity and start walking to charger
-        tech_state.travel_remaining = 0.0;
-
-        let Some(charger_entity) = tech_state.target_charger else {
+        let Some(charger_entity) = tech_state.active_charger() else {
             warn!("Technician arrived but no target charger set");
-            tech_state.status = TechStatus::Idle;
+            recover_from_travel_abort(
+                &mut tech_state,
+                &dispatch_chargers,
+                &multi_site,
+                &mut game_state,
+                &profile,
+                &mut repair_requests,
+                &game_clock,
+            );
             return;
         };
 
         let Ok((charger, charger_transform, belongs)) = chargers.get(charger_entity) else {
             warn!("Technician arrived but target charger not found");
-            tech_state.status = TechStatus::Idle;
-            tech_state.target_charger = None;
+            recover_from_travel_abort(
+                &mut tech_state,
+                &dispatch_chargers,
+                &multi_site,
+                &mut game_state,
+                &profile,
+                &mut repair_requests,
+                &game_clock,
+            );
             return;
         };
 
@@ -365,15 +937,31 @@ pub fn technician_travel_system(
         let charger_bay = charger.grid_position;
 
         // Get the site to determine entry point and pathfinding
-        let Some(site_id) = tech_state.destination_site_id else {
+        let Some(site_id) = tech_state.destination_site_id() else {
             warn!("Technician arrived but no destination site set");
-            tech_state.status = TechStatus::Idle;
+            recover_from_travel_abort(
+                &mut tech_state,
+                &dispatch_chargers,
+                &multi_site,
+                &mut game_state,
+                &profile,
+                &mut repair_requests,
+                &game_clock,
+            );
             return;
         };
 
         let Some(site) = multi_site.get_site(site_id) else {
             warn!("Technician arrived but site not found");
-            tech_state.status = TechStatus::Idle;
+            recover_from_travel_abort(
+                &mut tech_state,
+                &dispatch_chargers,
+                &multi_site,
+                &mut game_state,
+                &profile,
+                &mut repair_requests,
+                &game_clock,
+            );
             return;
         };
 
@@ -388,6 +976,19 @@ pub fn technician_travel_system(
             );
             resolve_technician_target_bay(&site.grid, SiteGrid::world_to_grid(charger_world))
         };
+
+        if !is_viewed_site_active_job(&tech_state, &multi_site) {
+            tech_state.complete_job_at(site_id);
+            let _ = tech_state.begin_waiting_at_site();
+            if let Some(request_id) = tech_state.active_request_id() {
+                let _ = repair_requests.set_status(request_id, RepairRequestStatus::WaitingAtSite);
+            }
+            info!(
+                "Technician arrived at offscreen site {:?}, waiting to visibly continue repair on {}",
+                site_id, charger.id
+            );
+            return;
+        }
 
         // Get starting position from entry
         let entry_pos = site.grid.entry_pos;
@@ -429,7 +1030,10 @@ pub fn technician_travel_system(
             });
 
             // Transition to WalkingOnSite to prevent spawning duplicate entities
-            tech_state.status = TechStatus::WalkingOnSite;
+            tech_state.begin_walking_on_site();
+            if let Some(request_id) = tech_state.active_request_id() {
+                let _ = repair_requests.set_status(request_id, RepairRequestStatus::WalkingOnSite);
+            }
 
             info!(
                 "Technician arrived at site {:?}, pathfinding to charger {} at ({}, {})",
@@ -437,9 +1041,57 @@ pub fn technician_travel_system(
             );
         } else {
             warn!("Site root entity not found for technician spawn");
-            tech_state.status = TechStatus::Idle;
+            recover_from_travel_abort(
+                &mut tech_state,
+                &dispatch_chargers,
+                &multi_site,
+                &mut game_state,
+                &profile,
+                &mut repair_requests,
+                &game_clock,
+            );
         }
     }
+}
+
+pub fn sync_viewed_technician_avatar_system(
+    mut commands: Commands,
+    mut tech_state: ResMut<TechnicianState>,
+    game_clock: Res<GameClock>,
+    multi_site: Res<MultiSiteManager>,
+    chargers: Query<(&Charger, &Transform, &BelongsToSite)>,
+    technicians: Query<(Entity, &Technician, &BelongsToSite)>,
+    mut repair_requests: ResMut<RepairRequestRegistry>,
+) {
+    if tech_state.status() == TechStatus::Idle || tech_state.status() == TechStatus::EnRoute {
+        if !technicians.is_empty() {
+            despawn_technician_avatar(&mut commands, &technicians);
+        }
+        return;
+    }
+
+    if !is_viewed_site_active_job(&tech_state, &multi_site) {
+        if !technicians.is_empty() {
+            despawn_technician_avatar(&mut commands, &technicians);
+        }
+        return;
+    }
+
+    if tech_state.status() == TechStatus::WaitingAtSite {
+        let _ = tech_state.begin_walking_on_site();
+        if let Some(request_id) = tech_state.active_request_id() {
+            let _ = repair_requests.set_status(request_id, RepairRequestStatus::WalkingOnSite);
+        }
+    }
+
+    spawn_walking_avatar(
+        &mut commands,
+        &tech_state,
+        &multi_site,
+        &chargers,
+        &game_clock,
+        &technicians,
+    );
 }
 
 /// Move technicians smoothly toward their NextPos (bevy_northstar pathfinding).
@@ -449,6 +1101,7 @@ pub fn technician_movement_system(
     mut commands: Commands,
     time: Res<Time>,
     game_clock: Res<GameClock>,
+    build_state: Res<crate::resources::BuildState>,
     mut query: Query<(
         Entity,
         &mut AgentPos,
@@ -457,7 +1110,7 @@ pub fn technician_movement_system(
         &TechnicianMovement,
     )>,
 ) {
-    if game_clock.is_paused() {
+    if game_clock.is_paused() || !build_state.is_open {
         return;
     }
 
@@ -500,7 +1153,9 @@ pub fn technician_arrival_detection(
     mut commands: Commands,
     mut tech_state: ResMut<TechnicianState>,
     game_clock: Res<GameClock>,
+    build_state: Res<crate::resources::BuildState>,
     multi_site: Res<MultiSiteManager>,
+    mut repair_requests: ResMut<RepairRequestRegistry>,
     mut query: Query<
         (
             Entity,
@@ -513,6 +1168,10 @@ pub fn technician_arrival_detection(
         (Without<NextPos>, Without<Pathfind>, Without<Path>),
     >,
 ) {
+    if !build_state.is_open {
+        return;
+    }
+
     for (entity, agent_pos, mut technician, mut movement, mut emotion, belongs) in query.iter_mut()
     {
         match movement.phase {
@@ -523,7 +1182,11 @@ pub fn technician_arrival_detection(
                     if at_bay {
                         movement.phase = TechnicianPhase::Working;
                         technician.phase = TechnicianPhase::Working;
-                        tech_state.status = TechStatus::Repairing;
+                        tech_state.begin_repairing();
+                        if let Some(request_id) = tech_state.active_request_id() {
+                            let _ = repair_requests
+                                .set_status(request_id, RepairRequestStatus::Repairing);
+                        }
                         emotion.set_reason(
                             TechnicianEmotionReason::StartingRepair,
                             game_clock.total_real_time,
@@ -559,13 +1222,18 @@ pub fn technician_arrival_detection(
 pub fn technician_repair_system(
     mut commands: Commands,
     mut tech_state: ResMut<TechnicianState>,
-    mut chargers: Query<(&mut Charger, &GlobalTransform, &BelongsToSite)>,
+    mut charger_queries: ParamSet<(
+        Query<(&mut Charger, &GlobalTransform, &BelongsToSite)>,
+        Query<(&Charger, &GlobalTransform, &BelongsToSite)>,
+        Query<(&Charger, &BelongsToSite)>,
+    )>,
     mut technicians: Query<(
         Entity,
         &mut Technician,
         &mut TechnicianMovement,
         &mut TechnicianEmotion,
         &BelongsToSite,
+        Option<&AgentPos>,
     )>,
     game_clock: Res<GameClock>,
     time: Res<Time>,
@@ -576,34 +1244,79 @@ pub fn technician_repair_system(
     mut repair_failed_events: MessageWriter<RepairFailedEvent>,
     mut resolved_events: MessageWriter<ChargerFaultResolvedEvent>,
     mut dispatch_events: MessageWriter<TechnicianDispatchEvent>,
+    mut repair_requests: ResMut<RepairRequestRegistry>,
     image_assets: Res<crate::resources::ImageAssets>,
     images: Res<Assets<Image>>,
 ) {
-    if game_clock.is_paused() || tech_state.status != TechStatus::Repairing {
+    if game_clock.is_paused() || tech_state.status() != TechStatus::Repairing {
+        return;
+    }
+
+    let charger_query = charger_queries.p2();
+    match validate_active_job(&tech_state, &charger_query, &repair_requests) {
+        ActiveJobValidation::Valid {
+            request_id,
+            charger_entity,
+            site_id,
+        } => {
+            let _ = (request_id, charger_entity, site_id);
+        }
+        ActiveJobValidation::Invalid {
+            request_id,
+            resolution,
+            reason,
+        } => {
+            abort_invalid_active_job(
+                &mut tech_state,
+                &charger_query,
+                &multi_site,
+                &mut game_state,
+                &profile,
+                &mut repair_requests,
+                &game_clock,
+                reason,
+                request_id,
+                resolution,
+            );
+            return;
+        }
+    }
+
+    if !technician_is_visibly_ready_to_repair(&tech_state, &multi_site, &mut technicians) {
         return;
     }
 
     let delta = time.delta_secs() * game_clock.speed.multiplier();
     tech_state.job_time_elapsed += delta;
-    tech_state.repair_remaining -= delta;
+    let repair_remaining = tech_state.tick_repair(delta).unwrap_or(0.0);
 
-    if tech_state.repair_remaining <= 0.0 {
+    if repair_remaining <= 0.0 {
         // Repair attempt complete
-        let Some(charger_entity) = tech_state.target_charger else {
+        let Some(charger_entity) = tech_state.active_charger() else {
             warn!("Technician finished repair but no target charger set");
-            tech_state.status = TechStatus::Idle;
+            tech_state.set_idle();
             return;
         };
+        let active_request_id = tech_state.active_request_id();
 
-        let Ok((mut charger, global_transform, belongs)) = chargers.get_mut(charger_entity) else {
+        let mut charger_query = charger_queries.p0();
+        let Ok((mut charger, global_transform, belongs)) = charger_query.get_mut(charger_entity)
+        else {
             warn!(
                 "Technician finished repair but target charger {:?} not found",
                 charger_entity
             );
-            tech_state.status = TechStatus::Idle;
-            tech_state.target_charger = None;
+            if let Some(request_id) = active_request_id {
+                let _ = repair_requests.resolve(
+                    request_id,
+                    game_clock.total_game_time,
+                    RepairResolution::Cancelled,
+                );
+            }
+            tech_state.set_idle();
             return;
         };
+        let completed_site_id = tech_state.destination_site_id().unwrap_or(belongs.site_id);
 
         // Calculate labor cost (travel + repair time at hourly rate)
         let labor_cost = tech_state.calculate_job_cost();
@@ -670,7 +1383,11 @@ pub fn technician_repair_system(
 
             // Clear target_charger NOW (before writing dispatch event) so the re-dispatch
             // isn't rejected as a duplicate. The cleanup system will handle the rest.
-            tech_state.target_charger = None;
+            if let Some(request_id) = active_request_id {
+                let _ =
+                    repair_requests.mark_retry_needed(request_id, Some(game_clock.total_game_time));
+                tech_state.clear_active_request();
+            }
 
             // If O&M Optimize tier is active, automatically re-dispatch
             let has_auto_dispatch = multi_site
@@ -683,10 +1400,13 @@ pub fn technician_repair_system(
                     "O&M Optimize auto-dispatching technician for retry on {}",
                     charger_id
                 );
-                dispatch_events.write(TechnicianDispatchEvent {
-                    charger_entity,
-                    charger_id,
-                });
+                if let Some(request_id) = active_request_id {
+                    dispatch_events.write(TechnicianDispatchEvent {
+                        request_id,
+                        charger_entity,
+                        charger_id,
+                    });
+                }
             }
         } else {
             // Repair succeeded — clear fault
@@ -740,158 +1460,222 @@ pub fn technician_repair_system(
                 charger_entity,
                 charger_id,
             });
+            if let Some(request_id) = active_request_id {
+                let _ = repair_requests.resolve(
+                    request_id,
+                    game_clock.total_game_time,
+                    RepairResolution::Resolved,
+                );
+            }
         }
 
         // Record current site location — job just completed here regardless of outcome.
-        tech_state.current_site_id = tech_state.destination_site_id;
-        tech_state.repair_remaining = 0.0;
+        tech_state.complete_job_at(completed_site_id);
 
         // Check whether another job is already queued at the same site.  If so,
         // redirect the technician directly to the next charger instead of routing
         // them to the exit and re-entering from scratch.
-        let same_site_idx = tech_state
-            .destination_site_id
-            .and_then(|site_id| tech_state.find_same_site_dispatch_index(site_id));
+        let same_site_idx = tech_state.find_same_site_dispatch_index(completed_site_id);
 
         // Validate that the found dispatch still needs a technician before committing.
         let next_same_site = same_site_idx.and_then(|idx| {
             let queued = &tech_state.dispatch_queue[idx];
-            let Ok((next_charger, _, _)) = chargers.get(queued.charger_entity) else {
+            let charger_query = charger_queries.p1();
+            let Ok((next_charger, next_transform, belongs)) =
+                charger_query.get(queued.charger_entity)
+            else {
                 return None;
             };
             let fault = next_charger.current_fault?;
             if !fault.requires_technician() {
                 return None;
             }
-            Some((idx, fault))
+            let target_bay = multi_site.get_site(belongs.site_id).map(|site| {
+                if let Some(pos) = next_charger.grid_position {
+                    resolve_technician_target_bay(&site.grid, pos)
+                } else {
+                    let charger_world = Vec2::new(
+                        next_transform.translation().x - site.world_offset().x,
+                        next_transform.translation().y - site.world_offset().y,
+                    );
+                    resolve_technician_target_bay(
+                        &site.grid,
+                        SiteGrid::world_to_grid(charger_world),
+                    )
+                }
+            });
+            Some((
+                idx,
+                fault,
+                target_bay,
+                next_charger.cable_replacement_cost(),
+            ))
         });
 
-        if let Some((idx, next_fault_type)) = next_same_site {
-            // --- Same-site job chaining ---
-            let next_dispatch = tech_state.dispatch_queue.remove(idx);
+        let mut chained_to_next_job = false;
 
-            // Resolve bay position and cable replacement cost in one lookup.
-            let (next_target_bay, cable_cost) =
-                if let Ok((charger, _, belongs)) = chargers.get(next_dispatch.charger_entity) {
-                    if let (Some(site), Some(pos)) =
-                        (multi_site.get_site(belongs.site_id), charger.grid_position)
-                    {
-                        (
-                            Some(resolve_technician_target_bay(&site.grid, pos)),
-                            charger.cable_replacement_cost(),
-                        )
-                    } else {
-                        (None, next_fault_type.repair_cost())
-                    }
-                } else {
-                    (None, next_fault_type.repair_cost())
+        if let Some((idx, next_fault_type, next_target_bay, cable_cost)) = next_same_site {
+            // --- Same-site job chaining ---
+            if let Some(bay) = next_target_bay {
+                let Some(next_dispatch) = tech_state.dispatch_queue.remove(idx) else {
+                    return;
                 };
 
-            let chain_warranty_tier = tech_state
-                .destination_site_id
-                .and_then(|sid| multi_site.get_site(sid))
-                .map(|s| s.service_strategy.warranty_tier)
-                .unwrap_or_default();
+                let chain_warranty_tier = tech_state
+                    .current_site_id
+                    .and_then(|sid| multi_site.get_site(sid))
+                    .map(|s| s.service_strategy.warranty_tier)
+                    .unwrap_or_default();
+                let viewed_same_site = multi_site.viewed_site_id == Some(completed_site_id);
+                let next_status = if viewed_same_site {
+                    RepairRequestStatus::WalkingOnSite
+                } else {
+                    RepairRequestStatus::WaitingAtSite
+                };
 
-            let job = start_job(
-                &mut tech_state,
-                &mut game_state,
-                &profile,
-                &next_dispatch,
-                next_fault_type,
-                cable_cost,
-                chain_warranty_tier,
-            );
-            tech_state.status = TechStatus::WalkingOnSite;
+                if !repair_requests.set_status(next_dispatch.request_id, next_status) {
+                    warn!(
+                        "Skipping same-site technician chain for {} because request {:?} is no longer open",
+                        next_dispatch.charger_id, next_dispatch.request_id
+                    );
+                } else {
+                    let job = start_job(
+                        &mut game_state,
+                        &profile,
+                        &next_dispatch,
+                        next_fault_type,
+                        cable_cost,
+                        chain_warranty_tier,
+                        !repair_requests.dispatch_costs_recorded(next_dispatch.request_id),
+                    );
+                    if !repair_requests.dispatch_costs_recorded(next_dispatch.request_id) {
+                        let _ =
+                            repair_requests.mark_dispatch_costs_recorded(next_dispatch.request_id);
+                    }
+                    tech_state.set_same_site_job(
+                        next_dispatch.request_id,
+                        next_dispatch.charger_entity,
+                        next_dispatch.site_id,
+                        job.repair_duration,
+                    );
+                    if !viewed_same_site {
+                        tech_state.set_waiting_at_site_job(
+                            next_dispatch.request_id,
+                            next_dispatch.charger_entity,
+                            next_dispatch.site_id,
+                            job.repair_duration,
+                        );
+                    }
+                    chained_to_next_job = true;
 
-            info!(
-                "Technician chaining to next job at same site: {} (repair: {:.0}s, cost: ${:.2})",
-                job.charger_id, job.repair_duration, job.dispatch_cost
-            );
+                    info!(
+                        "Technician chaining to next job at same site: {} (repair: {:.0}s, cost: ${:.2})",
+                        job.charger_id, job.repair_duration, job.dispatch_cost
+                    );
 
-            // Redirect the on-site technician entity to the new charger.
-            for (tech_entity, mut technician, mut movement, mut emotion, tech_belongs) in
-                technicians.iter_mut()
-            {
-                if technician.target_charger == charger_entity {
-                    if let Some(bay) = next_target_bay {
-                        technician.target_charger = next_dispatch.charger_entity;
-                        technician.target_bay = Some(bay);
-                        technician.phase = TechnicianPhase::WalkingToCharger;
-                        movement.phase = TechnicianPhase::WalkingToCharger;
-                        emotion.set_reason(
-                            TechnicianEmotionReason::NextJob,
-                            game_clock.total_real_time,
-                        );
-                        commands.entity(tech_entity).try_insert(
-                            Pathfind::new_2d(bay.0 as u32, bay.1 as u32).mode(PathfindMode::AStar),
-                        );
-                        info!(
-                            "Technician pathfinding to next charger at ({}, {})",
-                            bay.0, bay.1
-                        );
-                    } else {
-                        warn!(
-                            "Next charger {} has no grid position, falling back to exit",
-                            next_dispatch.charger_id
-                        );
-                        // Fall back to exit if we can't determine the bay.
+                    // Redirect the on-site technician entity to the new charger.
+                    if is_viewed_site_active_job(&tech_state, &multi_site) {
+                        for (
+                            tech_entity,
+                            mut technician,
+                            mut movement,
+                            mut emotion,
+                            _tech_belongs,
+                            _agent_pos,
+                        ) in technicians.iter_mut()
+                        {
+                            if technician.target_charger == charger_entity {
+                                technician.target_charger = next_dispatch.charger_entity;
+                                technician.target_bay = Some(bay);
+                                technician.phase = TechnicianPhase::WalkingToCharger;
+                                movement.phase = TechnicianPhase::WalkingToCharger;
+                                emotion.set_reason(
+                                    TechnicianEmotionReason::NextJob,
+                                    game_clock.total_real_time,
+                                );
+                                commands.entity(tech_entity).try_insert(
+                                    Pathfind::new_2d(bay.0 as u32, bay.1 as u32)
+                                        .mode(PathfindMode::AStar),
+                                );
+                                info!(
+                                    "Technician pathfinding to next charger at ({}, {})",
+                                    bay.0, bay.1
+                                );
+                                break;
+                            }
+                        }
+                    }
+                }
+            } else if let Some(queued) = tech_state.dispatch_queue.get(idx) {
+                warn!(
+                    "Next charger {} could not be routed on-site, leaving it queued",
+                    queued.charger_id
+                );
+            }
+        }
+
+        if !chained_to_next_job {
+            // --- Normal exit routing ---
+            tech_state.begin_leaving_site(completed_site_id);
+            if is_viewed_site_active_job(&tech_state, &multi_site) {
+                let mut routed_to_exit = false;
+
+                for (tech_entity, mut technician, mut movement, mut emotion, belongs, _agent_pos) in
+                    technicians.iter_mut()
+                {
+                    if technician.target_charger == charger_entity {
                         let exit_pos = multi_site
-                            .get_site(tech_belongs.site_id)
+                            .get_site(belongs.site_id)
                             .map(|site| site.grid.exit_pos)
                             .unwrap_or((15, 11));
+
                         movement.phase = TechnicianPhase::WalkingToExit;
                         technician.phase = TechnicianPhase::WalkingToExit;
-                        tech_state.status = TechStatus::LeavingSite;
+
                         commands.entity(tech_entity).try_insert(
                             Pathfind::new_2d(exit_pos.0 as u32, exit_pos.1 as u32)
                                 .mode(PathfindMode::AStar),
                         );
-                        emotion.set_reason(
-                            TechnicianEmotionReason::RepairComplete,
-                            game_clock.total_real_time,
+
+                        let emotion_reason = if repair_failed {
+                            TechnicianEmotionReason::RepairFailed
+                        } else {
+                            TechnicianEmotionReason::RepairComplete
+                        };
+                        emotion.set_reason(emotion_reason, game_clock.total_real_time);
+
+                        info!(
+                            "Technician pathfinding to exit at ({}, {})",
+                            exit_pos.0, exit_pos.1
                         );
+                        routed_to_exit = true;
+                        break;
                     }
-                    break;
                 }
-            }
-        } else {
-            // --- Normal exit routing ---
-            tech_state.status = TechStatus::LeavingSite;
 
-            for (tech_entity, mut technician, mut movement, mut emotion, belongs) in
-                technicians.iter_mut()
-            {
-                if technician.target_charger == charger_entity {
-                    let exit_pos = multi_site
-                        .get_site(belongs.site_id)
-                        .map(|site| site.grid.exit_pos)
-                        .unwrap_or((15, 11));
-
-                    movement.phase = TechnicianPhase::WalkingToExit;
-                    technician.phase = TechnicianPhase::WalkingToExit;
-
-                    commands.entity(tech_entity).try_insert(
-                        Pathfind::new_2d(exit_pos.0 as u32, exit_pos.1 as u32)
-                            .mode(PathfindMode::AStar),
+                if !routed_to_exit {
+                    warn!(
+                        "Technician completed job at viewed site {:?} but had no avatar to route to exit; leaving queued work pending",
+                        completed_site_id
                     );
-
-                    let emotion_reason = if repair_failed {
-                        TechnicianEmotionReason::RepairFailed
-                    } else {
-                        TechnicianEmotionReason::RepairComplete
-                    };
-                    emotion.set_reason(emotion_reason, game_clock.total_real_time);
-
-                    info!(
-                        "Technician pathfinding to exit at ({}, {})",
-                        exit_pos.0, exit_pos.1
-                    );
-                    break;
                 }
             }
         }
     }
+}
+
+pub fn cleanup_technicians_on_day_end(
+    mut commands: Commands,
+    technicians: Query<Entity, With<Technician>>,
+    mut tech_state: ResMut<TechnicianState>,
+    mut repair_requests: ResMut<RepairRequestRegistry>,
+) {
+    for entity in &technicians {
+        commands.entity(entity).try_despawn();
+    }
+
+    repair_requests.reset_for_new_day();
+    tech_state.reset_for_new_day();
 }
 
 /// Cleanup technician entities that have exited and reset state.
@@ -904,6 +1688,8 @@ pub fn cleanup_exited_technicians(
     multi_site: Res<MultiSiteManager>,
     mut game_state: ResMut<GameState>,
     profile: Res<crate::resources::PlayerProfile>,
+    mut repair_requests: ResMut<RepairRequestRegistry>,
+    game_clock: Res<GameClock>,
 ) {
     for (entity, _technician, movement) in technicians.iter() {
         if movement.phase == TechnicianPhase::Exited {
@@ -911,13 +1697,8 @@ pub fn cleanup_exited_technicians(
             commands.entity(entity).try_despawn();
 
             // Only reset technician state if we're in LeavingSite (prevents multiple resets)
-            if tech_state.status == TechStatus::LeavingSite {
-                tech_state.destination_site_id = None;
-                tech_state.status = TechStatus::Idle;
-                tech_state.target_charger = None;
-                tech_state.travel_remaining = 0.0;
-                tech_state.travel_total = 0.0;
-                tech_state.job_time_elapsed = 0.0;
+            if tech_state.status() == TechStatus::LeavingSite {
+                tech_state.set_idle();
 
                 info!("Technician entity cleaned up, now idle");
 
@@ -928,8 +1709,91 @@ pub fn cleanup_exited_technicians(
                     &multi_site,
                     &mut game_state,
                     &profile,
+                    &mut repair_requests,
+                    &game_clock,
                 );
             }
+        }
+    }
+}
+
+pub fn recover_orphaned_leaving_technician_system(
+    mut tech_state: ResMut<TechnicianState>,
+    technicians: Query<Entity, With<Technician>>,
+    chargers: Query<(&Charger, &BelongsToSite)>,
+    multi_site: Res<MultiSiteManager>,
+    mut game_state: ResMut<GameState>,
+    profile: Res<crate::resources::PlayerProfile>,
+    mut repair_requests: ResMut<RepairRequestRegistry>,
+    game_clock: Res<GameClock>,
+) {
+    if tech_state.status() != TechStatus::LeavingSite || !technicians.is_empty() {
+        return;
+    }
+
+    tech_state.set_idle();
+    start_next_queued_job(
+        &mut tech_state,
+        &chargers,
+        &multi_site,
+        &mut game_state,
+        &profile,
+        &mut repair_requests,
+        &game_clock,
+    );
+}
+
+pub fn cleanup_sold_site_technician_state(
+    mut commands: Commands,
+    mut sold_events: MessageReader<SiteSoldEvent>,
+    mut tech_state: ResMut<TechnicianState>,
+    chargers: Query<(&Charger, &BelongsToSite)>,
+    technicians: Query<(Entity, &Technician, &BelongsToSite)>,
+    multi_site: Res<MultiSiteManager>,
+    mut game_state: ResMut<GameState>,
+    profile: Res<crate::resources::PlayerProfile>,
+    mut repair_requests: ResMut<RepairRequestRegistry>,
+    game_clock: Res<GameClock>,
+) {
+    for sold in sold_events.read() {
+        let stale_request_ids: Vec<RepairRequestId> = repair_requests
+            .iter()
+            .filter(|request| request.status.is_open() && request.site_id == sold.site_id)
+            .map(|request| request.id)
+            .collect();
+        for request_id in stale_request_ids {
+            let _ = repair_requests.resolve(
+                request_id,
+                game_clock.total_game_time,
+                RepairResolution::Cancelled,
+            );
+        }
+
+        tech_state
+            .dispatch_queue
+            .retain(|queued| queued.site_id != sold.site_id);
+        tech_state.clear_current_site_if_matches(sold.site_id);
+
+        for (entity, _technician, belongs) in technicians.iter() {
+            if belongs.site_id == sold.site_id {
+                commands.entity(entity).try_despawn();
+            }
+        }
+
+        let abort_active_job = tech_state.destination_site_id() == Some(sold.site_id)
+            || tech_state.leaving_site_id() == Some(sold.site_id);
+
+        if abort_active_job {
+            tech_state.set_idle();
+            start_next_queued_job(
+                &mut tech_state,
+                &chargers,
+                &multi_site,
+                &mut game_state,
+                &profile,
+                &mut repair_requests,
+                &game_clock,
+            );
         }
     }
 }
@@ -954,6 +1818,8 @@ pub fn cleanup_sold_charger_references(
     multi_site: Res<MultiSiteManager>,
     mut game_state: ResMut<GameState>,
     profile: Res<crate::resources::PlayerProfile>,
+    mut repair_requests: ResMut<RepairRequestRegistry>,
+    game_clock: Res<GameClock>,
 ) {
     // 1. Clear UI selection if the charger entity no longer exists
     if let Some(entity) = selected.0
@@ -964,11 +1830,23 @@ pub fn cleanup_sold_charger_references(
     }
 
     // 2. Remove stale entries from the technician dispatch queue
-    let before_len = tech_state.dispatch_queue.len();
+    let stale_request_ids: Vec<RepairRequestId> = tech_state
+        .dispatch_queue
+        .iter()
+        .filter(|queued| chargers.get(queued.charger_entity).is_err())
+        .map(|queued| queued.request_id)
+        .collect();
     tech_state
         .dispatch_queue
         .retain(|queued| chargers.get(queued.charger_entity).is_ok());
-    let purged = before_len - tech_state.dispatch_queue.len();
+    let purged = stale_request_ids.len();
+    for request_id in stale_request_ids {
+        let _ = repair_requests.resolve(
+            request_id,
+            game_clock.total_game_time,
+            RepairResolution::Cancelled,
+        );
+    }
     if purged > 0 {
         info!(
             "Purged {} stale entries from technician dispatch queue",
@@ -977,12 +1855,13 @@ pub fn cleanup_sold_charger_references(
     }
 
     // 3. Abort the active technician job if its target charger was removed
-    if let Some(target) = tech_state.target_charger
+    if let Some(target) = tech_state.active_charger()
         && chargers.get(target).is_err()
     {
         info!(
             "Target charger {:?} was removed, aborting technician job (status: {:?})",
-            target, tech_state.status
+            target,
+            tech_state.status()
         );
 
         // Despawn any on-site technician entities targeting this charger
@@ -993,13 +1872,14 @@ pub fn cleanup_sold_charger_references(
         }
 
         // Reset technician state to idle
-        tech_state.status = TechStatus::Idle;
-        tech_state.target_charger = None;
-        tech_state.destination_site_id = None;
-        tech_state.travel_remaining = 0.0;
-        tech_state.travel_total = 0.0;
-        tech_state.repair_remaining = 0.0;
-        tech_state.job_time_elapsed = 0.0;
+        if let Some(request_id) = tech_state.active_request_id() {
+            let _ = repair_requests.resolve(
+                request_id,
+                game_clock.total_game_time,
+                RepairResolution::Cancelled,
+            );
+        }
+        tech_state.set_idle();
 
         // Try to start the next queued job (if any)
         start_next_queued_job(
@@ -1008,6 +1888,8 @@ pub fn cleanup_sold_charger_references(
             &multi_site,
             &mut game_state,
             &profile,
+            &mut repair_requests,
+            &game_clock,
         );
     }
 }

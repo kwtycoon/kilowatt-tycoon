@@ -43,7 +43,7 @@ use crate::events::{
     ChargerFaultEvent, ChargingCompleteEvent, DriverArrivedEvent, DriverLeftEvent,
 };
 use crate::resources::{
-    BuildState, EnvironmentState, GameClock, GameState, ReputationSource, SiteGrid, TechStatus,
+    BuildState, EnvironmentState, GameClock, GameState, ReputationSource, SiteGrid,
     TechnicianState, TutorialState, TutorialStep, generate_evcc_mac,
     generate_procedural_driver_for_site,
 };
@@ -56,10 +56,7 @@ pub const ZERO_POWER_TOLERANCE_GAME_SECONDS: f32 = 120.0;
 
 /// Check if technician is currently working on this charger
 fn is_technician_active_on_charger(tech_state: &TechnicianState, charger_entity: Entity) -> bool {
-    matches!(
-        tech_state.status,
-        TechStatus::EnRoute | TechStatus::Repairing
-    ) && tech_state.target_charger == Some(charger_entity)
+    tech_state.blocks_charger(charger_entity)
 }
 
 /// Score a charger using only OCPI-visible attributes (Rule 1).
@@ -1049,6 +1046,8 @@ pub fn driver_arrival_system(
                         // FAULT DISCOVERY: Driver discovers the fault!
                         if !charger.fault_discovered {
                             charger.fault_discovered = true;
+                            charger.fault_is_detected = true;
+                            charger.fault_detected_at = Some(game_clock.total_game_time);
                             fault_events.write(ChargerFaultEvent {
                                 charger_entity,
                                 charger_id: charger.id.clone(),
@@ -1474,6 +1473,8 @@ pub fn charging_system(
                 if has_om_software {
                     // O&M upgrade: immediate notification
                     charger.fault_discovered = true;
+                    charger.fault_is_detected = true;
+                    charger.fault_detected_at = Some(game_clock.total_game_time);
                     let fault_type = charger.current_fault.unwrap(); // Safe because jam just set it
                     fault_events.write(ChargerFaultEvent {
                         charger_entity,

@@ -8,6 +8,7 @@ use bevy::prelude::*;
 use crate::components::charger::{FaultType, RemoteAction};
 use crate::components::hacker::HackerAttackType;
 use crate::components::ticket::{TicketResolution, TicketType};
+use crate::resources::RepairRequestId;
 use crate::resources::achievements::AchievementKind;
 use crate::resources::multi_site::SiteId;
 use crate::resources::site_upgrades::OemTier;
@@ -194,6 +195,7 @@ pub struct SpeedChangedEvent {
 
 #[derive(Event, Message, Debug, Clone)]
 pub struct TechnicianDispatchEvent {
+    pub request_id: RepairRequestId,
     pub charger_entity: Entity,
     pub charger_id: String,
 }

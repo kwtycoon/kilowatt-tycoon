@@ -242,13 +242,7 @@ pub(crate) fn on_exit_day_end(
         charger.energy_delivered_kwh_today = 0.0;
     }
 
-    if let Some(site) = multi_site.active_site_mut() {
-        site.charger_queue.clear();
-        site.utility_meter.reset();
-        site.grid_events.reset_daily();
-        site.driver_schedule.next_driver_index = 0;
-        site.driver_schedule.next_event_index = 0;
-    }
+    multi_site.reset_all_sites_for_new_day();
 
     game_state.daily_history.current_day = crate::resources::game_state::CurrentDayTracker {
         site_id: multi_site.viewed_site_id,

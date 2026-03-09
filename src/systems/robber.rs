@@ -479,6 +479,7 @@ pub fn robber_stealing_system(
                 charger.fault_occurred_at = Some(game_clock.total_game_time);
                 charger.fault_detected_at = None;
                 charger.fault_is_detected = false;
+                charger.fault_discovered = false;
                 charger.degrade_reliability_fault(&FaultType::CableTheft);
                 charger.is_charging = false;
                 charger.current_power_kw = 0.0;

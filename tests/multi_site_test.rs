@@ -7,8 +7,8 @@ use bevy_ecs_tiled::prelude::TiledMapAsset;
 use kilowatt_tycoon::components::BelongsToSite;
 use kilowatt_tycoon::events::{SiteSoldEvent, SiteSwitchEvent, TechnicianDispatchEvent};
 use kilowatt_tycoon::resources::{
-    GameClock, GameDataAssets, MultiSiteManager, SiteArchetype, SiteId, SiteListingInfo,
-    SiteTemplateCache, TechStatus, TechnicianState, calculate_travel_time,
+    GameClock, GameDataAssets, MultiSiteManager, RepairRequestId, SiteArchetype, SiteId,
+    SiteListingInfo, SiteTemplateCache, TechnicianMode, TechnicianState, calculate_travel_time,
 };
 
 /// Helper to create test site listings (mocks the JSON-loaded templates)
@@ -535,12 +535,18 @@ fn test_technician_travel_time_calculation() {
     );
 
     // Test technician state with manual dispatch simulation
-    let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
-    tech_state.current_site_id = Some(site_a);
-    tech_state.destination_site_id = Some(site_b);
-    tech_state.travel_remaining = travel_time;
-    tech_state.travel_total = travel_time;
-    tech_state.status = TechStatus::EnRoute;
+    {
+        let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
+        tech_state.current_site_id = Some(site_a);
+        tech_state.mode = TechnicianMode::EnRoute {
+            request_id: RepairRequestId(1),
+            charger_entity: Entity::PLACEHOLDER,
+            site_id: site_b,
+            travel_remaining: travel_time,
+            travel_total: travel_time,
+            repair_remaining: 0.0,
+        };
+    }
 
     // Verify travel progress at start
     let tech_state = app.world().resource::<TechnicianState>();
@@ -552,7 +558,14 @@ fn test_technician_travel_time_calculation() {
 
     // Simulate half travel
     let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
-    tech_state.travel_remaining = travel_time / 2.0;
+    tech_state.mode = TechnicianMode::EnRoute {
+        request_id: RepairRequestId(1),
+        charger_entity: Entity::PLACEHOLDER,
+        site_id: site_b,
+        travel_remaining: travel_time / 2.0,
+        travel_total: travel_time,
+        repair_remaining: 0.0,
+    };
 
     let tech_state = app.world().resource::<TechnicianState>();
     assert!(
@@ -562,7 +575,14 @@ fn test_technician_travel_time_calculation() {
 
     // Simulate arrival
     let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
-    tech_state.travel_remaining = 0.0;
+    tech_state.mode = TechnicianMode::EnRoute {
+        request_id: RepairRequestId(1),
+        charger_entity: Entity::PLACEHOLDER,
+        site_id: site_b,
+        travel_remaining: 0.0,
+        travel_total: travel_time,
+        repair_remaining: 0.0,
+    };
 
     let tech_state = app.world().resource::<TechnicianState>();
     assert_eq!(

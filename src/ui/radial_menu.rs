@@ -13,7 +13,8 @@ use bevy::prelude::*;
 use crate::components::charger::{Charger, ChargerState, ChargerType, FaultType, RemoteAction};
 use crate::events::{RemoteActionRequestEvent, TechnicianDispatchEvent};
 use crate::resources::{
-    BuildState, BuildTool, GameState, ImageAssets, SelectedChargerEntity, TechnicianState,
+    BuildState, BuildTool, GameState, ImageAssets, RepairRequestRegistry, RepairRequestSource,
+    SelectedChargerEntity, TechnicianState,
 };
 use crate::systems::WorldCamera;
 use crate::systems::build_input::PlacementCursor;
@@ -833,7 +834,9 @@ pub fn handle_radial_menu_buttons(
     >,
     menu_query: Query<&RadialMenu>,
     mut chargers: Query<&mut Charger>,
+    charger_sites: Query<&crate::components::BelongsToSite>,
     tech_state: Res<TechnicianState>,
+    mut repair_requests: ResMut<RepairRequestRegistry>,
     mut game_state: ResMut<GameState>,
     mut action_events: MessageWriter<RemoteActionRequestEvent>,
     mut dispatch_events: MessageWriter<TechnicianDispatchEvent>,
@@ -905,15 +908,37 @@ pub fn handle_radial_menu_buttons(
                             true
                         }
                         RadialMenuAction::Dispatch => {
-                            info!(
-                                "Radial menu: Dispatching technician to charger {}",
-                                charger.id
-                            );
-                            dispatch_events.write(TechnicianDispatchEvent {
-                                charger_entity: menu.charger_entity,
-                                charger_id: charger.id.clone(),
-                            });
-                            true
+                            match (
+                                charger_sites.get(menu.charger_entity),
+                                charger.current_fault,
+                            ) {
+                                (Ok(belongs), Some(fault_type)) => {
+                                    let request_id = repair_requests.create_or_update_for_fault(
+                                        menu.charger_entity,
+                                        charger.id.clone(),
+                                        belongs.site_id,
+                                        fault_type,
+                                        charger.fault_occurred_at.unwrap_or_default(),
+                                        RepairRequestSource::ManualDispatch,
+                                    );
+                                    let _ = repair_requests.mark_discovered(
+                                        menu.charger_entity,
+                                        charger.fault_detected_at.unwrap_or_default(),
+                                        RepairRequestSource::ManualDispatch,
+                                    );
+                                    info!(
+                                        "Radial menu: Dispatching technician to charger {}",
+                                        charger.id
+                                    );
+                                    dispatch_events.write(TechnicianDispatchEvent {
+                                        request_id,
+                                        charger_entity: menu.charger_entity,
+                                        charger_id: charger.id.clone(),
+                                    });
+                                    true
+                                }
+                                _ => false,
+                            }
                         }
                         RadialMenuAction::UpgradeAntiTheft => {
                             if charger.anti_theft_cable {

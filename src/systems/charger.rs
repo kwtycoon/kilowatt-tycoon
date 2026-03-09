@@ -612,6 +612,28 @@ pub fn kick_drivers_from_faulted_chargers(
 /// Without O&M: faults are not detected until a driver tries to use the charger.
 /// With O&M: detection is near-instant (~10s).
 /// Both O&M tiers auto-remediate software faults (no player action needed).
+fn auto_remediate_software_fault(
+    charger: &mut Charger,
+    fault_type: FaultType,
+    occurred_at: f32,
+    resolved_at: f32,
+    oem_tier: OemTier,
+) {
+    info!(
+        "Auto-remediation: instantly clearing {:?} on {}",
+        fault_type, charger.id
+    );
+
+    let downtime = resolved_at - occurred_at;
+    charger.current_fault = None;
+    charger.reboot_attempts = 0;
+    charger.recover_reliability_fast_fix(downtime, oem_tier.reliability_recovery_multiplier());
+    charger.fault_occurred_at = None;
+    charger.fault_detected_at = None;
+    charger.fault_is_detected = false;
+    charger.fault_discovered = false;
+}
+
 pub fn fault_detection_system(
     mut chargers: Query<(Entity, &mut Charger, &crate::components::BelongsToSite)>,
     game_clock: Res<GameClock>,
@@ -624,23 +646,38 @@ pub fn fault_detection_system(
     }
 
     for (entity, mut charger, belongs) in &mut chargers {
-        // Skip chargers without undetected faults
-        if charger.current_fault.is_none() || charger.fault_is_detected {
-            continue;
-        }
-
-        let Some(occurred_at) = charger.fault_occurred_at else {
-            // Fault exists but no timestamp - legacy, mark as detected immediately
-            charger.fault_is_detected = true;
-            charger.fault_detected_at = Some(game_clock.total_game_time);
+        let Some(fault_type) = charger.current_fault else {
             continue;
         };
 
-        // Get the OEM tier for this charger's site
         let oem_tier = multi_site
             .get_site(belongs.site_id)
             .map(|site| site.site_upgrades.oem_tier)
             .unwrap_or(OemTier::None);
+        let should_auto_remediate =
+            oem_tier.has_auto_remediation() && !fault_type.requires_technician();
+
+        let Some(occurred_at) = charger.fault_occurred_at else {
+            // Fault exists but no timestamp - legacy, mark as detected immediately.
+            // If O&M can remotely resolve it, do so rather than leaving it stuck
+            // behind missing timing data.
+            if !charger.fault_is_detected {
+                charger.fault_is_detected = true;
+                charger.fault_discovered = true;
+                charger.fault_detected_at = Some(game_clock.total_game_time);
+            }
+
+            if should_auto_remediate {
+                auto_remediate_software_fault(
+                    &mut charger,
+                    fault_type,
+                    game_clock.total_game_time,
+                    game_clock.total_game_time,
+                    oem_tier,
+                );
+            }
+            continue;
+        };
 
         // Use total_game_time for elapsed calculation (monotonic, survives day boundaries)
         let elapsed = game_clock.total_game_time - occurred_at;
@@ -661,26 +698,21 @@ pub fn fault_detection_system(
             }
         };
 
-        if should_detect {
+        if should_detect && !charger.fault_is_detected {
             charger.fault_is_detected = true;
             charger.fault_discovered = true; // Sync legacy flag so drivers don't re-discover
             charger.fault_detected_at = Some(game_clock.total_game_time);
-
-            let fault_type = charger.current_fault.unwrap();
 
             info!(
                 "Fault detected on {} ({:?}) after {:.0}s (O&M: {:?})",
                 charger.id, fault_type, elapsed, oem_tier
             );
 
-            let will_auto_remediate =
-                oem_tier.has_auto_remediation() && !fault_type.requires_technician();
-
             fault_events.write(ChargerFaultEvent {
                 charger_entity: entity,
                 charger_id: charger.id.clone(),
                 fault_type,
-                auto_remediated: will_auto_remediate,
+                auto_remediated: should_auto_remediate,
             });
 
             // Achievement tracking: reset fleet session streak on fault at a fleet site
@@ -689,28 +721,19 @@ pub fn fault_detection_system(
             {
                 game_state.fleet_sessions_without_fault = 0;
             }
+        }
 
-            // Auto-remediation: directly fix software faults (no cooldown, no player action)
-            if will_auto_remediate {
-                info!(
-                    "Auto-remediation: instantly clearing {:?} on {}",
-                    fault_type, charger.id
-                );
-
-                let resolved_at = game_clock.total_game_time;
-
-                // Directly clear the fault (bypassing cooldowns and success rolls)
-                charger.current_fault = None;
-                charger.reboot_attempts = 0;
-                let downtime = resolved_at - occurred_at;
-                charger.recover_reliability_fast_fix(
-                    downtime,
-                    oem_tier.reliability_recovery_multiplier(),
-                );
-                charger.fault_occurred_at = None;
-                charger.fault_detected_at = None;
-                charger.fault_is_detected = false;
-            }
+        // Preserve the normal detection delay, but once it has elapsed the
+        // remote-fix path should still fire even if some other system marked the
+        // fault as detected first.
+        if should_detect && should_auto_remediate {
+            auto_remediate_software_fault(
+                &mut charger,
+                fault_type,
+                occurred_at,
+                game_clock.total_game_time,
+                oem_tier,
+            );
         }
     }
 }
@@ -730,6 +753,7 @@ pub fn handle_oem_upgrade_existing_faults(
     game_clock: Res<GameClock>,
     mut fault_events: MessageWriter<ChargerFaultEvent>,
     mut dispatch_events: MessageWriter<crate::events::TechnicianDispatchEvent>,
+    mut repair_requests: ResMut<crate::resources::RepairRequestRegistry>,
 ) {
     for event in oem_events.read() {
         for (entity, mut charger, belongs) in &mut chargers {
@@ -772,16 +796,13 @@ pub fn handle_oem_upgrade_existing_faults(
                 let occurred_at = charger
                     .fault_occurred_at
                     .unwrap_or(game_clock.total_game_time);
-                let downtime = game_clock.total_game_time - occurred_at;
-                charger.current_fault = None;
-                charger.reboot_attempts = 0;
-                charger.recover_reliability_fast_fix(
-                    downtime,
-                    event.new_tier.reliability_recovery_multiplier(),
+                auto_remediate_software_fault(
+                    &mut charger,
+                    fault_type,
+                    occurred_at,
+                    game_clock.total_game_time,
+                    event.new_tier,
                 );
-                charger.fault_occurred_at = None;
-                charger.fault_detected_at = None;
-                charger.fault_is_detected = false;
 
                 info!(
                     "O&M upgrade: auto-remediated {:?} on {}",
@@ -795,7 +816,25 @@ pub fn handle_oem_upgrade_existing_faults(
                 && event.new_tier.has_auto_dispatch()
                 && fault_type.requires_technician()
             {
+                let request_id = repair_requests.create_or_update_for_fault(
+                    entity,
+                    charger.id.clone(),
+                    belongs.site_id,
+                    fault_type,
+                    charger
+                        .fault_occurred_at
+                        .unwrap_or(game_clock.total_game_time),
+                    crate::resources::RepairRequestSource::AutoDispatch,
+                );
+                let _ = repair_requests.mark_discovered(
+                    entity,
+                    charger
+                        .fault_detected_at
+                        .unwrap_or(game_clock.total_game_time),
+                    crate::resources::RepairRequestSource::OemDetection,
+                );
                 dispatch_events.write(crate::events::TechnicianDispatchEvent {
+                    request_id,
                     charger_entity: entity,
                     charger_id: charger.id.clone(),
                 });

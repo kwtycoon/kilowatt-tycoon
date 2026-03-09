@@ -12,6 +12,7 @@ use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 
+use crate::events::SiteSoldEvent;
 use crate::resources::{
     CharacterKind, MultiSiteManager, PlayerProfile, SiteArchetype, SiteTemplateCache,
 };
@@ -143,6 +144,7 @@ pub fn screenshot_automation_system(
     mut commands: Commands,
     mut mode: ResMut<ScreenshotMode>,
     mut multi_site: ResMut<MultiSiteManager>,
+    mut sold_events: MessageWriter<SiteSoldEvent>,
     template_cache: Res<SiteTemplateCache>,
     mut app_exit: MessageWriter<AppExit>,
     tiled_assets: Res<bevy::asset::Assets<bevy_ecs_tiled::prelude::TiledMapAsset>>,
@@ -229,8 +231,13 @@ pub fn screenshot_automation_system(
                         let _ = multi_site.switch_to_site(new_site_id);
 
                         // Sell the old site to clean up
-                        if let Some(old_id) = current_site_id {
-                            let _ = multi_site.sell_site(old_id);
+                        if let Some(old_id) = current_site_id
+                            && let Ok(refund_amount) = multi_site.sell_site(old_id)
+                        {
+                            sold_events.write(SiteSoldEvent {
+                                site_id: old_id,
+                                refund_amount,
+                            });
                         }
 
                         mode.state = ScreenshotState::WaitingForRender;

@@ -15,6 +15,7 @@ pub mod lot_templates;
 pub mod multi_site;
 pub mod northstar_grid;
 pub mod player_profile;
+pub mod repair_requests;
 pub mod site_config;
 pub mod site_energy;
 pub mod site_grid;
@@ -43,6 +44,7 @@ pub use lot_templates::*;
 pub use multi_site::*;
 pub use northstar_grid::*;
 pub use player_profile::*;
+pub use repair_requests::*;
 pub use site_config::*;
 pub use site_energy::*;
 pub use site_grid::*;
@@ -73,6 +75,7 @@ impl Plugin for ResourcesPlugin {
             .init_resource::<EnvironmentState>()
             // Technician (global - travels between sites)
             .init_resource::<TechnicianState>()
+            .init_resource::<RepairRequestRegistry>()
             // Note: SiteUpgrades is per-site, stored in SiteState.site_upgrades
             // Note: ServiceStrategy is per-site, stored in SiteState.service_strategy
             // Carbon credit market (global - fluctuates daily)

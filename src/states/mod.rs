@@ -140,6 +140,7 @@ impl Plugin for StatesPlugin {
                     (
                         cleanup_entities_on_day_end,
                         cleanup_hacker_entities_on_day_end,
+                        crate::systems::cleanup_technicians_on_day_end,
                     ),
                     prepare_day_end_report,
                     spawn_day_end_ui,

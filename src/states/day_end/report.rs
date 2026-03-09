@@ -103,7 +103,7 @@ pub struct DayEndReport {
 
 /// Flush the ledger, build the DailyRecord, and compute every value the
 /// day-end UI needs. Runs as the first system in the `OnEnter(DayEnd)` chain.
-pub(crate) fn prepare_day_end_report(
+pub fn prepare_day_end_report(
     mut commands: Commands,
     game_clock: Res<crate::resources::GameClock>,
     mut game_state: ResMut<crate::resources::GameState>,
@@ -119,35 +119,31 @@ pub(crate) fn prepare_day_end_report(
 ) {
     info!("Day {} complete!", game_clock.day);
 
-    // Calculate carbon credits from energy delivered at the active site
+    // Calculate carbon credits from energy delivered across all owned sites.
     let rate_per_kwh = carbon_market.rate_per_kwh();
-    let total_carbon_credits = if let Some(site_state) = multi_site.active_site_mut() {
-        let carbon_credit_revenue = site_state.energy_delivered_kwh_today * rate_per_kwh;
+    let day_end_summary = multi_site.collect_day_end_summary(rate_per_kwh);
+    if day_end_summary.zero_grid_day_achieved {
+        game_state.zero_grid_day_achieved = true;
+    }
 
-        if site_state.energy_delivered_kwh_today > 0.0
-            && site_state.utility_meter.total_imported_kwh() == 0.0
-        {
-            game_state.zero_grid_day_achieved = true;
-        }
-
-        site_state.energy_delivered_kwh_today = 0.0;
-        site_state.sessions_today = 0;
-        carbon_credit_revenue
-    } else {
-        0.0
-    };
+    // Snapshot per-site daily meter inputs before flush drains them.
+    let total_imported_kwh: f32 = multi_site
+        .owned_sites
+        .values()
+        .map(|site| site.utility_meter.total_imported_kwh())
+        .sum();
 
     // Flush all accumulated per-site costs to the ledger before verification
     game_state.flush_site_costs(&mut multi_site.owned_sites);
 
     // Add carbon credit revenue to game state
-    game_state.add_carbon_credit_revenue(total_carbon_credits);
+    game_state.add_carbon_credit_revenue(day_end_summary.carbon_credit_revenue);
 
     info!(
         "Carbon credits: {:.1} kWh delivered at ${:.2}/kWh = ${:.2}",
-        total_carbon_credits / rate_per_kwh,
+        day_end_summary.carbon_credit_revenue / rate_per_kwh,
         rate_per_kwh,
-        total_carbon_credits
+        day_end_summary.carbon_credit_revenue
     );
 
     // Verify ledger cash balance matches game state
@@ -318,11 +314,6 @@ pub(crate) fn prepare_day_end_report(
     );
 
     // Per-kWh pricing for expanded view
-    let total_imported_kwh: f32 = multi_site
-        .owned_sites
-        .values()
-        .map(|s| s.utility_meter.total_imported_kwh())
-        .sum();
     let avg_sell_price_kwh: f32 = if total_imported_kwh > 0.01 {
         charging_revenue / total_imported_kwh
     } else {

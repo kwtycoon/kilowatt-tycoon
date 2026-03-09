@@ -257,9 +257,11 @@ impl Plugin for SystemsPlugin {
                 northstar_movement::northstar_handle_pathfinding_failed,
                 northstar_movement::northstar_handle_reroute_failed,
                 northstar_movement::northstar_clear_cooldown_on_success,
+                sync_viewed_technician_avatar_system,
                 technician_movement_system,
                 technician_arrival_detection,
                 cleanup_exited_technicians,
+                recover_orphaned_leaving_technician_system,
             )
                 .in_set(GameSystemSet::MovementUpdate)
                 .after(GameSystemSet::DriverSpawn),
@@ -400,8 +402,10 @@ impl Plugin for SystemsPlugin {
             Update,
             (
                 action_system,
+                reconcile_repair_requests_system,
                 handle_oem_upgrade_existing_faults,
                 om_auto_dispatch_system,
+                recover_dispatchable_requests_system,
                 dispatch_technician_system,
                 technician_travel_system,
                 technician_repair_system,
@@ -530,6 +534,7 @@ impl Plugin for SystemsPlugin {
             Update,
             (
                 handle_site_switch,
+                cleanup_sold_site_technician_state,
                 cleanup_sold_site,
                 update_site_entity_visibility,
                 update_camera_for_site,

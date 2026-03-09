@@ -15,7 +15,8 @@ use kilowatt_tycoon::components::power::{PhaseLoads, VoltageState};
 use kilowatt_tycoon::components::site::BelongsToSite;
 use kilowatt_tycoon::events::*;
 use kilowatt_tycoon::resources::{
-    GameClock, GameSpeed, GameState, MultiSiteManager, PlayerProfile, SiteId,
+    GameClock, GameSpeed, GameState, MultiSiteManager, PlayerProfile, RepairRequestId,
+    RepairRequestRegistry, RepairRequestSource, SiteId, TechnicianState,
 };
 
 // Re-export specific events for convenience
@@ -37,6 +38,7 @@ pub fn create_test_app() -> App {
     app.init_resource::<VoltageState>();
     app.init_resource::<MultiSiteManager>();
     app.init_resource::<PlayerProfile>();
+    app.init_resource::<RepairRequestRegistry>();
 
     // Register messages (events in Bevy 0.17)
     app.add_message::<ChargerFaultEvent>();
@@ -163,6 +165,61 @@ pub fn spawn_driver(app: &mut App, driver: Driver) -> Entity {
     app.world_mut()
         .spawn((driver, Transform::default(), Visibility::default()))
         .id()
+}
+
+pub fn create_repair_request(
+    app: &mut App,
+    charger_entity: Entity,
+    charger_id: &str,
+    site_id: SiteId,
+    fault_type: FaultType,
+) -> RepairRequestId {
+    let mut requests = app.world_mut().resource_mut::<RepairRequestRegistry>();
+    let request_id = requests.create_or_update_for_fault(
+        charger_entity,
+        charger_id.to_string(),
+        site_id,
+        fault_type,
+        0.0,
+        RepairRequestSource::Reconciliation,
+    );
+    let _ = requests.mark_discovered(charger_entity, 0.0, RepairRequestSource::OemDetection);
+    request_id
+}
+
+pub fn set_technician_en_route(
+    app: &mut App,
+    request_id: RepairRequestId,
+    charger_entity: Entity,
+    site_id: SiteId,
+    travel_time: f32,
+    repair_remaining: f32,
+) {
+    let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
+    tech_state.begin_en_route(
+        request_id,
+        charger_entity,
+        site_id,
+        travel_time,
+        repair_remaining,
+    );
+}
+
+/// Low-level helper for tests that need a logical `Repairing` state.
+///
+/// Integration tests that validate runtime behavior should still create or
+/// preserve a visible at-charger technician entity before expecting repair
+/// timers, billing, or resolution to advance.
+pub fn set_technician_repairing(
+    app: &mut App,
+    request_id: RepairRequestId,
+    charger_entity: Entity,
+    site_id: SiteId,
+    repair_remaining: f32,
+) {
+    let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
+    tech_state.set_same_site_job(request_id, charger_entity, site_id, repair_remaining);
+    let _ = tech_state.begin_repairing();
 }
 
 /// Checks if a charger has a specific state.

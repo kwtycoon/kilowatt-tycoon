@@ -314,6 +314,12 @@ pub struct SiteState {
     pub rf_environment: RfEnvironment,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DayEndSiteSummary {
+    pub carbon_credit_revenue: f32,
+    pub zero_grid_day_achieved: bool,
+}
+
 /// RF environment state for a single site.
 /// Recomputed every frame by `rf_environment_system`.
 #[derive(Debug, Clone)]
@@ -503,6 +509,24 @@ impl SiteState {
     /// First site (ID 1) is at (2000, 0), second site (ID 2) at (4000, 0), etc.
     pub fn world_offset(&self) -> Vec2 {
         Vec2::new(self.id.0 as f32 * SITE_SPACING, 0.0)
+    }
+
+    pub fn day_end_summary(&self, carbon_credit_rate_per_kwh: f32) -> DayEndSiteSummary {
+        DayEndSiteSummary {
+            carbon_credit_revenue: self.energy_delivered_kwh_today * carbon_credit_rate_per_kwh,
+            zero_grid_day_achieved: self.energy_delivered_kwh_today > 0.0
+                && self.utility_meter.total_imported_kwh() == 0.0,
+        }
+    }
+
+    pub fn reset_for_new_day(&mut self) {
+        self.charger_queue.clear();
+        self.utility_meter.reset();
+        self.grid_events.reset_daily();
+        self.driver_schedule.next_driver_index = 0;
+        self.driver_schedule.next_event_index = 0;
+        self.energy_delivered_kwh_today = 0.0;
+        self.sessions_today = 0;
     }
 }
 
@@ -730,6 +754,23 @@ impl MultiSiteManager {
             .values()
             .map(|site| site.total_sessions)
             .sum()
+    }
+
+    pub fn collect_day_end_summary(&self, carbon_credit_rate_per_kwh: f32) -> DayEndSiteSummary {
+        self.owned_sites
+            .values()
+            .fold(DayEndSiteSummary::default(), |mut summary, site| {
+                let site_summary = site.day_end_summary(carbon_credit_rate_per_kwh);
+                summary.carbon_credit_revenue += site_summary.carbon_credit_revenue;
+                summary.zero_grid_day_achieved |= site_summary.zero_grid_day_achieved;
+                summary
+            })
+    }
+
+    pub fn reset_all_sites_for_new_day(&mut self) {
+        for site in self.owned_sites.values_mut() {
+            site.reset_for_new_day();
+        }
     }
 
     /// Calculate the sell value of a site (50% of equipment cost + 20% of total revenue)

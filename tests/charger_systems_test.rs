@@ -5,6 +5,7 @@
 
 mod test_utils;
 
+use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 
 use kilowatt_tycoon::components::charger::{
@@ -12,18 +13,35 @@ use kilowatt_tycoon::components::charger::{
 };
 use kilowatt_tycoon::components::driver::{Driver, DriverState, MovementPhase, VehicleMovement};
 use kilowatt_tycoon::components::site::BelongsToSite;
+use kilowatt_tycoon::components::{
+    Technician, TechnicianEmotion, TechnicianMovement, TechnicianPhase,
+};
 use kilowatt_tycoon::events::{RepairCompleteEvent, RepairFailedEvent, TechnicianDispatchEvent};
 use kilowatt_tycoon::hooks::ChargerIndex;
 use kilowatt_tycoon::resources::{
-    GameClock, GameSpeed, MultiSiteManager, OemTier, SiteArchetype, SiteId, TechStatus,
-    TechnicianState,
+    GameClock, GameSpeed, MultiSiteManager, OemTier, QueuedDispatch, RepairRequestRegistry,
+    RepairRequestStatus, RepairResolution, SiteArchetype, SiteId, TechStatus, TechnicianState,
 };
 use kilowatt_tycoon::systems::{
-    dispatch_technician_system, driver_arrival_system, fault_detection_system,
-    om_auto_dispatch_system, scripted_fault_system, technician_repair_system, try_execute_action,
+    cleanup_sold_charger_references, dispatch_technician_system, driver_arrival_system,
+    fault_detection_system, om_auto_dispatch_system, reconcile_repair_requests_system,
+    recover_dispatchable_requests_system, recover_orphaned_leaving_technician_system,
+    scripted_fault_system, technician_repair_system, technician_travel_system, try_execute_action,
 };
 
 use test_utils::*;
+
+#[derive(Resource, Default)]
+struct PendingDispatchEvent(Option<TechnicianDispatchEvent>);
+
+fn emit_pending_dispatch(
+    mut pending: ResMut<PendingDispatchEvent>,
+    mut writer: MessageWriter<TechnicianDispatchEvent>,
+) {
+    if let Some(event) = pending.0.take() {
+        writer.write(event);
+    }
+}
 
 #[test]
 fn test_charger_starts_available() {
@@ -406,10 +424,10 @@ fn test_auto_dispatch_with_om_software() {
     {
         let tech_state = app.world().resource::<TechnicianState>();
         assert_eq!(
-            tech_state.status,
+            tech_state.status(),
             kilowatt_tycoon::resources::TechStatus::Idle
         );
-        assert_eq!(tech_state.dispatch_queue.len(), 0);
+        assert_eq!(tech_state.queue_len(), 0);
     }
 
     // Advance game time past the fault trigger point
@@ -463,17 +481,17 @@ fn test_auto_dispatch_with_om_software() {
     {
         let tech_state = app.world().resource::<TechnicianState>();
         assert_eq!(
-            tech_state.status,
+            tech_state.status(),
             kilowatt_tycoon::resources::TechStatus::EnRoute,
             "Technician should be dispatched (EnRoute) for ground fault with O&M Software"
         );
         assert_eq!(
-            tech_state.target_charger,
+            tech_state.active_charger(),
             Some(charger_entity),
             "Technician should be assigned to the faulted charger"
         );
         assert_eq!(
-            tech_state.destination_site_id,
+            tech_state.destination_site_id(),
             Some(site_id),
             "Technician should be traveling to the correct site"
         );
@@ -555,17 +573,18 @@ fn test_no_auto_dispatch_without_om_software() {
     {
         let tech_state = app.world().resource::<TechnicianState>();
         assert_eq!(
-            tech_state.status,
+            tech_state.status(),
             kilowatt_tycoon::resources::TechStatus::Idle,
             "Technician should remain Idle without O&M Software"
         );
         assert_eq!(
-            tech_state.dispatch_queue.len(),
+            tech_state.queue_len(),
             0,
             "No dispatch should be queued without O&M Software"
         );
         assert_eq!(
-            tech_state.target_charger, None,
+            tech_state.active_charger(),
+            None,
             "Technician should not have a target charger"
         );
     }
@@ -665,17 +684,18 @@ fn test_auto_dispatch_only_for_technician_faults() {
     {
         let tech_state = app.world().resource::<TechnicianState>();
         assert_eq!(
-            tech_state.status,
+            tech_state.status(),
             kilowatt_tycoon::resources::TechStatus::Idle,
             "Technician should remain Idle for auto-remediated faults"
         );
         assert_eq!(
-            tech_state.dispatch_queue.len(),
+            tech_state.queue_len(),
             0,
             "No dispatch should be queued for auto-remediated faults"
         );
         assert_eq!(
-            tech_state.target_charger, None,
+            tech_state.active_charger(),
+            None,
             "Technician should not have a target charger"
         );
     }
@@ -683,8 +703,8 @@ fn test_auto_dispatch_only_for_technician_faults() {
 
 #[test]
 fn test_fault_detection_with_om_software() {
-    // This test verifies that with O&M Software, faults are detected IMMEDIATELY
-    // when they occur, without needing a driver to discover them.
+    // This test verifies that with O&M Software, faults are detected after the
+    // tier detection delay without needing a driver to discover them.
     let mut app = create_test_app();
     app.init_resource::<TechnicianState>();
     app.add_message::<TechnicianDispatchEvent>();
@@ -789,6 +809,290 @@ fn test_fault_detection_with_om_software() {
             ChargerState::Offline,
             "Charger should be offline due to ground fault"
         );
+    }
+}
+
+#[test]
+fn test_detect_tier_auto_remediates_software_fault_after_delay() {
+    let mut app = create_test_app();
+
+    let site_id = SiteId(1);
+    {
+        let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
+        let mut site_state = kilowatt_tycoon::resources::SiteState::new(
+            site_id,
+            SiteArchetype::ParkingLot,
+            "Test Site".to_string(),
+            500.0,
+            50.0,
+            1,
+            (16, 12),
+        );
+        site_state.site_upgrades.oem_tier = OemTier::Detect;
+
+        multi_site.owned_sites.insert(site_id, site_state);
+        multi_site.viewed_site_id = Some(site_id);
+    }
+
+    app.add_systems(
+        Update,
+        (scripted_fault_system, fault_detection_system).chain(),
+    );
+
+    let mut charger = create_test_charger("CHG-001", ChargerType::DcFast);
+    charger.scripted_fault_time = Some(5.0);
+    charger.scripted_fault_type = Some(FaultType::CommunicationError);
+
+    let charger_entity = app
+        .world_mut()
+        .spawn((
+            charger,
+            Transform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_id),
+        ))
+        .id();
+
+    {
+        let mut game_clock = app.world_mut().resource_mut::<GameClock>();
+        game_clock.game_time = 6.0;
+        game_clock.total_game_time = 6.0;
+    }
+
+    app.update();
+
+    {
+        let charger = app.world().get::<Charger>(charger_entity).unwrap();
+        assert_eq!(charger.current_fault, Some(FaultType::CommunicationError));
+        assert!(
+            !charger.fault_discovered,
+            "Detect should still respect the normal detection delay"
+        );
+    }
+
+    {
+        let mut game_clock = app.world_mut().resource_mut::<GameClock>();
+        game_clock.total_game_time = 20.0;
+    }
+
+    app.update();
+
+    {
+        let charger = app.world().get::<Charger>(charger_entity).unwrap();
+        assert_eq!(
+            charger.current_fault, None,
+            "Detect should auto-remediate software faults once the delay elapses"
+        );
+        assert!(
+            !charger.fault_discovered,
+            "Auto-remediation should leave no discovered fault behind"
+        );
+    }
+}
+
+#[test]
+fn test_detect_tier_driver_discovered_software_fault_still_auto_remediates() {
+    let mut app = create_test_app();
+    app.init_resource::<TechnicianState>();
+    app.init_resource::<ChargerIndex>();
+
+    let site_id = SiteId(1);
+    {
+        let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
+        let mut site_state = kilowatt_tycoon::resources::SiteState::new(
+            site_id,
+            SiteArchetype::ParkingLot,
+            "Test Site".to_string(),
+            500.0,
+            50.0,
+            1,
+            (16, 12),
+        );
+        site_state.site_upgrades.oem_tier = OemTier::Detect;
+
+        multi_site.owned_sites.insert(site_id, site_state);
+        multi_site.viewed_site_id = Some(site_id);
+    }
+
+    app.add_systems(
+        Update,
+        (
+            scripted_fault_system,
+            driver_arrival_system,
+            fault_detection_system,
+        )
+            .chain(),
+    );
+
+    let mut charger = create_test_charger("CHG-001", ChargerType::DcFast);
+    charger.scripted_fault_time = Some(5.0);
+    charger.scripted_fault_type = Some(FaultType::CommunicationError);
+
+    let charger_entity = app
+        .world_mut()
+        .spawn((
+            charger,
+            Transform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_id),
+        ))
+        .id();
+
+    {
+        let mut index = app.world_mut().resource_mut::<ChargerIndex>();
+        index.by_id.insert("CHG-001".to_string(), charger_entity);
+    }
+
+    let mut driver = create_test_driver("DRV-001");
+    driver.state = DriverState::Arriving;
+    driver.assigned_charger = Some(charger_entity);
+
+    let movement = VehicleMovement {
+        phase: MovementPhase::Parked,
+        ..Default::default()
+    };
+
+    let driver_entity = app
+        .world_mut()
+        .spawn((
+            driver,
+            movement,
+            Transform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_id),
+        ))
+        .id();
+
+    {
+        let mut game_clock = app.world_mut().resource_mut::<GameClock>();
+        game_clock.game_time = 6.0;
+        game_clock.total_game_time = 6.0;
+    }
+
+    app.update();
+
+    {
+        let charger = app.world().get::<Charger>(charger_entity).unwrap();
+        assert_eq!(
+            charger.current_fault,
+            Some(FaultType::CommunicationError),
+            "Driver discovery should not clear the software fault before the Detect delay"
+        );
+        assert!(
+            charger.fault_discovered,
+            "Driver should still be able to discover the fault before O&M handles it"
+        );
+    }
+
+    {
+        let driver = app.world().get::<Driver>(driver_entity).unwrap();
+        assert_eq!(driver.state, DriverState::Frustrated);
+    }
+
+    {
+        let mut game_clock = app.world_mut().resource_mut::<GameClock>();
+        game_clock.total_game_time = 20.0;
+    }
+
+    app.update();
+
+    {
+        let charger = app.world().get::<Charger>(charger_entity).unwrap();
+        assert_eq!(
+            charger.current_fault, None,
+            "Detect should still auto-remediate after the delay even if a driver found the fault first"
+        );
+        assert!(
+            !charger.fault_discovered,
+            "The driver discovery path should not strand a discovered manual reboot behind O&M Detect"
+        );
+    }
+}
+
+#[test]
+fn test_detect_tier_does_not_auto_dispatch_hardware_faults() {
+    let mut app = create_test_app();
+    app.init_resource::<TechnicianState>();
+    app.add_message::<TechnicianDispatchEvent>();
+
+    let site_id = SiteId(1);
+    {
+        let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
+        let mut site_state = kilowatt_tycoon::resources::SiteState::new(
+            site_id,
+            SiteArchetype::ParkingLot,
+            "Test Site".to_string(),
+            500.0,
+            50.0,
+            1,
+            (16, 12),
+        );
+        site_state.site_upgrades.oem_tier = OemTier::Detect;
+
+        multi_site.owned_sites.insert(site_id, site_state);
+        multi_site.viewed_site_id = Some(site_id);
+    }
+
+    app.add_systems(
+        Update,
+        (
+            scripted_fault_system,
+            fault_detection_system,
+            om_auto_dispatch_system,
+            dispatch_technician_system,
+        )
+            .chain(),
+    );
+
+    let mut charger = create_test_charger("CHG-001", ChargerType::DcFast);
+    charger.scripted_fault_time = Some(5.0);
+    charger.scripted_fault_type = Some(FaultType::GroundFault);
+
+    let charger_entity = app
+        .world_mut()
+        .spawn((
+            charger,
+            Transform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_id),
+        ))
+        .id();
+
+    {
+        let mut game_clock = app.world_mut().resource_mut::<GameClock>();
+        game_clock.game_time = 6.0;
+        game_clock.total_game_time = 6.0;
+    }
+
+    app.update();
+
+    {
+        let mut game_clock = app.world_mut().resource_mut::<GameClock>();
+        game_clock.total_game_time = 20.0;
+    }
+
+    app.update();
+    app.update();
+
+    {
+        let charger = app.world().get::<Charger>(charger_entity).unwrap();
+        assert_eq!(
+            charger.current_fault,
+            Some(FaultType::GroundFault),
+            "Detect should not auto-remediate hardware faults"
+        );
+        assert!(charger.fault_discovered);
+    }
+
+    {
+        let tech_state = app.world().resource::<TechnicianState>();
+        assert_eq!(
+            tech_state.status(),
+            TechStatus::Idle,
+            "Detect should not auto-dispatch the technician for hardware faults"
+        );
+        assert_eq!(tech_state.queue_len(), 0);
+        assert_eq!(tech_state.active_charger(), None);
     }
 }
 
@@ -1118,16 +1422,47 @@ fn test_om_auto_redispatch_on_repair_failure() {
     let mut repair_failed_at_least_once = false;
 
     for _iteration in 0..200 {
+        let request_id = create_repair_request(
+            &mut app,
+            charger_entity,
+            "CHG-001",
+            site_id,
+            FaultType::GroundFault,
+        );
         // Reset technician state for next repair attempt
         {
+            set_technician_repairing(&mut app, request_id, charger_entity, site_id, 0.0);
+            let mut requests = app.world_mut().resource_mut::<RepairRequestRegistry>();
+            assert!(requests.set_status(request_id, RepairRequestStatus::Repairing));
             let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
-            tech_state.status = TechStatus::Repairing;
-            tech_state.target_charger = Some(charger_entity);
-            tech_state.destination_site_id = Some(site_id);
-            tech_state.repair_remaining = 0.0; // Trigger completion
             tech_state.job_time_elapsed = 900.0;
-            // Clear queue to detect new dispatches
             tech_state.dispatch_queue.clear();
+        }
+
+        {
+            let technician_entities: Vec<_> = {
+                let world = app.world_mut();
+                let mut query = world.query_filtered::<Entity, With<Technician>>();
+                query.iter(world).collect()
+            };
+            for entity in technician_entities {
+                app.world_mut().entity_mut(entity).despawn();
+            }
+            app.world_mut().spawn((
+                Technician {
+                    target_charger: charger_entity,
+                    phase: TechnicianPhase::Working,
+                    work_timer: 0.0,
+                    target_bay: Some((5, 5)),
+                },
+                TechnicianMovement {
+                    phase: TechnicianPhase::Working,
+                    speed: 60.0,
+                },
+                TechnicianEmotion::default(),
+                BelongsToSite::new(site_id),
+                bevy_northstar::prelude::AgentPos(bevy::prelude::UVec3::new(5, 5, 0)),
+            ));
         }
 
         // Ensure charger still has fault for retry
@@ -1174,24 +1509,16 @@ fn test_om_auto_redispatch_on_repair_failure() {
     );
 }
 
-/// Test that without O&M Software, repair failures do NOT trigger automatic re-dispatch.
+/// Test that retryable failed work survives the leaving-site transition and
+/// becomes a fresh dispatch once the technician is idle again.
 #[test]
-fn test_no_auto_redispatch_without_om_software() {
+fn test_failed_repair_retry_returns_after_leaving_site() {
     let mut app = create_test_app();
-
-    // Add required messages
-    app.add_message::<TechnicianDispatchEvent>();
-    app.add_message::<RepairCompleteEvent>();
-    app.add_message::<RepairFailedEvent>();
-
-    // Initialize technician state
     app.init_resource::<TechnicianState>();
-
-    // Create a site WITHOUT O&M Software
     let site_id = SiteId(1);
     {
         let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
-        let mut site_state = kilowatt_tycoon::resources::SiteState::new(
+        let site_state = kilowatt_tycoon::resources::SiteState::new(
             site_id,
             SiteArchetype::ParkingLot,
             "Test Site".to_string(),
@@ -1200,19 +1527,12 @@ fn test_no_auto_redispatch_without_om_software() {
             1,
             (16, 12),
         );
-
-        // Ensure O&M Software is NOT enabled
-        site_state.site_upgrades.oem_tier = OemTier::None;
-
         multi_site.owned_sites.insert(site_id, site_state);
         multi_site.viewed_site_id = Some(site_id);
     }
 
-    // Create a charger with a fault that requires technician
     let mut charger = create_test_charger("CHG-001", ChargerType::DcFast);
     charger.current_fault = Some(FaultType::GroundFault);
-    charger.grid_position = Some((5, 5));
-
     let charger_entity = app
         .world_mut()
         .spawn((
@@ -1224,81 +1544,758 @@ fn test_no_auto_redispatch_without_om_software() {
         ))
         .id();
 
-    // Add required Bevy resources for the systems
+    let request_id = create_repair_request(
+        &mut app,
+        charger_entity,
+        "CHG-001",
+        site_id,
+        FaultType::GroundFault,
+    );
+    {
+        let mut requests = app.world_mut().resource_mut::<RepairRequestRegistry>();
+        assert!(requests.mark_retry_needed(request_id, Some(5.0)));
+        assert!(requests.mark_dispatch_costs_recorded(request_id));
+    }
+    {
+        let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
+        tech_state.current_site_id = Some(site_id);
+        tech_state.begin_leaving_site(site_id);
+    }
+
+    app.add_systems(
+        Update,
+        (
+            recover_orphaned_leaving_technician_system,
+            recover_dispatchable_requests_system,
+            dispatch_technician_system,
+        )
+            .chain(),
+    );
+
+    app.update();
+
+    let tech_state = app.world().resource::<TechnicianState>();
+    assert_eq!(tech_state.status(), TechStatus::EnRoute);
+    assert_eq!(tech_state.active_charger(), Some(charger_entity));
+
+    let requests = app.world().resource::<RepairRequestRegistry>();
+    let request = requests
+        .get(request_id)
+        .expect("retry request should still exist");
+    assert_eq!(request.status, RepairRequestStatus::EnRoute);
+    assert!(request.dispatch_costs_recorded);
+}
+
+#[test]
+fn test_terminal_request_cannot_enqueue_dispatch_work() {
+    let mut app = create_test_app();
+    app.init_resource::<TechnicianState>();
+    app.init_resource::<PendingDispatchEvent>();
+    app.add_systems(
+        Update,
+        (emit_pending_dispatch, dispatch_technician_system).chain(),
+    );
+
+    let site_id = SiteId(1);
+    {
+        let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
+        let site_state = kilowatt_tycoon::resources::SiteState::new(
+            site_id,
+            SiteArchetype::ParkingLot,
+            "Test Site".to_string(),
+            500.0,
+            50.0,
+            1,
+            (16, 12),
+        );
+        multi_site.owned_sites.insert(site_id, site_state);
+        multi_site.viewed_site_id = Some(site_id);
+    }
+
+    let mut charger = create_test_charger("CHG-TERM", ChargerType::DcFast);
+    charger.current_fault = Some(FaultType::GroundFault);
+    let charger_entity = app
+        .world_mut()
+        .spawn((
+            charger,
+            Transform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_id),
+        ))
+        .id();
+
+    let request_id = create_repair_request(
+        &mut app,
+        charger_entity,
+        "CHG-TERM",
+        site_id,
+        FaultType::GroundFault,
+    );
+    {
+        let mut requests = app.world_mut().resource_mut::<RepairRequestRegistry>();
+        assert!(requests.resolve(request_id, 5.0, RepairResolution::Cancelled));
+    }
+
+    app.world_mut().resource_mut::<PendingDispatchEvent>().0 = Some(TechnicianDispatchEvent {
+        request_id,
+        charger_entity,
+        charger_id: "CHG-TERM".to_string(),
+    });
+
+    app.update();
+
+    let tech_state = app.world().resource::<TechnicianState>();
+    assert_eq!(tech_state.status(), TechStatus::Idle);
+    assert_eq!(tech_state.queue_len(), 0);
+
+    let requests = app.world().resource::<RepairRequestRegistry>();
+    assert_eq!(
+        requests.get(request_id).map(|request| request.status),
+        Some(RepairRequestStatus::Cancelled)
+    );
+}
+
+#[test]
+fn test_skipped_queued_job_reconciles_request_before_next_dispatch_starts() {
+    let mut app = create_test_app();
+    app.init_resource::<TechnicianState>();
+    app.add_systems(Update, dispatch_technician_system);
+
+    let site_id = SiteId(1);
+    {
+        let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
+        let site_state = kilowatt_tycoon::resources::SiteState::new(
+            site_id,
+            SiteArchetype::ParkingLot,
+            "Test Site".to_string(),
+            500.0,
+            50.0,
+            1,
+            (16, 12),
+        );
+        multi_site.owned_sites.insert(site_id, site_state);
+        multi_site.viewed_site_id = Some(site_id);
+    }
+
+    let skipped_charger = app
+        .world_mut()
+        .spawn((
+            create_test_charger("CHG-SKIP", ChargerType::DcFast),
+            Transform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_id),
+        ))
+        .id();
+    let mut valid_charger = create_test_charger("CHG-NEXT", ChargerType::DcFast);
+    valid_charger.current_fault = Some(FaultType::GroundFault);
+    let valid_charger_entity = app
+        .world_mut()
+        .spawn((
+            valid_charger,
+            Transform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_id),
+        ))
+        .id();
+
+    let skipped_request_id = create_repair_request(
+        &mut app,
+        skipped_charger,
+        "CHG-SKIP",
+        site_id,
+        FaultType::GroundFault,
+    );
+    let valid_request_id = create_repair_request(
+        &mut app,
+        valid_charger_entity,
+        "CHG-NEXT",
+        site_id,
+        FaultType::GroundFault,
+    );
+
+    {
+        let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
+        assert!(tech_state.queue_dispatch(
+            skipped_request_id,
+            skipped_charger,
+            "CHG-SKIP".to_string(),
+            site_id,
+        ));
+        assert!(tech_state.queue_dispatch(
+            valid_request_id,
+            valid_charger_entity,
+            "CHG-NEXT".to_string(),
+            site_id,
+        ));
+    }
+
+    app.update();
+
+    let requests = app.world().resource::<RepairRequestRegistry>();
+    assert_eq!(
+        requests
+            .get(skipped_request_id)
+            .map(|request| request.status),
+        Some(RepairRequestStatus::Resolved)
+    );
+    assert_eq!(
+        requests.get(valid_request_id).map(|request| request.status),
+        Some(RepairRequestStatus::EnRoute)
+    );
+
+    let tech_state = app.world().resource::<TechnicianState>();
+    assert_eq!(tech_state.status(), TechStatus::EnRoute);
+    assert_eq!(tech_state.active_charger(), Some(valid_charger_entity));
+    assert_eq!(tech_state.queue_len(), 0);
+}
+
+#[test]
+fn test_technician_travel_abort_starts_next_queued_job() {
+    let mut app = create_test_app();
+
+    app.init_resource::<TechnicianState>();
+
+    let site_id = SiteId(1);
+    {
+        let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
+        let site_state = kilowatt_tycoon::resources::SiteState::new(
+            site_id,
+            SiteArchetype::ParkingLot,
+            "Test Site".to_string(),
+            500.0,
+            50.0,
+            1,
+            (16, 12),
+        );
+        multi_site.owned_sites.insert(site_id, site_state);
+        multi_site.viewed_site_id = Some(site_id);
+    }
+
+    let mut queued_charger = create_test_charger("CHG-QUEUED", ChargerType::DcFast);
+    queued_charger.current_fault = Some(FaultType::GroundFault);
+    queued_charger.grid_position = Some((5, 5));
+
+    let queued_charger_entity = app
+        .world_mut()
+        .spawn((
+            queued_charger,
+            Transform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_id),
+        ))
+        .id();
+
+    let missing_target = app.world_mut().spawn_empty().id();
+    app.world_mut().entity_mut(missing_target).despawn();
+    let missing_request_id = create_repair_request(
+        &mut app,
+        missing_target,
+        "CHG-MISSING",
+        site_id,
+        FaultType::GroundFault,
+    );
+    let queued_request_id = create_repair_request(
+        &mut app,
+        queued_charger_entity,
+        "CHG-QUEUED",
+        site_id,
+        FaultType::GroundFault,
+    );
+
+    {
+        set_technician_en_route(
+            &mut app,
+            missing_request_id,
+            missing_target,
+            site_id,
+            0.0,
+            0.0,
+        );
+        let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
+        tech_state.dispatch_queue.push_back(QueuedDispatch {
+            request_id: queued_request_id,
+            charger_entity: queued_charger_entity,
+            charger_id: "CHG-QUEUED".to_string(),
+            site_id,
+        });
+    }
+
+    {
+        let mut game_clock = app.world_mut().resource_mut::<GameClock>();
+        game_clock.set_speed(GameSpeed::Normal);
+    }
+
+    app.add_systems(Update, technician_travel_system);
+    app.update();
+
+    let tech_state = app.world().resource::<TechnicianState>();
+    assert_eq!(
+        tech_state.status(),
+        TechStatus::EnRoute,
+        "Travel abort should immediately advance to the next queued dispatch"
+    );
+    assert_eq!(
+        tech_state.active_charger(),
+        Some(queued_charger_entity),
+        "Queued charger should become the active dispatch target"
+    );
+    assert_eq!(
+        tech_state.queue_len(),
+        0,
+        "Next queued dispatch should be consumed when the technician recovers"
+    );
+}
+
+#[test]
+fn test_same_site_chain_redirects_to_walking_not_immediate_repair() {
+    let mut app = create_test_app();
+
+    app.init_resource::<TechnicianState>();
     app.init_resource::<Time>();
     app.init_resource::<Assets<Image>>();
     app.init_resource::<kilowatt_tycoon::resources::ImageAssets>();
     app.add_message::<kilowatt_tycoon::events::ChargerFaultResolvedEvent>();
 
-    // Add the repair and dispatch systems in correct order
-    // (dispatch must run AFTER repair to process the events)
+    let site_id = SiteId(1);
+    {
+        let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
+        let site_state = kilowatt_tycoon::resources::SiteState::new(
+            site_id,
+            SiteArchetype::ParkingLot,
+            "Test Site".to_string(),
+            500.0,
+            50.0,
+            1,
+            (16, 12),
+        );
+        multi_site.owned_sites.insert(site_id, site_state);
+        multi_site.viewed_site_id = Some(site_id);
+    }
+
+    let mut current_charger = create_test_charger("CHG-CURRENT", ChargerType::DcFast);
+    current_charger.current_fault = Some(FaultType::GroundFault);
+    current_charger.grid_position = Some((5, 5));
+    let current_charger_entity = app
+        .world_mut()
+        .spawn((
+            current_charger,
+            Transform::default(),
+            GlobalTransform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_id),
+        ))
+        .id();
+
+    let mut next_charger = create_test_charger("CHG-NEXT", ChargerType::DcFast);
+    next_charger.current_fault = Some(FaultType::GroundFault);
+    next_charger.grid_position = Some((7, 5));
+    let next_charger_entity = app
+        .world_mut()
+        .spawn((
+            next_charger,
+            Transform::default(),
+            GlobalTransform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_id),
+        ))
+        .id();
+
+    let current_request_id = create_repair_request(
+        &mut app,
+        current_charger_entity,
+        "CHG-CURRENT",
+        site_id,
+        FaultType::GroundFault,
+    );
+    let next_request_id = create_repair_request(
+        &mut app,
+        next_charger_entity,
+        "CHG-NEXT",
+        site_id,
+        FaultType::GroundFault,
+    );
+
+    {
+        let mut requests = app.world_mut().resource_mut::<RepairRequestRegistry>();
+        assert!(requests.set_status(current_request_id, RepairRequestStatus::Repairing));
+        assert!(requests.set_status(next_request_id, RepairRequestStatus::Queued));
+    }
+
+    {
+        set_technician_repairing(
+            &mut app,
+            current_request_id,
+            current_charger_entity,
+            site_id,
+            0.0,
+        );
+        let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
+        tech_state.job_time_elapsed = 900.0;
+        tech_state.dispatch_queue.push_back(QueuedDispatch {
+            request_id: next_request_id,
+            charger_entity: next_charger_entity,
+            charger_id: "CHG-NEXT".to_string(),
+            site_id,
+        });
+    }
+
+    app.world_mut().spawn((
+        Technician {
+            target_charger: current_charger_entity,
+            phase: TechnicianPhase::Working,
+            work_timer: 0.0,
+            target_bay: Some((5, 5)),
+        },
+        TechnicianMovement {
+            phase: TechnicianPhase::Working,
+            speed: 60.0,
+        },
+        TechnicianEmotion::default(),
+        BelongsToSite::new(site_id),
+        bevy_northstar::prelude::AgentPos(bevy::prelude::UVec3::new(5, 5, 0)),
+    ));
+
+    app.add_systems(Update, technician_repair_system);
+    app.update();
+
+    let tech_state = app.world().resource::<TechnicianState>();
+    assert_eq!(tech_state.status(), TechStatus::WalkingOnSite);
+    assert_eq!(tech_state.active_charger(), Some(next_charger_entity));
+
+    let requests = app.world().resource::<RepairRequestRegistry>();
+    assert_eq!(
+        requests.get(next_request_id).map(|request| request.status),
+        Some(RepairRequestStatus::WalkingOnSite)
+    );
+
+    let world = app.world_mut();
+    let mut tech_query = world.query::<(&Technician, &TechnicianMovement, &BelongsToSite)>();
+    let matches: Vec<_> = tech_query
+        .iter(world)
+        .filter(|(_, _, belongs)| belongs.site_id == site_id)
+        .collect();
+
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0].0.target_charger, next_charger_entity);
+    assert_eq!(matches[0].0.phase, TechnicianPhase::WalkingToCharger);
+    assert_eq!(matches[0].1.phase, TechnicianPhase::WalkingToCharger);
+}
+
+#[test]
+fn test_same_site_chain_fallback_keeps_dispatch_queued() {
+    let mut app = create_test_app();
+
+    app.init_resource::<TechnicianState>();
+    app.init_resource::<Time>();
+    app.init_resource::<Assets<Image>>();
+    app.init_resource::<kilowatt_tycoon::resources::ImageAssets>();
+    app.add_message::<kilowatt_tycoon::events::ChargerFaultResolvedEvent>();
+
+    let site_id = SiteId(1);
+    {
+        let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
+        let site_state = kilowatt_tycoon::resources::SiteState::new(
+            site_id,
+            SiteArchetype::ParkingLot,
+            "Test Site".to_string(),
+            500.0,
+            50.0,
+            1,
+            (16, 12),
+        );
+        multi_site.owned_sites.insert(site_id, site_state);
+        multi_site.viewed_site_id = Some(site_id);
+    }
+
+    let mut current_charger = create_test_charger("CHG-CURRENT", ChargerType::DcFast);
+    current_charger.current_fault = Some(FaultType::GroundFault);
+    current_charger.grid_position = Some((5, 5));
+    let current_charger_entity = app
+        .world_mut()
+        .spawn((
+            current_charger,
+            Transform::default(),
+            GlobalTransform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_id),
+        ))
+        .id();
+
+    let mut next_charger = create_test_charger("CHG-NEXT", ChargerType::DcFast);
+    next_charger.current_fault = Some(FaultType::GroundFault);
+    next_charger.grid_position = None;
+    let next_charger_entity = app
+        .world_mut()
+        .spawn((
+            next_charger,
+            Transform::default(),
+            GlobalTransform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_id),
+        ))
+        .id();
+
+    app.world_mut().spawn((
+        Technician {
+            target_charger: current_charger_entity,
+            phase: TechnicianPhase::Working,
+            work_timer: 0.0,
+            target_bay: Some((5, 5)),
+        },
+        TechnicianMovement {
+            phase: TechnicianPhase::Working,
+            speed: 60.0,
+        },
+        TechnicianEmotion::default(),
+        BelongsToSite::new(site_id),
+    ));
+    let current_request_id = create_repair_request(
+        &mut app,
+        current_charger_entity,
+        "CHG-CURRENT",
+        site_id,
+        FaultType::GroundFault,
+    );
+    let next_request_id = create_repair_request(
+        &mut app,
+        next_charger_entity,
+        "CHG-NEXT",
+        site_id,
+        FaultType::GroundFault,
+    );
+
+    {
+        let mut game_clock = app.world_mut().resource_mut::<GameClock>();
+        game_clock.set_speed(GameSpeed::Normal);
+    }
+
+    {
+        set_technician_repairing(
+            &mut app,
+            current_request_id,
+            current_charger_entity,
+            site_id,
+            0.0,
+        );
+        let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
+        tech_state.job_time_elapsed = 900.0;
+        tech_state.dispatch_queue.push_back(QueuedDispatch {
+            request_id: next_request_id,
+            charger_entity: next_charger_entity,
+            charger_id: "CHG-NEXT".to_string(),
+            site_id,
+        });
+    }
+
+    // Remove the site state to force the chain logic down its "cannot route on-site"
+    // fallback path while keeping the queued dispatch valid in ECS.
+    {
+        let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
+        multi_site.owned_sites.remove(&site_id);
+        multi_site.viewed_site_id = None;
+    }
+
+    app.add_systems(Update, technician_repair_system);
+    app.update();
+
+    let tech_state = app.world().resource::<TechnicianState>();
+    assert!(
+        tech_state
+            .dispatch_queue
+            .iter()
+            .any(|queued| queued.charger_entity == next_charger_entity),
+        "If same-site chaining cannot route the next charger, the queued dispatch should remain pending"
+    );
+}
+
+#[test]
+fn test_reconcile_creates_repair_request_for_hardware_fault() {
+    let mut app = create_test_app();
+
+    let site_id = SiteId(1);
+    {
+        let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
+        let site_state = kilowatt_tycoon::resources::SiteState::new(
+            site_id,
+            SiteArchetype::ParkingLot,
+            "Test Site".to_string(),
+            500.0,
+            50.0,
+            1,
+            (16, 12),
+        );
+        multi_site.owned_sites.insert(site_id, site_state);
+        multi_site.viewed_site_id = Some(site_id);
+    }
+
+    let mut charger = create_test_charger("CHG-REQ", ChargerType::DcFast);
+    charger.current_fault = Some(FaultType::GroundFault);
+    charger.fault_occurred_at = Some(42.0);
+    charger.fault_is_detected = false;
+    charger.fault_discovered = false;
+    let charger_entity = app
+        .world_mut()
+        .spawn((
+            charger,
+            Transform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_id),
+        ))
+        .id();
+
+    app.add_systems(Update, reconcile_repair_requests_system);
+    app.update();
+
+    let requests = app.world().resource::<RepairRequestRegistry>();
+    let request = requests
+        .active_for_charger(charger_entity)
+        .expect("technician-required fault should create a durable repair request");
+    assert_eq!(request.charger_id, "CHG-REQ");
+    assert_eq!(request.site_id, site_id);
+    assert_eq!(request.status, RepairRequestStatus::OpenUndiscovered);
+}
+
+#[test]
+fn test_driver_discovery_reuses_existing_repair_request() {
+    let mut app = create_test_app();
+    app.init_resource::<TechnicianState>();
+    app.init_resource::<ChargerIndex>();
+
+    let site_id = SiteId(1);
+    {
+        let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
+        let site_state = kilowatt_tycoon::resources::SiteState::new(
+            site_id,
+            SiteArchetype::ParkingLot,
+            "Test Site".to_string(),
+            500.0,
+            50.0,
+            1,
+            (16, 12),
+        );
+        multi_site.owned_sites.insert(site_id, site_state);
+        multi_site.viewed_site_id = Some(site_id);
+    }
+
+    let mut charger = create_test_charger("CHG-DISCOVER", ChargerType::DcFast);
+    charger.current_fault = Some(FaultType::GroundFault);
+    charger.fault_discovered = false;
+    charger.fault_is_detected = false;
+    let charger_entity = app
+        .world_mut()
+        .spawn((
+            charger,
+            Transform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_id),
+        ))
+        .id();
+
+    {
+        let mut index = app.world_mut().resource_mut::<ChargerIndex>();
+        index
+            .by_id
+            .insert("CHG-DISCOVER".to_string(), charger_entity);
+    }
+
+    let driver = Driver {
+        state: DriverState::Arriving,
+        assigned_charger: Some(charger_entity),
+        ..create_test_driver("DRV-DISCOVER")
+    };
+    app.world_mut().spawn((
+        driver,
+        VehicleMovement {
+            phase: MovementPhase::Parked,
+            ..Default::default()
+        },
+        Transform::default(),
+        Visibility::default(),
+        BelongsToSite::new(site_id),
+    ));
+
     app.add_systems(
         Update,
         (
-            technician_repair_system,
-            dispatch_technician_system.after(technician_repair_system),
-        ),
+            reconcile_repair_requests_system,
+            driver_arrival_system,
+            reconcile_repair_requests_system,
+        )
+            .chain(),
     );
+    app.update();
 
-    // Run the system multiple times to trigger repair completion
-    // Due to probabilistic failure (20% at default $10/hr maintenance), we run multiple iterations
-    let mut repair_failed_at_least_once = false;
-    let mut incorrectly_dispatched = false;
+    let requests = app.world().resource::<RepairRequestRegistry>();
+    let request = requests
+        .active_for_charger(charger_entity)
+        .expect("repair request should still exist after driver discovery");
+    assert!(request.discovered_at.is_some());
+    assert_eq!(request.status, RepairRequestStatus::OpenDiscovered);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.charger_entity == charger_entity && request.status.is_open())
+            .count(),
+        1,
+        "driver discovery should not create a duplicate repair request"
+    );
+}
 
-    for _iteration in 0..50 {
-        // Reset technician state for next repair attempt
-        {
-            let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
-            tech_state.status = TechStatus::Repairing;
-            tech_state.target_charger = Some(charger_entity);
-            tech_state.destination_site_id = Some(site_id);
-            tech_state.repair_remaining = 0.0;
-            tech_state.job_time_elapsed = 900.0;
-            // Clear queue to detect any new dispatches
-            tech_state.dispatch_queue.clear();
-        }
+#[test]
+fn test_cleanup_sold_charger_cancels_active_repair_request() {
+    let mut app = create_test_app();
+    app.init_resource::<TechnicianState>();
+    app.init_resource::<kilowatt_tycoon::resources::SelectedChargerEntity>();
 
-        // Ensure charger still has fault for retry
-        {
-            let mut charger = app.world_mut().get_mut::<Charger>(charger_entity).unwrap();
-            charger.current_fault = Some(FaultType::GroundFault);
-        }
-
-        // Run one update to process repair completion
-        app.update();
-
-        // Check if repair failed (charger still has fault)
-        let repair_failed = {
-            let charger = app.world().get::<Charger>(charger_entity).unwrap();
-            charger.current_fault.is_some()
-        };
-
-        if repair_failed {
-            repair_failed_at_least_once = true;
-
-            // Check if a dispatch was incorrectly queued (check the dispatch_queue directly, not target_charger)
-            let queue_has_charger = {
-                let tech_state = app.world().resource::<TechnicianState>();
-                tech_state
-                    .dispatch_queue
-                    .iter()
-                    .any(|q| q.charger_entity == charger_entity)
-            };
-
-            if queue_has_charger {
-                incorrectly_dispatched = true;
-                break; // Found an incorrect dispatch
-            }
-        }
+    let site_id = SiteId(1);
+    {
+        let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
+        let site_state = kilowatt_tycoon::resources::SiteState::new(
+            site_id,
+            SiteArchetype::ParkingLot,
+            "Test Site".to_string(),
+            500.0,
+            50.0,
+            1,
+            (16, 12),
+        );
+        multi_site.owned_sites.insert(site_id, site_state);
+        multi_site.viewed_site_id = Some(site_id);
     }
 
-    assert!(
-        repair_failed_at_least_once,
-        "Expected at least one repair failure in 50 iterations (20% failure rate at default maintenance)"
+    let mut charger = create_test_charger("CHG-SOLD", ChargerType::DcFast);
+    charger.current_fault = Some(FaultType::GroundFault);
+    let charger_entity = app
+        .world_mut()
+        .spawn((
+            charger,
+            Transform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_id),
+        ))
+        .id();
+    let request_id = create_repair_request(
+        &mut app,
+        charger_entity,
+        "CHG-SOLD",
+        site_id,
+        FaultType::GroundFault,
     );
-    assert!(
-        !incorrectly_dispatched,
-        "Should NOT auto-dispatch when repair fails WITHOUT O&M Software"
+    set_technician_repairing(&mut app, request_id, charger_entity, site_id, 10.0);
+
+    app.world_mut().entity_mut(charger_entity).despawn();
+    app.add_systems(Update, cleanup_sold_charger_references);
+    app.update();
+
+    let requests = app.world().resource::<RepairRequestRegistry>();
+    let request = requests
+        .get(request_id)
+        .expect("repair request should remain queryable for audit");
+    assert_eq!(request.status, RepairRequestStatus::Cancelled);
+    assert_eq!(
+        app.world().resource::<TechnicianState>().status(),
+        TechStatus::Idle,
+        "active technician job should be aborted when its charger is sold"
     );
 }
 

@@ -143,12 +143,13 @@ fn spawn_technician_section(
 ) {
     let location_text = tech_state.current_location_name(multi_site);
     let status_text = tech_state.eta_string();
-    let queue_count = tech_state.dispatch_queue.len();
+    let queue_count = tech_state.queue_len();
 
     // Status color based on technician state
-    let status_color = match tech_state.status {
+    let status_color = match tech_state.status() {
         TechStatus::Idle => Color::srgb(0.3, 0.8, 0.3), // Green - available
         TechStatus::EnRoute => Color::srgb(0.5, 0.8, 1.0), // Blue - traveling
+        TechStatus::WaitingAtSite => Color::srgb(0.8, 0.7, 0.3),
         TechStatus::WalkingOnSite => Color::srgb(0.5, 0.8, 1.0),
         TechStatus::Repairing => Color::srgb(1.0, 0.8, 0.2), // Yellow - working
         TechStatus::LeavingSite => Color::srgb(0.7, 0.7, 0.7),
@@ -217,17 +218,18 @@ fn spawn_technician_section(
             }
 
             // Progress bar if en route or repairing
-            if tech_state.status == TechStatus::EnRoute {
+            if tech_state.status() == TechStatus::EnRoute {
                 spawn_progress_bar(
                     section,
                     tech_state.travel_progress(),
                     Color::srgb(0.3, 0.8, 1.0),
                 );
-            } else if tech_state.status == TechStatus::Repairing
-                && tech_state.repair_remaining > 0.0
+            } else if tech_state.status() == TechStatus::Repairing
+                && tech_state.repair_remaining().unwrap_or(0.0) > 0.0
             {
                 // Calculate repair progress (we don't have total, so show time remaining)
-                let repair_mins = (tech_state.repair_remaining / 60.0).ceil() as i32;
+                let repair_mins =
+                    (tech_state.repair_remaining().unwrap_or(0.0) / 60.0).ceil() as i32;
                 spawn_stat_row(
                     section,
                     "Repair ETA:",
@@ -691,7 +693,7 @@ fn spawn_fault_row(
         _ => Color::srgb(0.7, 0.7, 0.7),
     };
 
-    let is_being_serviced = Some(charger_entity) == tech_state.target_charger;
+    let is_being_serviced = Some(charger_entity) == tech_state.active_charger();
 
     parent
         .spawn((
