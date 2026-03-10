@@ -11,7 +11,7 @@ This area is easy to break because the visible technician flow is not the same t
 In particular:
 
 - `TechnicianState` and `RepairRequestRegistry` are authoritative; the on-screen technician avatar is only a view-scoped projection of that state
-- only the viewed site has a live Northstar grid, so some valid logical states cannot make visible progress until that site is viewed
+- only the viewed site has a live Northstar grid, so technician execution and priority rules are intentionally view-coupled
 - some invariants are enforced by schedule wiring and run conditions, not just by local logic inside one technician system
 - site sale cleanup is event-driven through `SiteSoldEvent`, so alternate sale paths must emit the same event or they can bypass required cleanup
 
@@ -25,7 +25,7 @@ There are three different kinds of state in this area of the game:
 - Per-site state: each `SiteState` inside `MultiSiteManager.owned_sites`
 - Viewed-site-only presentation state: the single active pathfinding grid and the on-screen technician avatar
 
-The important rule is that gameplay correctness must not depend on the currently viewed site. The viewed site only controls which world representation is rendered and which pathfinding grid is active.
+The important rule is that most game state remains durable across all sites, but technician execution is intentionally coupled to the currently viewed site. The viewed site controls the live world representation, the active pathfinding grid, and which site's technician work gets priority when multiple sites need service.
 
 ## Day Boundary Model
 
@@ -112,14 +112,26 @@ Because of that:
 - If the active repair site becomes viewed while a job is paused or was previously offscreen, the technician must be reconstructed as a walking avatar from a valid origin instead of spawning directly into `Working`
 - If the active repair site is no longer viewed, the avatar can be despawned, but repair progress must pause until visible at-charger presence is re-established
 
+### Visible-site priority rule
+
+The single technician is global, but the currently viewed site gets dispatch priority.
+
+That means:
+
+- if the viewed site has technician-required work queued, it should start before older queued work on other sites
+- if the technician is already en route to or waiting at an offscreen site, viewed-site work may preempt that offscreen job
+- preempted offscreen work must be parked back into the durable queue/request layer rather than dropped
+- preemption must preserve request identity and dispatch-cost billing history so resuming later does not double-bill
+- offscreen `WaitingAtSite` work must never monopolize the technician when the viewed site has pending technician work
+
 ### Build-phase and day-end rule
 
 Physical technician avatar movement should not advance during the closed/build phase.
 
 Logical technician progress follows the normal simulation gating:
 
-- queued jobs persist across days
-- active jobs persist across days
+- queued requests persist across days
+- active technician runtime state does not persist across day end; day-end reset clears the technician and normalizes open requests back to re-dispatchable states
 - travel and repair timers only advance while the station is open, because technician action systems run inside the open-station simulation schedule
 - visible on-site technician movement is separately blocked by `BuildState.is_open`
 - once the station opens, progress resumes

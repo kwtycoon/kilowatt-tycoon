@@ -45,6 +45,64 @@ fn is_viewed_site_active_job(tech_state: &TechnicianState, multi_site: &MultiSit
         && tech_state.active_site_id() == multi_site.viewed_site_id
 }
 
+fn reprioritize_viewed_site_work(
+    tech_state: &mut TechnicianState,
+    chargers: &Query<(&Charger, &BelongsToSite)>,
+    multi_site: &MultiSiteManager,
+    repair_requests: &mut RepairRequestRegistry,
+) {
+    let Some(viewed_site_id) = multi_site.viewed_site_id else {
+        return;
+    };
+    if !tech_state.has_queued_dispatch_for_site(viewed_site_id) {
+        return;
+    }
+    if !matches!(
+        tech_state.status(),
+        TechStatus::EnRoute | TechStatus::WaitingAtSite
+    ) {
+        return;
+    }
+
+    let Some(active_site_id) = tech_state.active_site_id() else {
+        return;
+    };
+    if active_site_id == viewed_site_id {
+        return;
+    }
+
+    let Some(request_id) = tech_state.active_request_id() else {
+        return;
+    };
+    let Some(charger_entity) = tech_state.active_charger() else {
+        return;
+    };
+    let Ok((charger, belongs)) = chargers.get(charger_entity) else {
+        return;
+    };
+
+    if !repair_requests.set_status(request_id, RepairRequestStatus::Queued) {
+        warn!(
+            "Unable to reprioritize offscreen technician work for request {:?}",
+            request_id
+        );
+        return;
+    }
+
+    let charger_id = charger.id.clone();
+    tech_state.set_idle();
+    let _ = tech_state.queue_dispatch_front(
+        request_id,
+        charger_entity,
+        charger_id.clone(),
+        belongs.site_id,
+    );
+    info!(
+        "Visible site {:?} reprioritized technician work ahead of offscreen request {:?} on site {:?} ({})",
+        viewed_site_id, request_id, belongs.site_id, charger_id
+    );
+}
+
 fn despawn_technician_avatar(
     commands: &mut Commands,
     technicians: &Query<(Entity, &Technician, &BelongsToSite)>,
@@ -594,6 +652,13 @@ pub fn dispatch_technician_system(
         }
     }
 
+    reprioritize_viewed_site_work(
+        &mut tech_state,
+        &chargers,
+        &multi_site,
+        &mut repair_requests,
+    );
+
     // Step 2: If technician is idle, start the next job from the queue
     start_next_queued_job(
         &mut tech_state,
@@ -674,7 +739,8 @@ pub fn start_next_queued_job(
     }
 
     // Pop the next dispatch from the queue
-    let Some(next_dispatch) = tech_state.pop_next_dispatch() else {
+    let Some(next_dispatch) = tech_state.pop_next_dispatch_for_site(multi_site.viewed_site_id)
+    else {
         return;
     };
 

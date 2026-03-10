@@ -34,11 +34,23 @@ use test_utils::*;
 #[derive(Resource, Default)]
 struct PendingDispatchEvent(Option<TechnicianDispatchEvent>);
 
+#[derive(Resource, Default)]
+struct PendingDispatchEvents(Vec<TechnicianDispatchEvent>);
+
 fn emit_pending_dispatch(
     mut pending: ResMut<PendingDispatchEvent>,
     mut writer: MessageWriter<TechnicianDispatchEvent>,
 ) {
     if let Some(event) = pending.0.take() {
+        writer.write(event);
+    }
+}
+
+fn emit_pending_dispatches(
+    mut pending: ResMut<PendingDispatchEvents>,
+    mut writer: MessageWriter<TechnicianDispatchEvent>,
+) {
+    for event in pending.0.drain(..) {
         writer.write(event);
     }
 }
@@ -496,6 +508,253 @@ fn test_auto_dispatch_with_om_software() {
             "Technician should be traveling to the correct site"
         );
     }
+}
+
+#[test]
+fn test_visible_site_dispatch_is_prioritized_over_older_offscreen_work() {
+    let mut app = create_test_app();
+    app.init_resource::<TechnicianState>();
+    app.init_resource::<PendingDispatchEvents>();
+    app.add_systems(
+        Update,
+        (emit_pending_dispatches, dispatch_technician_system).chain(),
+    );
+
+    let site_a = SiteId(1);
+    let site_b = SiteId(2);
+    {
+        let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
+
+        let mut site_state_a = kilowatt_tycoon::resources::SiteState::new(
+            site_a,
+            SiteArchetype::ParkingLot,
+            "Site A".to_string(),
+            500.0,
+            50.0,
+            1,
+            (16, 12),
+        );
+        site_state_a.site_upgrades.oem_tier = OemTier::Optimize;
+
+        let mut site_state_b = kilowatt_tycoon::resources::SiteState::new(
+            site_b,
+            SiteArchetype::GasStation,
+            "Site B".to_string(),
+            500.0,
+            50.0,
+            1,
+            (16, 12),
+        );
+        site_state_b.site_upgrades.oem_tier = OemTier::Optimize;
+
+        multi_site.owned_sites.insert(site_a, site_state_a);
+        multi_site.owned_sites.insert(site_b, site_state_b);
+        multi_site.viewed_site_id = Some(site_b);
+    }
+
+    let charger_a = app
+        .world_mut()
+        .spawn((
+            create_faulted_charger("CHG-A", FaultType::GroundFault),
+            Transform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_a),
+        ))
+        .id();
+    let charger_b = app
+        .world_mut()
+        .spawn((
+            create_faulted_charger("CHG-B", FaultType::GroundFault),
+            Transform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_b),
+        ))
+        .id();
+
+    let request_a =
+        create_repair_request(&mut app, charger_a, "CHG-A", site_a, FaultType::GroundFault);
+    let request_b =
+        create_repair_request(&mut app, charger_b, "CHG-B", site_b, FaultType::GroundFault);
+
+    app.world_mut()
+        .resource_mut::<PendingDispatchEvents>()
+        .0
+        .extend([
+            TechnicianDispatchEvent {
+                request_id: request_a,
+                charger_entity: charger_a,
+                charger_id: "CHG-A".to_string(),
+            },
+            TechnicianDispatchEvent {
+                request_id: request_b,
+                charger_entity: charger_b,
+                charger_id: "CHG-B".to_string(),
+            },
+        ]);
+
+    app.update();
+
+    let tech_state = app.world().resource::<TechnicianState>();
+    assert_eq!(
+        tech_state.status(),
+        TechStatus::EnRoute,
+        "The technician should start the visible-site job first"
+    );
+    assert_eq!(tech_state.active_request_id(), Some(request_b));
+    assert_eq!(tech_state.destination_site_id(), Some(site_b));
+    assert_eq!(tech_state.queue_len(), 1);
+    assert_eq!(
+        tech_state
+            .dispatch_queue
+            .front()
+            .map(|dispatch| dispatch.request_id),
+        Some(request_a)
+    );
+
+    let requests = app.world().resource::<RepairRequestRegistry>();
+    assert_eq!(
+        requests.get(request_a).map(|request| request.status),
+        Some(RepairRequestStatus::Queued)
+    );
+    assert_eq!(
+        requests.get(request_b).map(|request| request.status),
+        Some(RepairRequestStatus::EnRoute)
+    );
+}
+
+#[test]
+fn test_visible_site_dispatch_preempts_offscreen_waiting_job() {
+    let mut app = create_test_app();
+    app.init_resource::<TechnicianState>();
+    app.init_resource::<PendingDispatchEvents>();
+    app.add_systems(
+        Update,
+        (emit_pending_dispatches, dispatch_technician_system).chain(),
+    );
+
+    let site_a = SiteId(1);
+    let site_b = SiteId(2);
+    {
+        let mut multi_site = app.world_mut().resource_mut::<MultiSiteManager>();
+
+        let mut site_state_a = kilowatt_tycoon::resources::SiteState::new(
+            site_a,
+            SiteArchetype::ParkingLot,
+            "Site A".to_string(),
+            500.0,
+            50.0,
+            1,
+            (16, 12),
+        );
+        site_state_a.site_upgrades.oem_tier = OemTier::Optimize;
+
+        let mut site_state_b = kilowatt_tycoon::resources::SiteState::new(
+            site_b,
+            SiteArchetype::GasStation,
+            "Site B".to_string(),
+            500.0,
+            50.0,
+            1,
+            (16, 12),
+        );
+        site_state_b.site_upgrades.oem_tier = OemTier::Optimize;
+
+        multi_site.owned_sites.insert(site_a, site_state_a);
+        multi_site.owned_sites.insert(site_b, site_state_b);
+        multi_site.viewed_site_id = Some(site_b);
+    }
+
+    let offscreen_charger = app
+        .world_mut()
+        .spawn((
+            create_faulted_charger("CHG-OFFSCREEN", FaultType::GroundFault),
+            Transform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_a),
+        ))
+        .id();
+    let visible_charger = app
+        .world_mut()
+        .spawn((
+            create_faulted_charger("CHG-VISIBLE", FaultType::GroundFault),
+            Transform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_b),
+        ))
+        .id();
+
+    let offscreen_request = create_repair_request(
+        &mut app,
+        offscreen_charger,
+        "CHG-OFFSCREEN",
+        site_a,
+        FaultType::GroundFault,
+    );
+    let visible_request = create_repair_request(
+        &mut app,
+        visible_charger,
+        "CHG-VISIBLE",
+        site_b,
+        FaultType::GroundFault,
+    );
+
+    {
+        let mut requests = app.world_mut().resource_mut::<RepairRequestRegistry>();
+        let _ = requests.set_status(offscreen_request, RepairRequestStatus::WaitingAtSite);
+        let _ = requests.mark_dispatch_costs_recorded(offscreen_request);
+    }
+    {
+        let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
+        tech_state.current_site_id = Some(site_a);
+        tech_state.set_waiting_at_site_job(offscreen_request, offscreen_charger, site_a, 120.0);
+    }
+
+    app.world_mut()
+        .resource_mut::<PendingDispatchEvents>()
+        .0
+        .push(TechnicianDispatchEvent {
+            request_id: visible_request,
+            charger_entity: visible_charger,
+            charger_id: "CHG-VISIBLE".to_string(),
+        });
+
+    app.update();
+
+    let tech_state = app.world().resource::<TechnicianState>();
+    assert_eq!(
+        tech_state.status(),
+        TechStatus::EnRoute,
+        "Visible-site work should preempt an offscreen waiting job"
+    );
+    assert_eq!(tech_state.active_request_id(), Some(visible_request));
+    assert_eq!(tech_state.destination_site_id(), Some(site_b));
+    assert_eq!(tech_state.queue_len(), 1);
+    assert_eq!(
+        tech_state
+            .dispatch_queue
+            .front()
+            .map(|dispatch| dispatch.request_id),
+        Some(offscreen_request)
+    );
+
+    let requests = app.world().resource::<RepairRequestRegistry>();
+    assert_eq!(
+        requests
+            .get(offscreen_request)
+            .map(|request| request.status),
+        Some(RepairRequestStatus::Queued)
+    );
+    assert_eq!(
+        requests
+            .get(offscreen_request)
+            .map(|request| request.dispatch_costs_recorded),
+        Some(true),
+        "Preempting offscreen work should preserve prior dispatch billing"
+    );
+    assert_eq!(
+        requests.get(visible_request).map(|request| request.status),
+        Some(RepairRequestStatus::EnRoute)
+    );
 }
 
 #[test]

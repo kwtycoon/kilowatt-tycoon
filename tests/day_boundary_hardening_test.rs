@@ -14,8 +14,9 @@ use kilowatt_tycoon::resources::{
 };
 use kilowatt_tycoon::states::day_end::report::{DayEndReport, prepare_day_end_report};
 use kilowatt_tycoon::systems::{
-    cleanup_sold_site_technician_state, cleanup_technicians_on_day_end,
-    sync_viewed_technician_avatar_system, technician_repair_system, technician_travel_system,
+    cleanup_sold_site_technician_state, cleanup_technicians_on_day_end, dispatch_technician_system,
+    recover_dispatchable_requests_system, sync_viewed_technician_avatar_system,
+    technician_repair_system, technician_travel_system,
 };
 
 use test_utils::{
@@ -208,6 +209,114 @@ fn test_offscreen_travel_completion_waits_for_visible_execution() {
     let world = app.world_mut();
     let mut tech_query = world.query::<&Technician>();
     assert_eq!(tech_query.iter(world).count(), 0);
+}
+
+#[test]
+fn test_new_day_recovery_prefers_the_viewed_site_request() {
+    let mut app = create_test_app();
+    app.init_resource::<TechnicianState>();
+    app.add_systems(
+        Update,
+        (
+            recover_dispatchable_requests_system,
+            dispatch_technician_system,
+        )
+            .chain(),
+    );
+
+    let site_a = SiteId(1);
+    let site_b = SiteId(2);
+    insert_test_site(&mut app, site_a, SiteArchetype::ParkingLot, false);
+    insert_test_site(&mut app, site_b, SiteArchetype::GasStation, true);
+
+    let mut charger_a = create_test_charger("CHG-A", ChargerType::DcFast);
+    charger_a.current_fault = Some(FaultType::GroundFault);
+    let charger_a_entity = app
+        .world_mut()
+        .spawn((
+            charger_a,
+            Transform::default(),
+            GlobalTransform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_a),
+        ))
+        .id();
+
+    let mut charger_b = create_test_charger("CHG-B", ChargerType::DcFast);
+    charger_b.current_fault = Some(FaultType::GroundFault);
+    let charger_b_entity = app
+        .world_mut()
+        .spawn((
+            charger_b,
+            Transform::default(),
+            GlobalTransform::default(),
+            Visibility::default(),
+            BelongsToSite::new(site_b),
+        ))
+        .id();
+
+    let request_a = create_repair_request(
+        &mut app,
+        charger_a_entity,
+        "CHG-A",
+        site_a,
+        FaultType::GroundFault,
+    );
+    let request_b = create_repair_request(
+        &mut app,
+        charger_b_entity,
+        "CHG-B",
+        site_b,
+        FaultType::GroundFault,
+    );
+
+    {
+        let mut requests = app.world_mut().resource_mut::<RepairRequestRegistry>();
+        let _ = requests.queue(request_a, 10.0, RepairRequestSource::OemDetection);
+        let _ = requests.queue(request_b, 20.0, RepairRequestSource::OemDetection);
+        let _ = requests.set_status(request_a, RepairRequestStatus::WaitingAtSite);
+    }
+    {
+        let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
+        tech_state.current_site_id = Some(site_a);
+        tech_state.set_waiting_at_site_job(request_a, charger_a_entity, site_a, 120.0);
+    }
+
+    {
+        let mut requests = app.world_mut().resource_mut::<RepairRequestRegistry>();
+        requests.reset_for_new_day();
+    }
+    {
+        let mut tech_state = app.world_mut().resource_mut::<TechnicianState>();
+        tech_state.reset_for_new_day();
+    }
+
+    app.update();
+
+    let tech_state = app.world().resource::<TechnicianState>();
+    assert_eq!(
+        tech_state.status(),
+        kilowatt_tycoon::resources::TechStatus::EnRoute
+    );
+    assert_eq!(tech_state.active_request_id(), Some(request_b));
+    assert_eq!(tech_state.destination_site_id(), Some(site_b));
+    assert_eq!(
+        tech_state
+            .dispatch_queue
+            .front()
+            .map(|dispatch| dispatch.request_id),
+        Some(request_a)
+    );
+
+    let requests = app.world().resource::<RepairRequestRegistry>();
+    assert_eq!(
+        requests.get(request_a).map(|request| request.status),
+        Some(RepairRequestStatus::Queued)
+    );
+    assert_eq!(
+        requests.get(request_b).map(|request| request.status),
+        Some(RepairRequestStatus::EnRoute)
+    );
 }
 
 #[test]

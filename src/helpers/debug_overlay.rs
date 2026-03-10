@@ -15,9 +15,12 @@ use bevy::prelude::*;
 use bevy_northstar::prelude::*;
 
 use crate::components::BelongsToSite;
+use crate::components::charger::Charger;
 use crate::components::driver::{Driver, DriverState, VehicleMovement};
 use crate::components::technician::{Technician, TechnicianMovement};
-use crate::resources::{GameClock, GameState, MultiSiteManager, TileContent};
+use crate::resources::{
+    GameClock, GameState, MultiSiteManager, RepairRequestRegistry, TechnicianState, TileContent,
+};
 use crate::states::AppState;
 use crate::systems::ambient_traffic::AmbientVehicle;
 use crate::systems::northstar_movement::RerouteCooldown;
@@ -300,6 +303,9 @@ fn print_traffic_debug(
     active_grid: Res<ActivePathfindingGrid>,
     game_clock: Res<GameClock>,
     blocking_map: Res<BlockingMap>,
+    tech_state: Res<TechnicianState>,
+    repair_requests: Res<RepairRequestRegistry>,
+    chargers: Query<(Entity, &Charger, &BelongsToSite)>,
     drivers: Query<(
         Entity,
         &Driver,
@@ -397,6 +403,21 @@ fn print_traffic_debug(
             "Tiles: entry={:?} driveable={} | exit={:?} driveable={}",
             entry_content, entry_driveable, exit_content, exit_driveable
         );
+        let _ = writeln!(
+            out,
+            "Ops: o&m={} | auto_remediation={} | auto_dispatch={}",
+            site_state.site_upgrades.oem_tier.display_name(),
+            if site_state.site_upgrades.oem_tier.has_auto_remediation() {
+                "yes"
+            } else {
+                "no"
+            },
+            if site_state.site_upgrades.oem_tier.has_auto_dispatch() {
+                "yes"
+            } else {
+                "no"
+            }
+        );
 
         // Count drivers at this site
         let site_drivers: Vec<_> = drivers
@@ -413,6 +434,23 @@ fn print_traffic_debug(
             .iter()
             .filter(|(_, _, _, belongs, ..)| belongs.site_id == *site_id)
             .collect();
+        let mut site_faulted_chargers: Vec<_> = chargers
+            .iter()
+            .filter(|(_, charger, belongs)| {
+                belongs.site_id == *site_id && charger.current_fault.is_some()
+            })
+            .collect();
+        site_faulted_chargers.sort_by(|(_, left, _), (_, right, _)| left.id.cmp(&right.id));
+        let mut site_requests: Vec<_> = repair_requests
+            .iter()
+            .filter(|request| request.site_id == *site_id)
+            .collect();
+        site_requests.sort_by_key(|request| request.id.0);
+        let site_dispatches: Vec<_> = tech_state
+            .dispatch_queue
+            .iter()
+            .filter(|queued| queued.site_id == *site_id)
+            .collect();
 
         let _ = writeln!(
             out,
@@ -421,6 +459,116 @@ fn print_traffic_debug(
             site_ambient.len(),
             site_techs.len()
         );
+
+        let active_request_str = tech_state
+            .active_request_id()
+            .map(|id| id.0.to_string())
+            .unwrap_or_else(|| "NONE".to_string());
+        let active_charger_str = tech_state
+            .active_charger()
+            .map(|entity| format!("Entity {}", entity.index()))
+            .unwrap_or_else(|| "NONE".to_string());
+        let queue_preview = if site_dispatches.is_empty() {
+            "NONE".to_string()
+        } else {
+            site_dispatches
+                .iter()
+                .map(|queued| format!("{}#{}", queued.charger_id, queued.request_id.0))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let active_matches_site = tech_state.active_site_id() == Some(*site_id)
+            || tech_state.current_site_id == Some(*site_id);
+        let _ = writeln!(out, "--- Logical Technician ---");
+        let _ = writeln!(
+            out,
+            "  status={:?} | current_site={:?} | active_site={:?} | active_request={} | active_charger={}",
+            tech_state.status(),
+            tech_state.current_site_id,
+            tech_state.active_site_id(),
+            active_request_str,
+            active_charger_str
+        );
+        let _ = writeln!(
+            out,
+            "  matches_site={} | travel_remaining={:?} | repair_remaining={:?} | job_time_elapsed={:.0}",
+            if active_matches_site { "yes" } else { "no" },
+            tech_state.travel_remaining().map(|secs| secs.round()),
+            tech_state.repair_remaining().map(|secs| secs.round()),
+            tech_state.job_time_elapsed
+        );
+        let _ = writeln!(
+            out,
+            "  queued_total={} | queued_for_site={} | queue={}",
+            tech_state.queue_len(),
+            site_dispatches.len(),
+            queue_preview
+        );
+        let _ = writeln!(out);
+
+        let _ = writeln!(
+            out,
+            "--- Faulted Chargers ({}) ---",
+            site_faulted_chargers.len()
+        );
+        if site_faulted_chargers.is_empty() {
+            let _ = writeln!(out, "  (none)");
+        } else {
+            for (entity, charger, _) in &site_faulted_chargers {
+                let Some(fault_type) = charger.current_fault else {
+                    continue;
+                };
+                let request_summary = repair_requests
+                    .active_for_charger(*entity)
+                    .map(|request| {
+                        format!(
+                            "#{} {:?} src={:?} attempts={} last_dispatch={:?}",
+                            request.id.0,
+                            request.status,
+                            request.source,
+                            request.attempt_count,
+                            request.last_dispatch_at.map(|secs| secs.round())
+                        )
+                    })
+                    .unwrap_or_else(|| "NONE".to_string());
+                let _ = writeln!(
+                    out,
+                    "  {} (Entity {}): fault={:?} state={:?} discovered={} detected={} occurred_at={:?} detected_at={:?} request={}",
+                    charger.id,
+                    entity.index(),
+                    fault_type,
+                    charger.state(),
+                    charger.fault_discovered,
+                    charger.fault_is_detected,
+                    charger.fault_occurred_at.map(|secs| secs.round()),
+                    charger.fault_detected_at.map(|secs| secs.round()),
+                    request_summary
+                );
+            }
+        }
+        let _ = writeln!(out);
+
+        let _ = writeln!(out, "--- Repair Requests ({}) ---", site_requests.len());
+        if site_requests.is_empty() {
+            let _ = writeln!(out, "  (none)");
+        } else {
+            for request in &site_requests {
+                let _ = writeln!(
+                    out,
+                    "  #{} charger={} fault={:?} status={:?} source={:?} discovered_at={:?} last_dispatch={:?} attempts={} billed={}",
+                    request.id.0,
+                    request.charger_id,
+                    request.fault_type,
+                    request.status,
+                    request.source,
+                    request.discovered_at.map(|secs| secs.round()),
+                    request.last_dispatch_at.map(|secs| secs.round()),
+                    request.attempt_count,
+                    request.dispatch_costs_recorded
+                );
+            }
+        }
+        let _ = writeln!(out);
 
         // Collect stuck vehicles for summary
         let mut stuck_vehicles = Vec::new();

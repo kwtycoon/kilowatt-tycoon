@@ -441,6 +441,25 @@ impl TechnicianState {
         true
     }
 
+    pub fn queue_dispatch_front(
+        &mut self,
+        request_id: crate::resources::RepairRequestId,
+        charger_entity: Entity,
+        charger_id: String,
+        site_id: crate::resources::SiteId,
+    ) -> bool {
+        if self.is_charger_queued(charger_entity) {
+            return false;
+        }
+        self.dispatch_queue.push_front(QueuedDispatch {
+            request_id,
+            charger_entity,
+            charger_id,
+            site_id,
+        });
+        true
+    }
+
     /// Find the index of the first queued dispatch targeting the given site.
     ///
     /// Used to chain jobs at the same location without the technician walking
@@ -453,6 +472,29 @@ impl TechnicianState {
         self.dispatch_queue
             .iter()
             .position(|queued| queued.site_id == site_id)
+    }
+
+    pub fn has_queued_dispatch_for_site(&self, site_id: crate::resources::SiteId) -> bool {
+        self.dispatch_queue
+            .iter()
+            .any(|queued| queued.site_id == site_id)
+    }
+
+    /// Pop the next dispatch, preferring the currently viewed site when possible.
+    pub fn pop_next_dispatch_for_site(
+        &mut self,
+        preferred_site_id: Option<crate::resources::SiteId>,
+    ) -> Option<QueuedDispatch> {
+        if let Some(site_id) = preferred_site_id
+            && let Some(idx) = self
+                .dispatch_queue
+                .iter()
+                .position(|queued| queued.site_id == site_id)
+        {
+            return self.dispatch_queue.remove(idx);
+        }
+
+        self.dispatch_queue.pop_front()
     }
 
     /// Pop the next dispatch from the queue
