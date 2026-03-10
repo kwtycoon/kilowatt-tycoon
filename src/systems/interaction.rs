@@ -7,6 +7,7 @@ use crate::components::charger::{Charger, ChargerSprite};
 use crate::helpers::GamePointer;
 use crate::resources::{BuildState, BuildTool, SelectedChargerEntity};
 use crate::systems::WorldCamera;
+use crate::systems::sprite::BrokenChargerIcon;
 use crate::ui::radial_menu::RadialMenuDismissLayer;
 
 /// Handle clicks/taps to select chargers.
@@ -16,6 +17,7 @@ pub fn click_to_select_charger(
     mouse: Res<ButtonInput<MouseButton>>,
     pointer: Res<GamePointer>,
     cameras: Query<(&Camera, &GlobalTransform), With<WorldCamera>>,
+    broken_icons: Query<(&BrokenChargerIcon, &GlobalTransform, &Sprite)>,
     charger_sprites: Query<(&ChargerSprite, &GlobalTransform, &Sprite)>,
     chargers: Query<Entity, With<Charger>>,
     mut selected: ResMut<SelectedChargerEntity>,
@@ -76,34 +78,20 @@ pub fn click_to_select_charger(
     // Check if clicking on any charger sprite
     let mut clicked_charger: Option<Entity> = None;
 
-    for (charger_sprite, global_transform, sprite) in &charger_sprites {
-        // Get the base size from custom_size, or fall back to the image's native size
-        let base_size = if let Some(custom) = sprite.custom_size {
-            custom
-        } else {
-            // Look up the image asset to get its native pixel size
-            let Some(image) = images.get(&sprite.image) else {
-                continue; // Image not loaded yet, skip this sprite
-            };
-            image.size().as_vec2()
-        };
-
-        // Apply global scale to get world-space size
-        let (global_scale, _, _) = global_transform.to_scale_rotation_translation();
-        let world_size = base_size * global_scale.truncate().abs();
-
-        let half_size = world_size / 2.0;
-        // Use GlobalTransform for proper world position
-        let pos = global_transform.translation().truncate();
-
-        // Simple AABB collision
-        if world_position.x >= pos.x - half_size.x
-            && world_position.x <= pos.x + half_size.x
-            && world_position.y >= pos.y - half_size.y
-            && world_position.y <= pos.y + half_size.y
+    for (broken_icon, global_transform, sprite) in &broken_icons {
+        if sprite_contains_world_point(sprite, global_transform, world_position, &images)
+            && chargers.get(broken_icon.charger_entity).is_ok()
         {
-            // Verify the charger entity still exists
-            if chargers.get(charger_sprite.charger_entity).is_ok() {
+            clicked_charger = Some(broken_icon.charger_entity);
+            break;
+        }
+    }
+
+    if clicked_charger.is_none() {
+        for (charger_sprite, global_transform, sprite) in &charger_sprites {
+            if sprite_contains_world_point(sprite, global_transform, world_position, &images)
+                && chargers.get(charger_sprite.charger_entity).is_ok()
+            {
                 clicked_charger = Some(charger_sprite.charger_entity);
                 break;
             }
@@ -129,6 +117,34 @@ fn should_ignore_pointer_charger_selection(tool: BuildTool) -> bool {
     tool == BuildTool::PhotovoltaicCanopy
 }
 
+fn sprite_contains_world_point(
+    sprite: &Sprite,
+    global_transform: &GlobalTransform,
+    world_position: Vec2,
+    images: &Assets<Image>,
+) -> bool {
+    // Get the base size from custom_size, or fall back to the image's native size.
+    let base_size = if let Some(custom) = sprite.custom_size {
+        custom
+    } else {
+        let Some(image) = images.get(&sprite.image) else {
+            return false;
+        };
+        image.size().as_vec2()
+    };
+
+    // Apply global scale to get world-space size.
+    let (global_scale, _, _) = global_transform.to_scale_rotation_translation();
+    let world_size = base_size * global_scale.truncate().abs();
+    let half_size = world_size / 2.0;
+    let pos = global_transform.translation().truncate();
+
+    world_position.x >= pos.x - half_size.x
+        && world_position.x <= pos.x + half_size.x
+        && world_position.y >= pos.y - half_size.y
+        && world_position.y <= pos.y + half_size.y
+}
+
 /// Handle keyboard shortcuts for speed (keep these working)
 pub fn keyboard_shortcuts(
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -152,6 +168,29 @@ mod tests {
         assert!(!should_ignore_pointer_charger_selection(BuildTool::Select));
         assert!(!should_ignore_pointer_charger_selection(
             BuildTool::ChargerDCFC150
+        ));
+    }
+
+    #[test]
+    fn sprite_contains_world_point_uses_sprite_bounds() {
+        let images = Assets::<Image>::default();
+        let sprite = Sprite {
+            custom_size: Some(Vec2::new(20.0, 20.0)),
+            ..default()
+        };
+        let transform = GlobalTransform::from(Transform::from_scale(Vec3::splat(10.0)));
+
+        assert!(sprite_contains_world_point(
+            &sprite,
+            &transform,
+            Vec2::new(0.0, 0.0),
+            &images,
+        ));
+        assert!(!sprite_contains_world_point(
+            &sprite,
+            &transform,
+            Vec2::new(101.0, 101.0),
+            &images,
         ));
     }
 }
