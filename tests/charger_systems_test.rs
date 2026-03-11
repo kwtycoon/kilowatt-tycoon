@@ -242,13 +242,13 @@ fn test_charger_type_power_ratings() {
     // DCFC should have higher power rating
     assert!(dcfc.rated_power_kw > l2.rated_power_kw);
     assert_eq!(dcfc.rated_power_kw, 150.0);
-    assert_eq!(l2.rated_power_kw, 7.0);
+    assert_eq!(l2.rated_power_kw, 11.5);
 }
 
 #[test]
 fn test_anti_theft_cable_price_by_charger_type() {
     let l2 = create_test_charger("L2-001", ChargerType::AcLevel2);
-    assert_eq!(l2.rated_power_kw, 7.0);
+    assert_eq!(l2.rated_power_kw, 11.5);
     assert_eq!(l2.anti_theft_cable_price(), 800);
 
     let mut dcfc50 = create_test_charger("DCFC50", ChargerType::DcFast);

@@ -76,7 +76,7 @@ pub fn ocpp_boot_system(
         // Determine model from charger type
         let model = match charger.charger_type {
             crate::components::charger::ChargerType::DcFast => "DCFC-50kW",
-            crate::components::charger::ChargerType::AcLevel2 => "AC-L2-7kW",
+            crate::components::charger::ChargerType::AcLevel2 => "AC-L2-11.5kW",
         };
 
         // BootNotification Call

@@ -377,7 +377,7 @@ impl ChargerPadType {
     /// Get the rated power in kW for this charger type
     pub fn power_kw(&self) -> f32 {
         match self {
-            ChargerPadType::L2 => 7.0,
+            ChargerPadType::L2 => 11.5,
             ChargerPadType::DCFC50 => 50.0,
             ChargerPadType::DCFC100 => 100.0,
             ChargerPadType::DCFC150 => 150.0,

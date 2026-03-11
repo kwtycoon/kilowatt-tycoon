@@ -380,8 +380,8 @@ fn test_l2_charger_roi() {
     let energy_config = SiteEnergyConfig::default();
     let l2_cost = 3000.0;
 
-    // L2 assumptions: 7kW charger, average 4 hour session (28 kWh)
-    let avg_session_kwh = 28.0;
+    // L2 assumptions: 11.5kW charger, average 4 hour session (46 kWh)
+    let avg_session_kwh = 46.0;
     let margin_off_peak = strategy.pricing.flat.price_kwh - energy_config.off_peak_rate;
     let profit_per_session = avg_session_kwh * margin_off_peak;
 

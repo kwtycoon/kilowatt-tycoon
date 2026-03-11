@@ -37,7 +37,7 @@ impl BuildTool {
             BuildTool::Select => "Select",
             BuildTool::Road => "Road",
             BuildTool::ParkingBay => "Parking Bay",
-            BuildTool::ChargerL2 => "L2 (7kW)",
+            BuildTool::ChargerL2 => "L2 (11.5kW)",
             BuildTool::ChargerDCFC50 => "DC 50kW",
             BuildTool::ChargerDCFC100 => "DC 100kW +Ads",
             BuildTool::ChargerDCFC150 => "DC 150kW",

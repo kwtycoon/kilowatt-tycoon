@@ -71,11 +71,11 @@ pub fn create_test_charger(id: &str, charger_type: ChargerType) -> Charger {
         charger_type,
         max_power_kw: match charger_type {
             ChargerType::DcFast => 150.0,
-            ChargerType::AcLevel2 => 7.0,
+            ChargerType::AcLevel2 => 11.5,
         },
         rated_power_kw: match charger_type {
             ChargerType::DcFast => 150.0,
-            ChargerType::AcLevel2 => 7.0,
+            ChargerType::AcLevel2 => 11.5,
         },
         phase: Phase::A,
         health: 1.0,

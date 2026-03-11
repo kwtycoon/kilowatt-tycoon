@@ -56,7 +56,7 @@ fn get_tool_visual_scale(tool: BuildTool, image: &Image) -> f32 {
             return 1.0;
         }
         // Chargers: use sprite metadata for intended world size
-        BuildTool::ChargerL2 => sprite_metadata::charger_world_size(ChargerType::AcLevel2, 7.0),
+        BuildTool::ChargerL2 => sprite_metadata::charger_world_size(ChargerType::AcLevel2, 11.5),
         BuildTool::ChargerDCFC50 => sprite_metadata::charger_world_size(ChargerType::DcFast, 50.0),
         BuildTool::ChargerDCFC100 => {
             sprite_metadata::charger_world_size(ChargerType::DcFast, 100.0)

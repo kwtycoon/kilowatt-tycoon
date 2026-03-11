@@ -1354,12 +1354,13 @@ pub fn sync_chargers_with_grid(
     for (x, y, charger_pad_type) in diff.to_spawn.iter() {
         let grid_pos = SiteGrid::grid_to_world(*x, *y);
 
-        let (bevy_charger_type, power_kw, tier) = match charger_pad_type {
-            ChargerPadType::L2 => (ChargerType::AcLevel2, 7.0, ChargerTier::Standard),
-            ChargerPadType::DCFC50 => (ChargerType::DcFast, 50.0, ChargerTier::Value),
-            ChargerPadType::DCFC100 => (ChargerType::DcFast, 100.0, ChargerTier::Standard),
-            ChargerPadType::DCFC150 => (ChargerType::DcFast, 150.0, ChargerTier::Standard),
-            ChargerPadType::DCFC350 => (ChargerType::DcFast, 350.0, ChargerTier::Premium),
+        let power_kw = charger_pad_type.power_kw();
+        let (bevy_charger_type, tier) = match charger_pad_type {
+            ChargerPadType::L2 => (ChargerType::AcLevel2, ChargerTier::Standard),
+            ChargerPadType::DCFC50 => (ChargerType::DcFast, ChargerTier::Value),
+            ChargerPadType::DCFC100 => (ChargerType::DcFast, ChargerTier::Standard),
+            ChargerPadType::DCFC150 => (ChargerType::DcFast, ChargerTier::Standard),
+            ChargerPadType::DCFC350 => (ChargerType::DcFast, ChargerTier::Premium),
         };
 
         // Check if this charger should have video ads enabled
