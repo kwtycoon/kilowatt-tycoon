@@ -326,17 +326,53 @@ mod native {
             .and_then(|e| queue.charger_state.get(&e))
             .and_then(|s| s.transaction_id);
 
+        let connector_id = req.connector_id;
+        let purpose = req.cs_charging_profiles.charging_profile_purpose.clone();
+        let kind = req.cs_charging_profiles.charging_profile_kind.clone();
+        let stack_level = req.cs_charging_profiles.stack_level;
+        let profile_id = req.cs_charging_profiles.charging_profile_id;
+        let profile_tx_id = req.cs_charging_profiles.transaction_id;
+        let period_count = req
+            .cs_charging_profiles
+            .charging_schedule
+            .charging_schedule_period
+            .len();
+        let rate_unit = req
+            .cs_charging_profiles
+            .charging_schedule
+            .charging_rate_unit
+            .clone();
+        let start_schedule = req.cs_charging_profiles.charging_schedule.start_schedule;
+        let duration = req.cs_charging_profiles.charging_schedule.duration;
+
         let result = store.set_profile(
             charger_id,
-            req.connector_id,
+            connector_id,
             req.cs_charging_profiles,
             active_tx_id,
         );
         let status = match result {
-            SetProfileResult::Accepted => ChargingProfileStatus::Accepted,
-            SetProfileResult::Rejected => ChargingProfileStatus::Rejected,
+            SetProfileResult::Accepted => {
+                info!(
+                    "OCPP: SetChargingProfile for {charger_id}: Accepted \
+                     (connectorId={connector_id}, purpose={purpose:?}, kind={kind:?}, \
+                      stackLevel={stack_level}, profileId={profile_id}, \
+                      transactionId={profile_tx_id:?}, activeTx={active_tx_id:?})"
+                );
+                ChargingProfileStatus::Accepted
+            }
+            SetProfileResult::Rejected { reason } => {
+                warn!(
+                    "OCPP: SetChargingProfile for {charger_id}: Rejected — {reason} \
+                     (connectorId={connector_id}, purpose={purpose:?}, kind={kind:?}, \
+                      stackLevel={stack_level}, profileId={profile_id}, \
+                      transactionId={profile_tx_id:?}, activeTx={active_tx_id:?}, \
+                      periods={period_count}, rateUnit={rate_unit:?}, \
+                      startSchedule={start_schedule:?}, duration={duration:?})"
+                );
+                ChargingProfileStatus::Rejected
+            }
         };
-        info!("OCPP: SetChargingProfile for {charger_id}: {status:?}");
         Some(serialize_callresult(
             unique_id,
             &SetChargingProfileResponse { status },

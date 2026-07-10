@@ -130,6 +130,71 @@ struct DemandSample {
     pub power_kw: f32,
 }
 
+/// Interval between power-history samples, in game-seconds (one per game-minute).
+pub const POWER_HISTORY_INTERVAL_SECS: f32 = 60.0;
+
+/// Maximum samples retained for a 24h day (86400 / 60 = 1440).
+pub const POWER_HISTORY_MAX_SAMPLES: usize = 1440;
+
+/// A single point in a site's daily power history.
+#[derive(Debug, Clone, Copy)]
+pub struct PowerSample {
+    /// Game time within the day this sample was taken (0..86400).
+    pub game_time_secs: f32,
+    /// Actual site charger load at this instant (kW).
+    pub draw_kw: f32,
+    /// Effective site power limit at this instant (kW).
+    pub limit_kw: f32,
+}
+
+/// Rolling per-site power history for the current game day.
+///
+/// Sampled every [`POWER_HISTORY_INTERVAL_SECS`] game-seconds and cleared at the
+/// day boundary. Backs the Stats -> Power 24h chart modal.
+#[derive(Debug, Clone, Default)]
+pub struct SitePowerHistory {
+    /// Samples for the current day, oldest first.
+    pub samples: Vec<PowerSample>,
+    /// Game time of the most recent sample (for interval gating).
+    pub last_sample_game_time: f32,
+    /// Peak actual draw observed today (kW).
+    pub peak_draw_kw: f32,
+    /// Peak limit observed today (kW).
+    pub peak_limit_kw: f32,
+}
+
+impl SitePowerHistory {
+    /// Record a sample if at least [`POWER_HISTORY_INTERVAL_SECS`] game-seconds
+    /// have elapsed since the last one. `game_time` is the within-day clock.
+    pub fn maybe_sample(&mut self, game_time: f32, draw_kw: f32, limit_kw: f32) {
+        let due = self.samples.is_empty()
+            || (game_time - self.last_sample_game_time) >= POWER_HISTORY_INTERVAL_SECS;
+        if !due {
+            return;
+        }
+        self.last_sample_game_time = game_time;
+        self.peak_draw_kw = self.peak_draw_kw.max(draw_kw);
+        self.peak_limit_kw = self.peak_limit_kw.max(limit_kw);
+        self.samples.push(PowerSample {
+            game_time_secs: game_time,
+            draw_kw,
+            limit_kw,
+        });
+        if self.samples.len() > POWER_HISTORY_MAX_SAMPLES {
+            let excess = self.samples.len() - POWER_HISTORY_MAX_SAMPLES;
+            self.samples.drain(..excess);
+        }
+    }
+
+    /// Clear all samples and peaks (called at the day boundary).
+    pub fn clear(&mut self) {
+        self.samples.clear();
+        self.last_sample_game_time = 0.0;
+        self.peak_draw_kw = 0.0;
+        self.peak_limit_kw = 0.0;
+    }
+}
+
 /// Days in a billing period for demand charge amortization.
 /// Demand charges are monthly; we project a daily cost by dividing by this.
 pub const DAYS_PER_BILLING_PERIOD: f32 = 30.0;

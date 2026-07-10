@@ -20,6 +20,7 @@ pub mod interaction;
 pub mod northstar_movement;
 pub mod power;
 pub mod power_dispatch;
+pub mod power_history;
 pub mod robber;
 pub mod scenario_events;
 pub mod scene;
@@ -66,6 +67,7 @@ pub use interaction::*;
 pub use northstar_movement::*;
 pub use power::*;
 pub use power_dispatch::*;
+pub use power_history::*;
 pub use robber::*;
 pub use scenario_events::*;
 pub use scene::*;
@@ -393,6 +395,7 @@ impl Plugin for SystemsPlugin {
             (
                 grid_event_system,
                 utility_billing_system,
+                sample_power_history_system,
                 demand_warnings::monitor_demand_warnings,
             )
                 .chain()

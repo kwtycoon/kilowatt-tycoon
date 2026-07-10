@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use super::site_grid::SiteGrid;
 use super::{
     BessState, ChargerQueue, DemandState, DriverSchedule, GridEventState, GridImport,
-    ServiceStrategy, SiteEnergyConfig, SiteUpgrades, SolarState, UtilityMeter,
+    ServiceStrategy, SiteEnergyConfig, SitePowerHistory, SiteUpgrades, SolarState, UtilityMeter,
 };
 use crate::components::power::{PhaseLoads, VoltageState};
 
@@ -270,6 +270,8 @@ pub struct SiteState {
     pub bess_state: BessState,
     pub grid_import: GridImport,
     pub utility_meter: UtilityMeter,
+    /// Rolling 24h power history (draw vs limit) for the Stats -> Power chart.
+    pub power_history: SitePowerHistory,
     pub site_energy_config: SiteEnergyConfig,
     pub grid_events: GridEventState,
 
@@ -401,6 +403,7 @@ impl SiteState {
             bess_state: BessState::default(),
             grid_import: GridImport::default(),
             utility_meter: UtilityMeter::default(),
+            power_history: SitePowerHistory::default(),
             site_energy_config: match archetype {
                 SiteArchetype::ScooterHub => SiteEnergyConfig::scooter_hub(),
                 _ => SiteEnergyConfig::default(),
@@ -522,6 +525,7 @@ impl SiteState {
     pub fn reset_for_new_day(&mut self) {
         self.charger_queue.clear();
         self.utility_meter.reset();
+        self.power_history.clear();
         self.grid_events.reset_daily();
         self.driver_schedule.next_driver_index = 0;
         self.driver_schedule.next_event_index = 0;

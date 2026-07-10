@@ -27,6 +27,7 @@ pub mod leaderboard_systems;
 pub mod ledger_modal;
 pub mod overlay;
 pub mod power_panel;
+pub mod power_stats_modal;
 pub mod radial_menu;
 pub mod sidebar;
 pub mod site_tabs;
@@ -47,6 +48,7 @@ pub use leaderboard_systems::*;
 pub use ledger_modal::*;
 pub use overlay::*;
 pub use power_panel::*;
+pub use power_stats_modal::*;
 pub use radial_menu::*;
 pub use sidebar::*;
 pub use site_tabs::*;
@@ -71,6 +73,7 @@ impl Plugin for UiPlugin {
             .init_resource::<LeaderboardModalState>()
             .init_resource::<AchievementModalState>()
             .init_resource::<LedgerModalState>()
+            .init_resource::<power_stats_modal::PowerStatsModalState>()
             .init_resource::<crate::systems::gameplay_tips::GameplayTipsState>();
 
         // Main game UI setup - runs when entering Playing state
@@ -280,6 +283,32 @@ impl Plugin for UiPlugin {
                 (
                     ledger_modal::update_tab_visuals,
                     ledger_modal::update_ledger_content,
+                ),
+            )
+                .chain()
+                .in_set(crate::systems::GameSystemSet::UiUpdate)
+                .run_if(is_game_visible),
+        );
+
+        // Power stats modal (live 24h chart) - chained for correct ordering
+        app.add_systems(
+            Update,
+            (
+                (
+                    power_stats_modal::handle_power_stats_close_button,
+                    power_stats_modal::handle_power_stats_keyboard,
+                    power_stats_modal::handle_power_stats_tab_buttons,
+                ),
+                (
+                    power_stats_modal::spawn_power_stats_modal,
+                    power_stats_modal::despawn_power_stats_modal,
+                ),
+                (
+                    power_stats_modal::update_power_stats_tabs,
+                    power_stats_modal::update_power_stats_breakdown,
+                    power_stats_modal::update_power_stats_chart,
+                    power_stats_modal::update_power_stats_summary,
+                    power_stats_modal::update_power_stats_profiles,
                 ),
             )
                 .chain()

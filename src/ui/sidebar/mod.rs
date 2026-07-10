@@ -530,10 +530,12 @@ impl Plugin for SidebarPlugin {
             (
                 update_power_panel_basic,
                 update_power_panel_capacity,
+                update_power_panel_ocpp,
                 update_power_panel_resources,
                 update_power_threshold_bar,
                 update_solar_bar,
                 update_battery_bar,
+                power_panel_inline::handle_view_power_chart_button,
             )
                 .in_set(crate::systems::GameSystemSet::UiUpdate)
                 .run_if(is_game_visible),

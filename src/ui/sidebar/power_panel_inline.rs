@@ -11,6 +11,10 @@ use bevy::prelude::*;
 #[derive(Component)]
 pub struct PowerPanel;
 
+/// Button that opens the live 24h power chart modal.
+#[derive(Component)]
+pub struct ViewPowerChartButton;
+
 // ============ Label Components ============
 
 #[derive(Component)]
@@ -30,6 +34,9 @@ pub struct PowerSiteCapacityLabel;
 
 #[derive(Component)]
 pub struct PowerChargerCapacityLabel;
+
+#[derive(Component)]
+pub struct PowerOcppCapLabel;
 
 #[derive(Component)]
 pub struct PowerThresholdBar;
@@ -99,6 +106,31 @@ pub fn spawn_power_panel(parent: &mut ChildSpawnerCommands, image_assets: &Image
                 ));
             });
 
+        // Open the live 24h power chart modal.
+        panel
+            .spawn((
+                Button,
+                ViewPowerChartButton,
+                Node {
+                    width: Val::Percent(100.0),
+                    padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    margin: UiRect::vertical(Val::Px(4.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.08)),
+                BorderRadius::all(Val::Px(4.0)),
+            ))
+            .with_child((
+                Text::new("View 24h Chart"),
+                TextFont {
+                    font_size: 11.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.7, 0.8, 1.0)),
+            ));
+
         spawn_labeled_row(panel, "Grid Draw:", "0 kVA", PowerGridDrawLabel);
         spawn_labeled_row(panel, "Peak Demand:", "0 kW | $0", PowerPeakDemandLabel);
 
@@ -160,8 +192,9 @@ pub fn spawn_power_panel(parent: &mut ChildSpawnerCommands, image_assets: &Image
             TextColor(colors::TEXT_SECONDARY),
         ));
 
-        spawn_labeled_row(panel, "Site Limit:", "0 kVA", PowerSiteCapacityLabel);
+        spawn_labeled_row(panel, "Grid Limit:", "0 kVA", PowerSiteCapacityLabel);
         spawn_labeled_row(panel, "Chargers Max:", "0 kW", PowerChargerCapacityLabel);
+        spawn_labeled_row(panel, "OCPP Cap:", "None", PowerOcppCapLabel);
 
         spawn_separator(panel);
 
@@ -499,6 +532,40 @@ pub fn update_power_panel_capacity(
     }
 }
 
+/// Update the OCPP cap row: shows the summed active OCPP caps and how many
+/// chargers are under one, or "None" when no charging profiles are set.
+pub fn update_power_panel_ocpp(
+    store: Res<crate::ocpp::charging_profiles::ChargingProfileStore>,
+    chargers: Query<(&Charger, &crate::components::BelongsToSite)>,
+    multi_site: Res<crate::resources::MultiSiteManager>,
+    mut label: Query<&mut Text, With<PowerOcppCapLabel>>,
+) {
+    let Some(site_id) = multi_site.viewed_site_id else {
+        return;
+    };
+
+    let mut capped_sum_kw = 0.0_f32;
+    let mut capped_count = 0usize;
+    for (charger, belongs) in chargers.iter() {
+        if belongs.site_id == site_id
+            && !charger.is_disabled
+            && let Some(cap) = charger.ocpp_limit_kw
+        {
+            capped_sum_kw += cap.max(0.0);
+            capped_count += 1;
+        }
+    }
+
+    let text = if store.is_empty() || capped_count == 0 {
+        "None".to_string()
+    } else {
+        format!("{capped_sum_kw:.0} kW ({capped_count})")
+    };
+    for mut t in &mut label {
+        **t = text.clone();
+    }
+}
+
 /// Update resources information (solar, battery, utility rates)
 #[allow(clippy::type_complexity)]
 pub fn update_power_panel_resources(
@@ -728,3 +795,15 @@ pub fn update_battery_bar(
 }
 
 // ============ Update Systems ============
+
+/// Open the live 24h power chart modal when the "View 24h Chart" button is clicked.
+pub fn handle_view_power_chart_button(
+    interaction: Query<&Interaction, (Changed<Interaction>, With<ViewPowerChartButton>)>,
+    mut modal_state: ResMut<crate::ui::power_stats_modal::PowerStatsModalState>,
+) {
+    for i in &interaction {
+        if *i == Interaction::Pressed {
+            modal_state.toggle();
+        }
+    }
+}

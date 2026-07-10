@@ -92,6 +92,20 @@ pub struct ChargingProfileStore {
     pub chargers: HashMap<String, ChargerProfiles>,
 }
 
+/// A single stored charging profile, summarized for read-only UI display.
+#[derive(Debug, Clone)]
+pub struct ActiveProfileRow {
+    pub charger_id: String,
+    pub profile_id: i32,
+    pub purpose: ChargingProfilePurposeType,
+    pub stack_level: u32,
+    pub kind: ChargingProfileKindType,
+    pub unit: ChargingRateUnitType,
+    /// The profile's currently-active limit converted to kW, or `None` if the
+    /// profile is outside its validity/schedule window right now.
+    pub active_limit_kw: Option<f32>,
+}
+
 /// Evaluate each charger's composite charging-profile limit at the current game
 /// time and write it to `Charger::ocpp_limit_kw`. Runs before
 /// `power_dispatch_system` so the cap flows into power allocation the same tick.
@@ -120,7 +134,10 @@ pub fn apply_charging_profiles_system(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetProfileResult {
     Accepted,
-    Rejected,
+    /// Profile failed OCPP validation; `reason` is a short static description.
+    Rejected {
+        reason: &'static str,
+    },
 }
 
 impl ChargingProfileStore {
@@ -136,8 +153,8 @@ impl ChargingProfileStore {
         profile: ChargingProfile,
         active_tx_id: Option<i32>,
     ) -> SetProfileResult {
-        if validate_profile(connector_id, &profile, active_tx_id).is_err() {
-            return SetProfileResult::Rejected;
+        if let Err(reason) = validate_profile(connector_id, &profile, active_tx_id) {
+            return SetProfileResult::Rejected { reason };
         }
         self.chargers
             .entry(charger_id.to_string())
@@ -221,6 +238,55 @@ impl ChargingProfileStore {
     ) -> Option<f32> {
         let profiles = self.chargers.get(charger_id)?;
         composite_limit_kw(profiles, now, tx_start)
+    }
+
+    /// `true` when no charger has any stored charging profile.
+    pub fn is_empty(&self) -> bool {
+        self.chargers.values().all(|p| p.is_empty())
+    }
+
+    /// Summarize every stored profile for a charger (all purposes, ordered by
+    /// stack level within each purpose), for read-only UI display. Each row's
+    /// `active_limit_kw` reflects the currently-active schedule period at `now`.
+    pub fn profile_rows(
+        &self,
+        charger_id: &str,
+        now: DateTime<Utc>,
+        tx_start: Option<DateTime<Utc>>,
+    ) -> Vec<ActiveProfileRow> {
+        let Some(profiles) = self.chargers.get(charger_id) else {
+            return Vec::new();
+        };
+
+        let mut rows = Vec::new();
+        // ChargePointMax first (site cap), then TxDefault, then Tx.
+        for map in [
+            &profiles.charge_point_max,
+            &profiles.tx_default,
+            &profiles.tx,
+        ] {
+            for profile in map.values() {
+                let active_limit_kw =
+                    profile_active_limit(profile, now, tx_start).map(|(limit, phases)| {
+                        to_kw(limit, &profile.charging_schedule.charging_rate_unit, phases)
+                    });
+                rows.push(ActiveProfileRow {
+                    charger_id: charger_id.to_string(),
+                    profile_id: profile.charging_profile_id,
+                    purpose: profile.charging_profile_purpose.clone(),
+                    stack_level: profile.stack_level,
+                    kind: profile.charging_profile_kind.clone(),
+                    unit: profile.charging_schedule.charging_rate_unit.clone(),
+                    active_limit_kw,
+                });
+            }
+        }
+        rows
+    }
+
+    /// Total number of stored profiles across all chargers (cheap change signal).
+    pub fn total_profile_count(&self) -> usize {
+        self.chargers.values().map(|p| p.total_count()).sum()
     }
 }
 
@@ -524,6 +590,58 @@ mod tests {
     }
 
     #[test]
+    fn profile_rows_report_active_and_inactive() {
+        let mut store = ChargingProfileStore::default();
+        assert!(store.is_empty());
+
+        // Active window profile (valid always, 22 kW).
+        store.set_profile(
+            "c1",
+            0,
+            profile(
+                1,
+                0,
+                ChargingProfilePurposeType::ChargePointMaxProfile,
+                ChargingProfileKindType::Absolute,
+                ChargingRateUnitType::W,
+                vec![schedule_period(0, 22_000, Some(3))],
+            ),
+            None,
+        );
+        // Profile that only becomes valid later (currently inactive).
+        let mut future = profile(
+            2,
+            0,
+            ChargingProfilePurposeType::TxDefaultProfile,
+            ChargingProfileKindType::Absolute,
+            ChargingRateUnitType::W,
+            vec![schedule_period(0, 5_000, Some(3))],
+        );
+        future.valid_from = Some(DateTime::<Utc>::UNIX_EPOCH + Duration::seconds(1_000));
+        store.set_profile("c1", 0, future, None);
+
+        assert!(!store.is_empty());
+        assert_eq!(store.total_profile_count(), 2);
+
+        let now = DateTime::<Utc>::UNIX_EPOCH + Duration::seconds(10);
+        let rows = store.profile_rows("c1", now, None);
+        assert_eq!(rows.len(), 2);
+
+        let cp_max = rows.iter().find(|r| r.profile_id == 1).expect("cp max row");
+        assert_eq!(
+            cp_max.purpose,
+            ChargingProfilePurposeType::ChargePointMaxProfile
+        );
+        assert!((cp_max.active_limit_kw.unwrap() - 22.0).abs() < 1e-3);
+
+        let future_row = rows.iter().find(|r| r.profile_id == 2).expect("future row");
+        assert!(future_row.active_limit_kw.is_none());
+
+        // No profiles for an unknown charger.
+        assert!(store.profile_rows("nope", now, None).is_empty());
+    }
+
+    #[test]
     fn amps_limit_converts_via_voltage_and_phases() {
         let mut store = ChargingProfileStore::default();
         let p = profile(
@@ -773,7 +891,9 @@ mod tests {
         );
         assert_eq!(
             store.set_profile("c1", 1, p, None),
-            SetProfileResult::Rejected
+            SetProfileResult::Rejected {
+                reason: "ChargePointMaxProfile must target connector 0"
+            }
         );
     }
 
@@ -790,7 +910,9 @@ mod tests {
         );
         assert_eq!(
             store.set_profile("c1", 1, p, None),
-            SetProfileResult::Rejected
+            SetProfileResult::Rejected {
+                reason: "TxProfile without active transaction"
+            }
         );
     }
 
