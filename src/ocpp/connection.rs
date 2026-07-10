@@ -65,6 +65,11 @@ pub struct ChargerConnection {
     pub pending: Vec<String>,
     /// Platform-specific handle.
     pub handle: ConnectionHandle,
+    /// Full WebSocket URL for this charger (used to reconnect on failure).
+    pub url: String,
+    /// Real-time seconds accumulated since the connection entered an
+    /// `Error`/`Disconnected` state, used to schedule reconnect attempts.
+    pub reconnect_timer: f32,
 }
 
 // ─────────────────────────────────────────────────────
@@ -78,6 +83,9 @@ pub struct ConnectionHandle {
     /// Channel to receive status updates from the background thread.
     /// Wrapped in `Mutex` so the overall struct is `Sync` (required for Bevy `Resource`).
     pub status_rx: Option<std::sync::Mutex<std::sync::mpsc::Receiver<WsStatus>>>,
+    /// Channel to receive inbound text frames (CSMS Calls / CallResults / CallErrors).
+    /// Wrapped in `Mutex` so the overall struct is `Sync`.
+    pub inbound_rx: Option<std::sync::Mutex<std::sync::mpsc::Receiver<String>>>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -87,6 +95,7 @@ impl Default for ConnectionHandle {
         Self {
             sender: None,
             status_rx: None,
+            inbound_rx: None,
         }
     }
 }
@@ -98,9 +107,15 @@ impl ConnectionHandle {
     pub fn connect(url: String) -> Self {
         let (msg_tx, msg_rx) = std::sync::mpsc::channel::<String>();
         let (status_tx, status_rx) = std::sync::mpsc::channel::<WsStatus>();
+        let (inbound_tx, inbound_rx) = std::sync::mpsc::channel::<String>();
 
         std::thread::spawn(move || {
-            let rt = match tokio::runtime::Builder::new_current_thread()
+            // A multi-threaded runtime is required so the inbound read task runs
+            // concurrently with the blocking outbound `msg_rx.recv()` loop below.
+            // On a current-thread runtime the blocking recv would starve the
+            // spawned reader and inbound frames would never be delivered.
+            let rt = match tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
                 .enable_all()
                 .build()
             {
@@ -147,12 +162,25 @@ impl ConnectionHandle {
 
                 let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 
-                // Spawn a task to read (and discard) incoming messages / detect close
+                // Spawn a task to read incoming messages and forward text frames to
+                // the Bevy side for OCPP handling (CSMS Calls / CallResults / CallErrors).
                 let status_tx_read = status_tx.clone();
                 tokio::spawn(async move {
+                    use tokio_tungstenite::tungstenite::Message;
                     while let Some(msg) = ws_receiver.next().await {
                         match msg {
-                            Ok(_) => {} // Ignore CallResult/CallError for now
+                            Ok(Message::Text(text)) => {
+                                if inbound_tx.send(text.to_string()).is_err() {
+                                    // Bevy side dropped the receiver; stop reading.
+                                    return;
+                                }
+                            }
+                            Ok(Message::Close(_)) => {
+                                let _ = status_tx_read.send(WsStatus::Disconnected);
+                                return;
+                            }
+                            // Ping/Pong/Binary frames are not used by OCPP-J; ignore them.
+                            Ok(_) => {}
                             Err(e) => {
                                 bevy::log::warn!("OCPP: WebSocket read error: {}", e);
                                 let _ = status_tx_read.send(WsStatus::Error);
@@ -190,7 +218,21 @@ impl ConnectionHandle {
         Self {
             sender: Some(msg_tx),
             status_rx: Some(std::sync::Mutex::new(status_rx)),
+            inbound_rx: Some(std::sync::Mutex::new(inbound_rx)),
         }
+    }
+
+    /// Drain all inbound text frames received since the last call.
+    pub fn drain_inbound(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Some(rx_mutex) = &self.inbound_rx
+            && let Ok(rx) = rx_mutex.lock()
+        {
+            while let Ok(frame) = rx.try_recv() {
+                out.push(frame);
+            }
+        }
+        out
     }
 }
 
@@ -268,6 +310,10 @@ impl ConnectionHandle {
 /// Batch flush interval in real seconds.
 const FLUSH_INTERVAL_SECS: f32 = 0.1;
 
+/// Real-time seconds to wait before attempting to reconnect a failed connection.
+#[cfg(not(target_arch = "wasm32"))]
+const RECONNECT_BACKOFF_SECS: f32 = 5.0;
+
 /// Drain the [`OcppMessageQueue`] and send messages over their respective
 /// WebSocket connections. Creates new connections on-demand.
 pub fn ocpp_send_system(
@@ -317,7 +363,9 @@ pub fn ocpp_send_system(
                 ChargerConnection {
                     status: WsStatus::Connecting,
                     pending: Vec::new(),
-                    handle: ConnectionHandle::connect(url),
+                    handle: ConnectionHandle::connect(url.clone()),
+                    url,
+                    reconnect_timer: 0.0,
                 }
             });
 
@@ -351,8 +399,24 @@ pub fn ocpp_send_system(
         // Add new messages to pending
         conn.pending.extend(msgs);
 
+        // Reconnect with backoff if the connection dropped or errored. The
+        // pending buffer is preserved so queued messages are delivered once the
+        // socket is re-established.
+        #[cfg(not(target_arch = "wasm32"))]
+        if matches!(conn.status, WsStatus::Error | WsStatus::Disconnected) {
+            conn.reconnect_timer += FLUSH_INTERVAL_SECS;
+            if conn.reconnect_timer >= RECONNECT_BACKOFF_SECS {
+                info!("OCPP: Reconnecting WebSocket to {}", conn.url);
+                conn.handle = ConnectionHandle::connect(conn.url.clone());
+                conn.status = WsStatus::Connecting;
+                conn.reconnect_timer = 0.0;
+            }
+            continue;
+        }
+
         // Send if connected
         if conn.status == WsStatus::Connected {
+            conn.reconnect_timer = 0.0;
             send_pending(conn);
         }
     }

@@ -25,6 +25,8 @@ dist/
 
 # Python
 __pycache__
+.venv/
+tools/.venv/
 
 # Tiled
 *.tiled-session

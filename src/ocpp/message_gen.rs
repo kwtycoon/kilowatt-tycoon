@@ -20,9 +20,7 @@ use crate::resources::GameClock;
 
 use super::ports_registry::{PortEntry, PortsRegistry};
 
-use super::queue::{
-    HEARTBEAT_INTERVAL_GAME_SECS, METER_VALUES_INTERVAL_GAME_SECS, OcppMessageQueue,
-};
+use super::queue::{METER_VALUES_INTERVAL_GAME_SECS, OcppMessageQueue, TX_CONF_TIMEOUT_GAME_SECS};
 use super::types::*;
 
 // ─────────────────────────────────────────────────────
@@ -41,6 +39,8 @@ pub fn ocpp_boot_system(
     if !queue.is_active() {
         return;
     }
+
+    let real = queue.real_csms();
 
     for (entity, charger, site_tag) in chargers.iter() {
         let state = queue.get_or_create(entity);
@@ -95,18 +95,28 @@ pub fn ocpp_boot_system(
             serialize_call(&uid, "BootNotification", &boot),
         );
 
-        // BootNotification CallResult (synthetic)
-        let boot_resp = BootNotificationResponse {
-            status: RegistrationStatus::Accepted,
-            current_time: timestamp,
-            interval: 300,
-        };
-        queue.push_with_log(
-            charger_id.clone(),
-            ts_iso.clone(),
-            "",
-            serialize_callresult(&uid, &boot_resp),
-        );
+        if real {
+            // Await the real BootNotification.conf (interval, registration status).
+            queue.register_pending(
+                uid.clone(),
+                "BootNotification",
+                entity,
+                game_clock.total_game_time,
+            );
+        } else {
+            // BootNotification CallResult (synthetic)
+            let boot_resp = BootNotificationResponse {
+                status: RegistrationStatus::Accepted,
+                current_time: timestamp,
+                interval: 300,
+            };
+            queue.push_with_log(
+                charger_id.clone(),
+                ts_iso.clone(),
+                "",
+                serialize_callresult(&uid, &boot_resp),
+            );
+        }
 
         // Initial StatusNotification
         let ocpp_status = charger_state_to_ocpp_status(charger.state());
@@ -251,18 +261,22 @@ pub fn ocpp_start_transaction_system(
         return;
     }
 
+    let real = queue.real_csms();
+
     for (entity, charger) in chargers.iter() {
         if !charger.is_charging {
             continue;
         }
 
-        // Check if we already have a transaction for this charger
+        // Check if we already have a transaction for this charger.
+        // In real-CSMS mode we also skip if we're still awaiting the
+        // StartTransaction.conf so we don't emit a second StartTransaction.
         let needs_start = {
             let state = queue.get_or_create(entity);
             if !state.boot_sent {
                 continue;
             }
-            state.transaction_id.is_none()
+            state.transaction_id.is_none() && !state.awaiting_tx_conf
         };
 
         if !needs_start {
@@ -281,12 +295,19 @@ pub fn ocpp_start_transaction_system(
         };
 
         let meter_start_wh = (charger.total_energy_delivered_kwh * 1000.0) as i32;
-        let transaction_id = queue.next_transaction_id();
+        // In real mode the transaction id comes from the CSMS's StartTransaction.conf;
+        // in synthetic mode we allocate it locally.
+        let transaction_id = if real {
+            None
+        } else {
+            Some(queue.next_transaction_id())
+        };
         let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
         let charger_id = charger.id.clone();
 
-        // For roaming sessions, emit RemoteStartTransaction (CSMS → CP) first
-        if is_roaming {
+        // For roaming sessions, emit RemoteStartTransaction (CSMS → CP) first.
+        // Suppressed in real-CSMS mode (a real CSMS drives remote starts itself).
+        if is_roaming && !real {
             let ts_remote = (timestamp - chrono::Duration::seconds(3)).to_rfc3339();
             let remote_uid = new_unique_id();
 
@@ -353,20 +374,30 @@ pub fn ocpp_start_transaction_system(
             serialize_call(&uid, "StartTransaction", &start_tx),
         );
 
-        // 3. StartTransaction CallResult (synthetic -- provides transactionId)
-        let start_resp = StartTransactionResponse {
-            transaction_id,
-            id_tag_info: IdTagInfo {
-                status: AuthorizationStatus::Accepted,
-                ..Default::default()
-            },
-        };
-        queue.push_with_log(
-            charger_id.clone(),
-            ts_tx,
-            "",
-            serialize_callresult(&uid, &start_resp),
-        );
+        if real {
+            // Await the CSMS-assigned transaction id in StartTransaction.conf.
+            queue.register_pending(
+                uid.clone(),
+                "StartTransaction",
+                entity,
+                game_clock.total_game_time,
+            );
+        } else if let Some(transaction_id) = transaction_id {
+            // 3. StartTransaction CallResult (synthetic -- provides transactionId)
+            let start_resp = StartTransactionResponse {
+                transaction_id,
+                id_tag_info: IdTagInfo {
+                    status: AuthorizationStatus::Accepted,
+                    ..Default::default()
+                },
+            };
+            queue.push_with_log(
+                charger_id.clone(),
+                ts_tx,
+                "",
+                serialize_callresult(&uid, &start_resp),
+            );
+        }
 
         // 4. StatusNotification(Charging) -- suppresses duplicate from status_system
         let charging = StatusNotificationRequest {
@@ -387,8 +418,12 @@ pub fn ocpp_start_transaction_system(
 
         // Record transaction state + update last_status to Charging so
         // ocpp_status_system doesn't emit a duplicate Charging notification.
+        // In real mode transaction_id stays None until StartTransaction.conf.
         let state = queue.get_or_create(entity);
-        state.transaction_id = Some(transaction_id);
+        state.transaction_id = transaction_id;
+        state.awaiting_tx_conf = real;
+        state.tx_started_wait_game_time = game_clock.total_game_time;
+        state.tx_start_total_game_time = Some(game_clock.total_game_time);
         state.meter_start_wh = meter_start_wh;
         state.active_driver = driver_entity;
         state.active_id_tag = Some(id_tag.clone());
@@ -398,7 +433,9 @@ pub fn ocpp_start_transaction_system(
         info!(
             "OCPP StartTransaction: charger={}, txn={}, driver={}{}",
             state.charger_id,
-            transaction_id,
+            transaction_id
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "pending".to_string()),
             id_tag,
             if is_roaming { " [roaming]" } else { "" }
         );
@@ -414,6 +451,7 @@ pub fn ocpp_start_transaction_system(
 pub fn ocpp_stop_transaction_system(
     chargers: Query<(Entity, &Charger)>,
     mut queue: ResMut<OcppMessageQueue>,
+    mut profile_store: ResMut<super::charging_profiles::ChargingProfileStore>,
     game_clock: Res<GameClock>,
 ) {
     if !queue.is_active() {
@@ -527,6 +565,9 @@ pub fn ocpp_stop_transaction_system(
             Some(ChargePointStatus::Available)
         };
 
+        // A TxProfile ceases to be valid when its transaction terminates.
+        profile_store.clear_tx(&charger_id);
+
         // Clear transaction state and update last_status
         if let Some(state) = queue.charger_state.get_mut(&entity) {
             info!(
@@ -534,6 +575,8 @@ pub fn ocpp_stop_transaction_system(
                 charger_id, txn_id
             );
             state.transaction_id = None;
+            state.awaiting_tx_conf = false;
+            state.tx_start_total_game_time = None;
             state.active_driver = None;
             state.active_id_tag = None;
             if let Some(status) = final_status {
@@ -710,12 +753,13 @@ pub fn ocpp_heartbeat_system(
 
     let now = game_clock.total_game_time;
 
-    if now - queue.last_heartbeat_game_time < HEARTBEAT_INTERVAL_GAME_SECS {
+    if now - queue.last_heartbeat_game_time < queue.heartbeat_interval_game_secs {
         return;
     }
 
     queue.last_heartbeat_game_time = now;
 
+    let real = queue.real_csms();
     let timestamp = queue.game_time_to_utc(now);
     let ts_iso = timestamp.to_rfc3339();
     let heartbeat = HeartbeatRequest {};
@@ -742,16 +786,19 @@ pub fn ocpp_heartbeat_system(
             serialize_call(&uid, "Heartbeat", &heartbeat),
         );
 
-        // Heartbeat CallResult (synthetic -- needed for offline detection)
-        let hb_resp = HeartbeatResponse {
-            current_time: timestamp,
-        };
-        queue.push_with_log(
-            charger.id.clone(),
-            ts_iso.clone(),
-            "",
-            serialize_callresult(&uid, &hb_resp),
-        );
+        // Heartbeat CallResult (synthetic -- needed for offline detection).
+        // Suppressed in real mode; the CSMS returns the real Heartbeat.conf.
+        if !real {
+            let hb_resp = HeartbeatResponse {
+                current_time: timestamp,
+            };
+            queue.push_with_log(
+                charger.id.clone(),
+                ts_iso.clone(),
+                "",
+                serialize_callresult(&uid, &hb_resp),
+            );
+        }
     }
 }
 
@@ -770,6 +817,8 @@ pub fn ocpp_reset_system(
     if !queue.is_active() {
         return;
     }
+
+    let real = queue.real_csms();
 
     for event in action_events.read() {
         if !event.success {
@@ -790,29 +839,35 @@ pub fn ocpp_reset_system(
             continue;
         }
 
-        let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
-        let ts_iso = timestamp.to_rfc3339();
+        // The Reset req/conf are CSMS-direction frames. In real mode a genuine
+        // CSMS issues Reset itself (handled inbound), so we don't fabricate them
+        // here; we still clear boot state so the charger re-announces via a real
+        // BootNotification.
+        if !real {
+            let timestamp = queue.game_time_to_utc(game_clock.total_game_time);
+            let ts_iso = timestamp.to_rfc3339();
 
-        // Reset Call (CSMS → CP direction)
-        let uid = new_unique_id();
-        let reset_req = ResetRequest { kind: reset_type };
-        queue.push_with_log(
-            charger_id.clone(),
-            ts_iso.clone(),
-            "Reset",
-            serialize_call(&uid, "Reset", &reset_req),
-        );
+            // Reset Call (CSMS → CP direction)
+            let uid = new_unique_id();
+            let reset_req = ResetRequest { kind: reset_type };
+            queue.push_with_log(
+                charger_id.clone(),
+                ts_iso.clone(),
+                "Reset",
+                serialize_call(&uid, "Reset", &reset_req),
+            );
 
-        // Reset CallResult (CP → CSMS)
-        let reset_resp = ResetResponse {
-            status: ResetResponseStatus::Accepted,
-        };
-        queue.push_with_log(
-            charger_id,
-            ts_iso,
-            "",
-            serialize_callresult(&uid, &reset_resp),
-        );
+            // Reset CallResult (CP → CSMS)
+            let reset_resp = ResetResponse {
+                status: ResetResponseStatus::Accepted,
+            };
+            queue.push_with_log(
+                charger_id,
+                ts_iso,
+                "",
+                serialize_callresult(&uid, &reset_resp),
+            );
+        }
 
         // Clear boot state so ocpp_boot_system replays the full sequence
         let state = queue.get_or_create(event.charger_entity);
@@ -838,6 +893,8 @@ pub fn ocpp_day_end_system(
     if !queue.is_active() {
         return;
     }
+
+    let real = queue.real_csms();
 
     for (entity, _charger) in chargers.iter() {
         let state = queue.get_or_create(entity);
@@ -870,15 +927,17 @@ pub fn ocpp_day_end_system(
             "Heartbeat",
             serialize_call(&uid, "Heartbeat", &heartbeat),
         );
-        let hb_resp = HeartbeatResponse {
-            current_time: boundary,
-        };
-        queue.push_with_log(
-            charger_id.clone(),
-            ts_iso,
-            "",
-            serialize_callresult(&uid, &hb_resp),
-        );
+        if !real {
+            let hb_resp = HeartbeatResponse {
+                current_time: boundary,
+            };
+            queue.push_with_log(
+                charger_id.clone(),
+                ts_iso,
+                "",
+                serialize_callresult(&uid, &hb_resp),
+            );
+        }
 
         let state = queue.get_or_create(entity);
         state.last_status = Some(ChargePointStatus::Available);
@@ -902,6 +961,12 @@ pub fn ocpp_charging_profile_system(
     mut last_threshold: Local<Option<f32>>,
 ) {
     if !queue.is_active() {
+        return;
+    }
+
+    // In real-CSMS mode the CSMS owns charging profiles; the game must not
+    // fabricate SetChargingProfile frames on the wire.
+    if queue.real_csms() {
         return;
     }
 
@@ -974,6 +1039,49 @@ pub fn ocpp_charging_profile_system(
             "",
             serialize_callresult(&uid, &resp),
         );
+    }
+}
+
+// ─────────────────────────────────────────────────────
+//  9b. StartTransaction confirmation timeout
+// ─────────────────────────────────────────────────────
+
+/// In real-CSMS mode, if a `StartTransaction.conf` never arrives within
+/// [`TX_CONF_TIMEOUT_GAME_SECS`], fall back to a locally allocated transaction
+/// id so MeterValues/StopTransaction can proceed and the session isn't wedged
+/// by a silent CSMS.
+pub fn ocpp_tx_confirmation_timeout_system(
+    mut queue: ResMut<OcppMessageQueue>,
+    game_clock: Res<GameClock>,
+) {
+    if !queue.real_csms() {
+        return;
+    }
+
+    let now = game_clock.total_game_time;
+
+    // Collect entities that have timed out awaiting confirmation.
+    let timed_out: Vec<Entity> = queue
+        .charger_state
+        .iter()
+        .filter(|(_, state)| {
+            state.awaiting_tx_conf
+                && state.transaction_id.is_none()
+                && now - state.tx_started_wait_game_time > TX_CONF_TIMEOUT_GAME_SECS
+        })
+        .map(|(entity, _)| *entity)
+        .collect();
+
+    for entity in timed_out {
+        let fallback_id = queue.next_transaction_id();
+        if let Some(state) = queue.charger_state.get_mut(&entity) {
+            state.transaction_id = Some(fallback_id);
+            state.awaiting_tx_conf = false;
+            warn!(
+                "OCPP: StartTransaction.conf timed out for charger {}, using local txn id {}",
+                state.charger_id, fallback_id
+            );
+        }
     }
 }
 

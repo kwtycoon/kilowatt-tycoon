@@ -13,10 +13,25 @@ use crate::components::charger::{ChargerState, FaultType};
 pub use rust_ocpp::v1_6::messages::boot_notification::{
     BootNotificationRequest, BootNotificationResponse,
 };
+pub use rust_ocpp::v1_6::messages::change_configuration::{
+    ChangeConfigurationRequest, ChangeConfigurationResponse,
+};
+pub use rust_ocpp::v1_6::messages::clear_charging_profile::{
+    ClearChargingProfileRequest, ClearChargingProfileResponse,
+};
+pub use rust_ocpp::v1_6::messages::get_composite_schedule::{
+    GetCompositeScheduleRequest, GetCompositeScheduleResponse,
+};
+pub use rust_ocpp::v1_6::messages::get_configuration::{
+    GetConfigurationRequest, GetConfigurationResponse,
+};
 pub use rust_ocpp::v1_6::messages::heart_beat::{HeartbeatRequest, HeartbeatResponse};
 pub use rust_ocpp::v1_6::messages::meter_values::MeterValuesRequest;
 pub use rust_ocpp::v1_6::messages::remote_start_transaction::{
     RemoteStartTransactionRequest, RemoteStartTransactionResponse,
+};
+pub use rust_ocpp::v1_6::messages::remote_stop_transaction::{
+    RemoteStopTransactionRequest, RemoteStopTransactionResponse,
 };
 pub use rust_ocpp::v1_6::messages::reset::{ResetRequest, ResetResponse};
 pub use rust_ocpp::v1_6::messages::set_charging_profile::{
@@ -27,15 +42,20 @@ pub use rust_ocpp::v1_6::messages::start_transaction::{
 };
 pub use rust_ocpp::v1_6::messages::status_notification::StatusNotificationRequest;
 pub use rust_ocpp::v1_6::messages::stop_transaction::StopTransactionRequest;
+pub use rust_ocpp::v1_6::messages::trigger_message::{
+    TriggerMessageRequest, TriggerMessageResponse,
+};
 
 // ─── Re-exports: OCPP 1.6 enums & shared types ──────────────────
 
 pub use rust_ocpp::v1_6::types::{
     AuthorizationStatus, ChargePointErrorCode, ChargePointStatus, ChargingProfile,
     ChargingProfileKindType, ChargingProfilePurposeType, ChargingProfileStatus,
-    ChargingRateUnitType, ChargingSchedule, ChargingSchedulePeriod, IdTagInfo, Location, Measurand,
-    MeterValue, ReadingContext, Reason, RegistrationStatus, RemoteStartStopStatus,
-    ResetRequestStatus, ResetResponseStatus, SampledValue, UnitOfMeasure, ValueFormat,
+    ChargingRateUnitType, ChargingSchedule, ChargingSchedulePeriod, ClearChargingProfileStatus,
+    ConfigurationStatus, GetCompositeScheduleStatus, IdTagInfo, KeyValue, Location, Measurand,
+    MessageTrigger, MeterValue, ReadingContext, Reason, RecurrencyKindType, RegistrationStatus,
+    RemoteStartStopStatus, ResetRequestStatus, ResetResponseStatus, SampledValue,
+    TriggerMessageStatus, UnitOfMeasure, ValueFormat,
 };
 
 // ─── OCPP 1.6J Call envelope ─────────────────────────────────────
@@ -45,6 +65,9 @@ const CALL: u8 = 2;
 
 /// OCPP message-type ID for a CallResult (response from CSMS to Charge Point).
 const CALLRESULT: u8 = 3;
+
+/// OCPP message-type ID for a CallError.
+const CALLERROR: u8 = 4;
 
 /// Serialize an OCPP 1.6J Call: `[2, "uniqueId", "Action", {payload}]`
 pub fn serialize_call(unique_id: &str, action: &str, payload: &impl Serialize) -> String {
@@ -56,6 +79,19 @@ pub fn serialize_call(unique_id: &str, action: &str, payload: &impl Serialize) -
 pub fn serialize_callresult(unique_id: &str, payload: &impl Serialize) -> String {
     let payload_value = serde_json::to_value(payload).unwrap_or_default();
     serde_json::to_string(&(CALLRESULT, unique_id, payload_value)).unwrap_or_default()
+}
+
+/// Serialize an OCPP 1.6J CallError:
+/// `[4, "uniqueId", "errorCode", "errorDescription", {errorDetails}]`
+pub fn serialize_callerror(unique_id: &str, error_code: &str, description: &str) -> String {
+    serde_json::to_string(&(
+        CALLERROR,
+        unique_id,
+        error_code,
+        description,
+        serde_json::Value::Object(serde_json::Map::new()),
+    ))
+    .unwrap_or_default()
 }
 
 /// Generate a short unique ID for OCPP message correlation.

@@ -282,6 +282,10 @@ pub struct Charger {
     pub requested_power_kw: f32,
     /// Power allocated by site dispatch after constraints (kW)
     pub allocated_power_kw: f32,
+    /// Composite power cap (kW) imposed by an OCPP charging profile received
+    /// from the CSMS, if any. `None` means no profile constrains this charger.
+    /// Applied by `power_dispatch_system` as a ceiling on requested power.
+    pub ocpp_limit_kw: Option<f32>,
     /// Game time when session started (for FCFS ordering)
     pub session_start_game_time: Option<f32>,
     /// Charger tier (affects reliability and efficiency)
@@ -352,6 +356,7 @@ impl Default for Charger {
             grid_position: None,
             requested_power_kw: 0.0,
             allocated_power_kw: 0.0,
+            ocpp_limit_kw: None,
             session_start_game_time: None,
             tier: ChargerTier::Standard,
             operating_hours: 0.0,

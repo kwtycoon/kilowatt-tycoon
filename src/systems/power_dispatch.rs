@@ -78,7 +78,8 @@ pub fn power_dispatch_system(
     // Calculate effective multipliers
     // Higher power density = faster charging but more heat/stress on equipment.
     // During a hacker overload the density is forced beyond the player's 200% cap.
-    let power_density_mult = if site_state.hacker_overload_remaining_secs > 0.0 {
+    let hacker_overload = site_state.hacker_overload_remaining_secs > 0.0;
+    let power_density_mult = if hacker_overload {
         HACKER_OVERLOAD_POWER_DENSITY
     } else {
         site_state.service_strategy.target_power_density
@@ -103,7 +104,14 @@ pub fn power_dispatch_system(
             let start_time = charger.session_start_game_time.unwrap_or(0.0);
             // Apply strategy and environment multipliers to requested power
             let base_requested = charger.requested_power_kw;
-            let requested_kw = base_requested * effective_mult;
+            let mut requested_kw = base_requested * effective_mult;
+            // Apply the OCPP charging-profile cap (SetChargingProfile from the
+            // CSMS). This is a maximum, not a floor. A hacker overload attack
+            // bypasses it, consistent with it also bypassing the power-density
+            // cap and thermal throttle.
+            if !hacker_overload && let Some(limit_kw) = charger.ocpp_limit_kw {
+                requested_kw = requested_kw.min(limit_kw.max(0.0));
+            }
             // Calculate apparent power (kVA) for infrastructure limits
             let requested_kva = charger.input_kva(requested_kw);
             if requested_kw > 0.0 {

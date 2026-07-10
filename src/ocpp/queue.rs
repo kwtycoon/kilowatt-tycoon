@@ -40,6 +40,23 @@ pub const METER_VALUES_INTERVAL_GAME_SECS: f32 = 60.0;
 /// Interval between Heartbeat messages in game-seconds (300 = every 5 minutes).
 pub const HEARTBEAT_INTERVAL_GAME_SECS: f32 = 300.0;
 
+/// Game-seconds to wait for a `StartTransaction.conf` from a real CSMS before
+/// falling back to a locally allocated transaction id (so a mute CSMS can't
+/// wedge a charging session indefinitely).
+pub const TX_CONF_TIMEOUT_GAME_SECS: f32 = 30.0;
+
+/// A record of an outbound OCPP Call awaiting its CallResult, so inbound
+/// responses can be correlated back to the charger that sent the request.
+#[derive(Debug, Clone)]
+pub struct PendingCall {
+    /// OCPP action name (e.g. "StartTransaction", "BootNotification").
+    pub action: String,
+    /// The charger entity that originated the Call.
+    pub entity: Entity,
+    /// `total_game_time` when the Call was sent (used to expire stale entries).
+    pub sent_game_time: f32,
+}
+
 // ─────────────────────────────────────────────────────
 //  OcppMessageQueue (Resource)
 // ─────────────────────────────────────────────────────
@@ -89,6 +106,15 @@ pub struct OcppMessageQueue {
     /// lifetime. Feed systems use this to convert their monotonic
     /// `last_pushed_index` back to a relative Vec index after trimming.
     pub total_drained: usize,
+
+    /// Outbound Calls awaiting a CallResult, keyed by OCPP unique id.
+    /// Only populated when connected to a real CSMS.
+    pub pending_calls: HashMap<String, PendingCall>,
+
+    /// Heartbeat cadence in game-seconds. Defaults to
+    /// [`HEARTBEAT_INTERVAL_GAME_SECS`] but is overridden by the `interval`
+    /// returned in a real `BootNotification.conf`.
+    pub heartbeat_interval_game_secs: f32,
 }
 
 impl Default for OcppMessageQueue {
@@ -114,6 +140,8 @@ impl Default for OcppMessageQueue {
             event_log: Vec::new(),
             event_log_enabled: true,
             total_drained: 0,
+            pending_calls: HashMap::new(),
+            heartbeat_interval_game_secs: HEARTBEAT_INTERVAL_GAME_SECS,
         }
     }
 }
@@ -123,6 +151,33 @@ impl OcppMessageQueue {
     /// Message generation systems should skip work when this returns `false`.
     pub fn is_active(&self) -> bool {
         self.enabled || self.disk_logging_enabled || self.event_log_enabled
+    }
+
+    /// Returns `true` when connected to a real CSMS over WebSocket.
+    ///
+    /// In this mode the game acts as a genuine OCPP client: it does not
+    /// fabricate CallResults or CSMS-direction Calls, instead relying on the
+    /// real responses and commands received over the wire.
+    pub fn real_csms(&self) -> bool {
+        self.enabled && !self.endpoint_url.is_empty()
+    }
+
+    /// Register an outbound Call as awaiting its CallResult (real-CSMS mode).
+    pub fn register_pending(
+        &mut self,
+        unique_id: String,
+        action: &str,
+        entity: Entity,
+        sent_game_time: f32,
+    ) {
+        self.pending_calls.insert(
+            unique_id,
+            PendingCall {
+                action: action.to_string(),
+                entity,
+                sent_game_time,
+            },
+        );
     }
 
     /// Convert a `total_game_time` value to a `DateTime<Utc>` timestamp.
@@ -189,6 +244,37 @@ impl OcppMessageQueue {
         self.push(charger_id, json);
     }
 
+    /// Record a frame in the in-memory event log and disk buffer WITHOUT
+    /// enqueuing it on the outbound wire.
+    ///
+    /// Used for inbound frames received from a real CSMS (CSMS Calls and the
+    /// CallResults answering our Calls), so analytics/logs see real traffic
+    /// while the wire itself is only fed by genuine outbound messages.
+    pub fn log_only(
+        &mut self,
+        charger_id: String,
+        timestamp_iso: String,
+        action: &str,
+        json: String,
+    ) {
+        if self.event_log_enabled {
+            self.event_log.push(OcppLogEntry {
+                timestamp: timestamp_iso,
+                charge_point_id: charger_id.clone(),
+                action: action.to_string(),
+                msg: json.clone(),
+            });
+            if self.event_log.len() > MAX_EVENT_LOG {
+                let excess = self.event_log.len() - MAX_EVENT_LOG;
+                self.event_log.drain(..excess);
+                self.total_drained += excess;
+            }
+        }
+        if self.disk_logging_enabled {
+            self.disk_buffer.push_back((charger_id, json));
+        }
+    }
+
     /// Get or create the per-charger state for an entity.
     pub fn get_or_create(&mut self, entity: Entity) -> &mut OcppChargerState {
         self.charger_state.entry(entity).or_default()
@@ -225,6 +311,19 @@ pub struct OcppChargerState {
 
     /// The charger's string ID (cached for message generation).
     pub charger_id: String,
+
+    /// `total_game_time` at which the current transaction started. Used as the
+    /// anchor for `Relative` charging profiles and for profile evaluation.
+    pub tx_start_total_game_time: Option<f32>,
+
+    /// In real-CSMS mode, `true` while a `StartTransaction` has been sent but
+    /// its `StartTransaction.conf` (carrying the CSMS-assigned transaction id)
+    /// has not yet been received.
+    pub awaiting_tx_conf: bool,
+
+    /// `total_game_time` when the `StartTransaction` was sent, used to expire
+    /// the wait for a `StartTransaction.conf` (see [`TX_CONF_TIMEOUT_GAME_SECS`]).
+    pub tx_started_wait_game_time: f32,
 }
 
 impl Default for OcppChargerState {
@@ -238,6 +337,9 @@ impl Default for OcppChargerState {
             active_driver: None,
             active_id_tag: None,
             charger_id: String::new(),
+            tx_start_total_game_time: None,
+            awaiting_tx_conf: false,
+            tx_started_wait_game_time: 0.0,
         }
     }
 }

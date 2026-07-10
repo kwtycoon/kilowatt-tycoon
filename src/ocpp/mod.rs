@@ -34,6 +34,8 @@
 //!   Relion CSMS          (ws://host/ocpp/{charger_id})
 //! ```
 
+pub mod charging_profiles;
+pub mod client;
 pub mod connection;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod disk_writer;
@@ -59,6 +61,7 @@ impl Plugin for OcppPlugin {
         // Resources
         app.init_resource::<OcppMessageQueue>()
             .init_resource::<OcppConnectionManager>()
+            .init_resource::<charging_profiles::ChargingProfileStore>()
             .init_resource::<ports_registry::PortsRegistry>();
 
         // Native-only: disk writer resource + startup + flush system
@@ -84,6 +87,7 @@ impl Plugin for OcppPlugin {
                 ocpp_reset_system,
                 ocpp_boot_system,
                 ocpp_start_transaction_system,
+                ocpp_tx_confirmation_timeout_system,
                 ocpp_stop_transaction_system,
                 ocpp_status_system,
                 ocpp_meter_values_system,
@@ -92,6 +96,26 @@ impl Plugin for OcppPlugin {
                 ocpp_hacker_event_system,
             )
                 .chain()
+                .run_if(in_state(AppState::Playing)),
+        );
+
+        // Inbound OCPP handling (native only): consume real CallResults and
+        // answer CSMS-initiated Calls. Runs before message generation so
+        // received profiles / transaction ids apply on the same frame.
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_systems(
+            Update,
+            client::ocpp_receive_system
+                .before(ocpp_reset_system)
+                .run_if(in_state(AppState::Playing)),
+        );
+
+        // Evaluate charging-profile limits before power dispatch so the cap
+        // flows into allocation on the same frame.
+        app.add_systems(
+            Update,
+            charging_profiles::apply_charging_profiles_system
+                .before(crate::systems::GameSystemSet::PowerDispatch)
                 .run_if(in_state(AppState::Playing)),
         );
 
